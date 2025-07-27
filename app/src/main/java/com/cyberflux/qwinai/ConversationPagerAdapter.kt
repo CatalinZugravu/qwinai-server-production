@@ -1,0 +1,21 @@
+package com.cyberflux.qwinai
+
+import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentActivity
+import androidx.viewpager2.adapter.FragmentStateAdapter
+
+/**
+ * Adapter for ViewPager to handle switching between All and Saved conversations
+ */
+class ConversationPagerAdapter(activity: FragmentActivity) : FragmentStateAdapter(activity) {
+
+    override fun getItemCount(): Int = 2
+
+    override fun createFragment(position: Int): Fragment {
+        return when (position) {
+            0 -> AllConversationsFragment()
+            1 -> SavedConversationsFragment()
+            else -> throw IllegalArgumentException("Invalid position: $position")
+        }
+    }
+}

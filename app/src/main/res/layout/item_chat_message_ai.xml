@@ -1,0 +1,398 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="8dp">
+
+    <!-- Main content container -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <!-- Model Icon -->
+        <ImageView
+            android:id="@+id/ivModelIcon"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_gravity="start"
+            android:layout_marginStart="4dp"
+            android:layout_marginBottom="8dp"
+            tools:src="@drawable/ic_default_model" />
+
+        <!-- Message container -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp"
+            android:background="@drawable/ai_message_background"
+            android:orientation="vertical"
+            android:longClickable="true"
+            android:padding="12dp">
+
+            <!-- Persistent Loading Indicator (Always visible, separate from status container) -->
+            <LinearLayout
+                android:id="@+id/persistentIndicatorContainer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:padding="8dp"
+                android:background="@drawable/status_indicator_background">
+
+                <com.cyberflux.qwinai.components.PersistentLoadingIndicator
+                    android:id="@+id/persistentLoadingIndicator"
+                    style="?android:attr/progressBarStyleSmall"
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
+                    android:layout_marginEnd="8dp" />
+
+                <!-- Status Text Container (can hide/show independently) -->
+                <LinearLayout
+                    android:id="@+id/simpleStatusContainer"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:visibility="gone">
+
+                    <com.cyberflux.qwinai.components.ShimmerStatusWrapper
+                        android:id="@+id/shimmerStatusWrapper"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+
+                    <TextView
+                        android:id="@+id/tvSimpleStatus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textSize="14sp"
+                        android:textColor="@color/status_text_color"
+                        android:fontFamily="@font/inter_medium"
+                        android:visibility="gone"
+                        tools:text="Generating..." />
+
+                </LinearLayout>
+
+            </LinearLayout>            <!-- Simplified Thinking Process Container -->
+            <LinearLayout
+                android:id="@+id/thinkingContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:orientation="vertical"
+                android:visibility="visible"
+                android:alpha="0">
+
+                <!-- Simple Thinking Header -->
+                <LinearLayout
+                    android:id="@+id/thinkingHeader"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="8dp"
+                    android:gravity="center_vertical"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="?android:attr/selectableItemBackground">
+
+                    <TextView
+                        android:id="@+id/thinkingTitle"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:textSize="13sp"
+                        android:textStyle="italic"
+                        android:textColor="@color/thinking_text_muted"
+                        android:text="Thinking..." />
+
+                    <!-- Timer - shows during and after thinking -->
+                    <TextView
+                        android:id="@+id/tvThinkingTimer"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:textSize="12sp"
+                        android:textColor="@color/thinking_text_light"
+                        android:text="0:00"
+                        android:visibility="visible"
+                        android:fontFamily="monospace" />
+
+                    <!-- Simple expand/collapse arrow -->
+                    <ImageButton
+                        android:id="@+id/thinkingToggle"
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:src="@drawable/ic_expand"
+                        android:rotation="0"
+                        android:scaleType="fitCenter"
+                        android:contentDescription="Toggle thinking process" />
+                </LinearLayout>
+
+                <!-- Transparent Thinking Content with Left Border Line -->
+                <LinearLayout
+                    android:id="@+id/thinkingContentContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:visibility="gone"
+                    android:alpha="0"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:paddingBottom="8dp">
+
+                    <!-- Vertical thinking indicator line -->
+                    <View
+                        android:id="@+id/thinkingIndicatorLine"
+                        android:layout_width="3dp"
+                        android:layout_height="match_parent"
+                        android:layout_marginTop="2dp"
+                        android:layout_marginEnd="12dp"
+                        android:background="@color/colorSecondary"
+                        android:alpha="0.7" />
+
+                    <!-- Thinking content with distinct styling -->
+                    <TextView
+                        android:id="@+id/thinkingContent"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:textSize="13sp"
+                        android:textIsSelectable="false"
+                        android:textColor="@color/colorSecondary"
+                        android:alpha="0.9"
+                        android:lineSpacingExtra="3dp"
+                        android:fontFamily="sans-serif"
+                        android:fontStyle="italic"
+                        android:background="@android:color/transparent"
+                        tools:text="Let me think about this step by step..." />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Main Message Content -->
+            <ScrollView
+                android:id="@+id/messageScrollView"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:fadeScrollbars="false"
+                android:scrollbars="vertical">
+
+                <TextView
+                    android:id="@+id/tvMessage"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="?attr/colorOnSurface"
+                    android:textIsSelectable="true"
+                    android:textSize="14sp" />
+            </ScrollView>
+
+            <!-- Code blocks container -->
+            <LinearLayout
+                android:id="@+id/codeBlocksContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="vertical"
+                android:visibility="gone" />
+
+            <!-- Metadata section (timestamp) -->
+            <TextView
+                android:id="@+id/tvTimestamp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="start"
+                android:layout_marginTop="8dp"
+                android:text="10:05 AM"
+                android:textColor="@color/black"
+                android:textSize="12sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Web Search Sources (displayed at bottom after response is complete) -->
+    <LinearLayout
+        android:id="@+id/webSearchSourcesContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="8dp"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Sources:"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:textColor="@color/text_secondary"
+            android:layout_marginBottom="4dp" />
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/webSearchSourcesLayout"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
+    </LinearLayout>
+
+    <!-- File Download Card Container -->
+    <LinearLayout
+        android:id="@+id/fileDownloadContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="8dp"
+        android:orientation="vertical"
+        android:visibility="gone" />
+
+    <!-- Button controls and navigation -->
+    <LinearLayout
+        android:id="@+id/buttonContainer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_gravity="start"
+        android:layout_marginStart="8dp"
+        android:layout_marginTop="4dp"
+        android:gravity="center_vertical">
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/sourcesContainer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="8dp"
+            android:layout_marginBottom="8dp"
+            android:visibility="gone"
+            app:cardCornerRadius="20dp"
+            app:cardElevation="2dp"
+            app:strokeWidth="1dp"
+            app:strokeColor="@color/source_card_stroke"
+            app:cardBackgroundColor="?attr/colorSurface">
+
+            <LinearLayout
+                android:id="@+id/sourcesButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:padding="12dp"
+                android:gravity="center_vertical"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true">
+
+                <!-- Source Icons Container -->
+                <LinearLayout
+                    android:id="@+id/sourcesIconContainer"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginEnd="8dp" />
+
+                <!-- Sources Count -->
+                <TextView
+                    android:id="@+id/sourcesCountText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="5 sources"
+                    android:textSize="14sp"
+                    android:textColor="@color/primary_text" />
+
+                <!-- Expand Icon -->
+                <ImageView
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
+                    android:layout_marginStart="4dp"
+                    android:src="@drawable/ic_expand_more"
+                    app:tint="@color/secondary_text" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <LinearLayout
+            android:id="@+id/aiNavigationControls"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@drawable/rounded_version_control"
+            android:padding="2dp"
+            android:visibility="gone">
+
+            <ImageButton
+                android:id="@+id/btnPrevious"
+                style="?android:attr/borderlessButtonStyle"
+                android:src="@drawable/left_arrow"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:padding="0dp"
+                android:contentDescription="Previous"
+                android:layout_marginEnd="2dp"/>
+
+            <TextView
+                android:id="@+id/tvNavigationIndicator"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="1/2"
+                android:textSize="12sp"
+                android:textColor="@color/version_indicator"
+                android:layout_marginEnd="4dp"/>
+
+            <ImageButton
+                android:id="@+id/btnNext"
+                style="?android:attr/borderlessButtonStyle"
+                android:src="@drawable/right_arrow"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:padding="0dp"
+                android:contentDescription="Next"
+                android:layout_marginEnd="4dp"/>
+        </LinearLayout>
+
+        <ImageButton
+            android:id="@+id/btnReload"
+            style="?android:attr/borderlessButtonStyle"
+            android:src="@drawable/reload_button"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:padding="0dp"
+            android:contentDescription="Reload"
+            android:layout_marginStart="8dp"/>
+
+        <ImageButton
+            android:id="@+id/btnCopy"
+            style="?android:attr/borderlessButtonStyle"
+            android:src="@drawable/copy_button"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:padding="0dp"
+            android:contentDescription="Copy"/>
+
+        <ImageButton
+            android:id="@+id/btnAudio"
+            style="?android:attr/borderlessButtonStyle"
+            android:src="@drawable/audio_button"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:padding="0dp"
+            android:contentDescription="Play audio"
+            android:visibility="gone"
+            android:layout_marginStart="8dp"/>
+    </LinearLayout>
+
+</LinearLayout>

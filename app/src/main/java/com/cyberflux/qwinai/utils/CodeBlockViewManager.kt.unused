@@ -1,0 +1,143 @@
+package com.cyberflux.qwinai.utils
+
+import android.content.Context
+import android.text.SpannableStringBuilder
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.LinearLayout
+import com.cyberflux.qwinai.R
+import io.noties.markwon.AbstractMarkwonPlugin
+import io.noties.markwon.MarkwonVisitor
+import org.commonmark.node.FencedCodeBlock
+import timber.log.Timber
+import java.util.regex.Pattern
+
+/**
+ * Manager for handling code blocks with custom views
+ * Integrates with the existing markdown processing system
+ */
+class CodeBlockViewManager(private val context: Context) {
+    
+    private val codeBlockViews = mutableListOf<View>()
+    private val codeBlockPattern = Pattern.compile("```(\\w*)\\n([\\s\\S]*?)```")
+    
+    /**
+     * Process markdown text and replace code blocks with placeholder references
+     * Returns processed text and list of code block views
+     */
+    fun processMarkdownWithCodeBlocks(
+        text: String,
+        container: ViewGroup?
+    ): Pair<SpannableStringBuilder, List<View>> {
+        val processedText = SpannableStringBuilder()
+        val codeViews = mutableListOf<View>()
+        
+        val matcher = codeBlockPattern.matcher(text)
+        var lastEnd = 0
+        var codeBlockIndex = 0
+        
+        while (matcher.find()) {
+            // Add text before code block
+            processedText.append(text.substring(lastEnd, matcher.start()))
+            
+            val language = matcher.group(1) ?: ""
+            val code = matcher.group(2)?.trim() ?: ""
+            
+            // Create code block view
+            val codeBlockView = createCodeBlockView(language, code, container)
+            codeViews.add(codeBlockView)
+            
+            // Add placeholder for code block
+            processedText.append("\n[CODE_BLOCK_$codeBlockIndex]\n")
+            codeBlockIndex++
+            
+            lastEnd = matcher.end()
+        }
+        
+        // Add remaining text
+        if (lastEnd < text.length) {
+            processedText.append(text.substring(lastEnd))
+        }
+        
+        return Pair(processedText, codeViews)
+    }
+    
+    /**
+     * Create a code block view using the item_code_block layout
+     */
+    private fun createCodeBlockView(
+        language: String,
+        code: String,
+        container: ViewGroup?
+    ): View {
+        val inflater = LayoutInflater.from(context)
+        val codeBlockView = inflater.inflate(R.layout.item_code_block, container, false)
+        
+        // Setup the view using our custom renderer
+        val renderer = CustomCodeBlockSpan(context, language, code)
+        renderer.setupCodeBlockView(codeBlockView)
+        
+        // Tag the view for identification
+        codeBlockView.tag = "code_block_view"
+        
+        return codeBlockView
+    }
+    
+    /**
+     * Insert code block views into a container at appropriate positions
+     */
+    fun insertCodeBlockViews(
+        container: ViewGroup,
+        codeViews: List<View>,
+        processedText: String
+    ) {
+        // Clear existing code block views
+        clearCodeBlockViews(container)
+        
+        var insertIndex = 0
+        
+        for (i in codeViews.indices) {
+            val placeholder = "[CODE_BLOCK_$i]"
+            val placeholderIndex = processedText.indexOf(placeholder)
+            
+            if (placeholderIndex != -1) {
+                // Calculate insertion position based on previous views
+                val insertPosition = insertIndex
+                
+                try {
+                    // Add the code block view to container
+                    container.addView(codeViews[i], insertPosition)
+                    insertIndex++
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to insert code block view at position $insertPosition")
+                }
+            }
+        }
+    }
+    
+    /**
+     * Remove existing code block views from container
+     */
+    private fun clearCodeBlockViews(container: ViewGroup) {
+        val viewsToRemove = mutableListOf<View>()
+        
+        for (i in 0 until container.childCount) {
+            val child = container.getChildAt(i)
+            // Check if this is one of our code block views
+            if (child.tag == "code_block_view") {
+                viewsToRemove.add(child)
+            }
+        }
+        
+        viewsToRemove.forEach { container.removeView(it) }
+    }
+    
+    /**
+     * Clean up resources
+     */
+    fun cleanup() {
+        codeBlockViews.clear()
+    }
+}
+

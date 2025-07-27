@@ -1,0 +1,708 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- =============================================================== -->
+    <!-- BASE SYSTEM COLORS                                             -->
+    <!-- =============================================================== -->
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+    <color name="transparent">#00000000</color>
+
+    <!-- =============================================================== -->
+    <!-- MODERN MATERIAL DESIGN 3 PRIMARY THEME COLORS                 -->
+    <!-- =============================================================== -->
+    <color name="colorPrimary">#6366F1</color>
+    <color name="colorPrimaryDark">#4F46E5</color>
+    <color name="colorPrimaryVariant">#818CF8</color>
+    <color name="colorAccent">#10B981</color>
+    <color name="colorSecondary">#64748B</color>
+    <color name="colorSecondaryVariant">#475569</color>
+    <color name="colorOnPrimary">#FFFFFF</color>
+    <color name="colorOnSecondary">#FFFFFF</color>
+    <color name="circle_background">#F0F0F0</color> <!-- Light gray, adjust as needed -->
+
+    <!-- =============================================================== -->
+    <!-- MODERN BACKGROUND COLORS                                        -->
+    <!-- =============================================================== -->
+    <color name="background">#FAFAFA</color>
+    <color name="background_light">#FFFFFF</color>
+    <color name="backgroundColorSecondary">#F8FAFC</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="surface_elevated">#FFFFFF</color>
+    <color name="surface_container">#F1F5F9</color>
+    <color name="surface_variant">#F8FAFC</color>
+    <color name="primary_surface">#E0E7FF</color>
+    <color name="colorOnBackground">#1F2937</color>
+    <color name="colorOnSurface">#1F2937</color>
+
+    <!-- =============================================================== -->
+    <!-- TEXT COLORS                                                     -->
+    <!-- =============================================================== -->
+    <color name="text_primary">#212121</color>
+    <color name="text_secondary">#757575</color>
+    <color name="text_tertiary">#999999</color>
+    <color name="text_disabled">#757575</color>
+    <color name="hint_color">#9AA0A6</color>
+    <color name="disabled_button_tint">#9E9E9E</color>
+
+    <!-- =============================================================== -->
+    <!-- HEADER AND TOOLBAR COLORS                                      -->
+    <!-- =============================================================== -->
+    <color name="header_background">@color/surface</color>
+    <color name="toolbar_background">@color/colorPrimary</color>
+    <color name="toolbar_text">#FFFFFF</color>
+    <color name="status_bar_color">@color/colorPrimaryDark</color>
+
+    <!-- =============================================================== -->
+    <!-- TAB COLORS                                                      -->
+    <!-- =============================================================== -->
+    <color name="tab_background">@color/surface</color>
+    <color name="tab_icon_color">#757575</color>
+    <color name="tab_ripple_color">#33757575</color>
+    <color name="tab_selected_color">@color/colorPrimary</color>
+    <color name="tab_unselected_color">@color/text_secondary</color>
+
+    <!-- =============================================================== -->
+    <!-- MODERN CARD COLORS                                              -->
+    <!-- =============================================================== -->
+    <color name="card_background">#FFFFFF</color>
+    <color name="card_background_dark">#1E293B</color>
+    <color name="card_stroke">#E2E8F0</color>
+    <color name="card_greeting_background">#FFFFFF</color>
+    <color name="card_model_background">#F8FAFC</color>
+    <color name="card_tip_background">#EFF6FF</color>
+    <color name="card_weather_background">#F0F9FF</color>
+    <color name="card_whats_new_background">#FFFBEB</color>
+    <color name="card_upgrade_background">#FDF2F8</color>
+    <color name="disabled_card_background">#F1F5F9</color>
+    
+    <!-- Purple hint card backgrounds -->
+    <color name="purple_hint_card_bg">#F8F6FF</color>      <!-- Subtle purple hint background -->
+    <color name="purple_hint_stroke">#E8E5FF</color>       <!-- Purple hint stroke -->
+
+    <!-- =============================================================== -->
+    <!-- PROFESSIONAL CARD TINT COLORS                                   -->
+    <!-- =============================================================== -->
+    <!-- Sophisticated gradient-inspired tints for modern UI -->
+    <color name="card_tint_deep_ocean">#F0F9FF</color>        <!-- Soft blue tint -->
+    <color name="card_tint_forest_mist">#F0FDF4</color>       <!-- Soft green tint -->
+    <color name="card_tint_sunset_glow">#FFF7ED</color>       <!-- Warm orange tint -->
+    <color name="card_tint_lavender_dream">#FAF5FF</color>    <!-- Soft purple tint -->
+    <color name="card_tint_rose_quartz">#FDF2F8</color>      <!-- Soft pink tint -->
+    <color name="card_tint_golden_hour">#FFFBEB</color>      <!-- Soft amber tint -->
+    <color name="card_tint_arctic_breeze">#F0FDFA</color>    <!-- Soft cyan tint -->
+    <color name="card_tint_pearl_white">#FAFAFA</color>      <!-- Neutral pearl tint -->
+    <color name="card_tint_steel_blue">#F8FAFC</color>       <!-- Cool steel tint -->
+    <color name="card_tint_coral_reef">#FEF2F2</color>       <!-- Soft coral tint -->
+    
+    <!-- Professional card background with subtle gradients -->
+    <color name="professional_card_bg_1">#FBFCFD</color>     <!-- Ultra light blue -->
+    <color name="professional_card_bg_2">#FDFEFF</color>     <!-- Ice white -->
+    <color name="professional_card_bg_3">#FEFBFF</color>     <!-- Soft lavender white -->
+    <color name="professional_card_bg_4">#FFFCF8</color>     <!-- Warm white -->
+    <color name="professional_card_bg_5">#F9FDFB</color>     <!-- Mint white -->
+    
+    <!-- =============================================================== -->
+    <!-- PREMIUM LUXURY DESIGN COLORS                                    -->
+    <!-- =============================================================== -->
+    <!-- Sophisticated luxury palette inspired by high-end materials -->
+    <color name="premium_obsidian">#0F1419</color>         <!-- Deep obsidian black -->
+    <color name="premium_charcoal">#1A1D21</color>         <!-- Rich charcoal -->
+    <color name="premium_slate">#2D3748</color>            <!-- Premium slate -->
+    <color name="premium_graphite">#4A5568</color>         <!-- Elegant graphite -->
+    
+    <!-- Luxury metal accents -->
+    <color name="luxury_gold">#D4AF37</color>             <!-- Refined gold -->
+    <color name="luxury_gold_light">#F7E98E</color>       <!-- Light gold highlight -->
+    <color name="luxury_gold_dark">#B8860B</color>        <!-- Deep gold shadow -->
+    <color name="luxury_platinum">#E5E4E2</color>         <!-- Platinum accent -->
+    <color name="luxury_silver">#C0C0C0</color>           <!-- Silver detail -->
+    <color name="luxury_rose_gold">#E8B4B8</color>        <!-- Rose gold accent -->
+    
+    <!-- Premium card backgrounds with depth -->
+    <color name="premium_card_obsidian">#0A0E13</color>    <!-- Ultra-premium dark -->
+    <color name="premium_card_charcoal">#151821</color>    <!-- Charcoal card -->
+    <color name="premium_card_slate">#1E2328</color>       <!-- Slate card -->
+    <color name="premium_card_graphite">#2A2F36</color>    <!-- Graphite card -->
+    
+    <!-- Glassmorphism backgrounds -->
+    <color name="glass_white_10">#1AFFFFFF</color>        <!-- 10% white glass -->
+    <color name="glass_white_15">#26FFFFFF</color>        <!-- 15% white glass -->
+    <color name="glass_white_20">#33FFFFFF</color>        <!-- 20% white glass -->
+    <color name="glass_black_10">#1A000000</color>        <!-- 10% black glass -->
+    <color name="glass_black_15">#26000000</color>        <!-- 15% black glass -->
+    
+    <!-- Premium shadows and glows -->
+    <color name="premium_shadow_soft">#0D000000</color>    <!-- Soft premium shadow -->
+    <color name="premium_shadow_medium">#1A000000</color>  <!-- Medium shadow -->
+    <color name="premium_shadow_deep">#40000000</color>    <!-- Deep luxury shadow -->
+    <color name="premium_glow_gold">#40D4AF37</color>      <!-- Gold glow -->
+    <color name="premium_glow_white">#33FFFFFF</color>     <!-- White glow -->
+    
+    <!-- Elegant text colors -->
+    <color name="premium_text_primary">#F8FAFC</color>     <!-- Premium white text -->
+    <color name="premium_text_secondary">#CBD5E0</color>   <!-- Secondary premium text -->
+    <color name="premium_text_tertiary">#A0AEC0</color>    <!-- Tertiary premium text -->
+    <color name="premium_text_gold">#F7E98E</color>       <!-- Gold text accent -->
+    
+    <!-- Card stroke colors for tinted backgrounds -->
+    <color name="card_stroke_blue">#E0F2FE</color>          <!-- Blue stroke -->
+    <color name="card_stroke_green">#DCFCE7</color>         <!-- Green stroke -->
+    <color name="card_stroke_orange">#FED7AA</color>        <!-- Orange stroke -->
+    <color name="card_stroke_purple">#E9D5FF</color>        <!-- Purple stroke -->
+    <color name="card_stroke_pink">#FECACA</color>          <!-- Pink stroke -->
+    <color name="card_stroke_amber">#FDE68A</color>         <!-- Amber stroke -->
+    <color name="card_stroke_cyan">#A7F3D0</color>          <!-- Cyan stroke -->
+    <color name="card_stroke_neutral">#F1F5F9</color>       <!-- Neutral stroke -->
+
+    <!-- =============================================================== -->
+    <!-- BUTTON COLORS                                                   -->
+    <!-- =============================================================== -->
+    <color name="button_primary_background">@color/colorPrimary</color>
+    <color name="button_secondary_background">#F3F4F6</color>
+    <color name="button_danger_background">#EF4444</color>
+    <color name="button_success_background">#10B981</color>
+    <color name="button_enabled_bg">#FFFFFF</color>
+    <color name="button_disabled_bg">#F3F4F6</color>
+    <color name="button_text_enabled">#1F2937</color>
+    <color name="button_text_disabled">#9CA3AF</color>
+    <color name="button_primary">#FF6B6B</color>
+    <color name="button_danger">#FF4757</color>
+    <color name="button_secondary">#F5F5F5</color>
+
+    <!-- =============================================================== -->
+    <!-- INPUT AND FORM COLORS                                           -->
+    <!-- =============================================================== -->
+    <color name="input_background">#F1F3F4</color>
+    <color name="input_background_light">#F8F9FA</color>
+    <color name="input_border">#D1D5DB</color>
+    <color name="input_focused_border">@color/colorPrimary</color>
+
+    <!-- =============================================================== -->
+    <!-- MESSAGE AND CHAT COLORS                                         -->
+    <!-- =============================================================== -->
+    <color name="ai_message_background">#E6F7FF</color>
+    <color name="message_ai_background">#F9FAFB</color>
+    <color name="message_user_background">#E3F2FD</color>
+    <color name="message_border">#E5E7EB</color>
+
+    <!-- =============================================================== -->
+    <!-- SELECTION AND INTERACTION COLORS                               -->
+    <!-- =============================================================== -->
+    <color name="selected_item_background">#E3F2FD</color>
+    <color name="selected_option_background">#E3F2FD</color>
+    <color name="ripple_color">#33000000</color>
+    <color name="selection_background">#3B82F6</color>
+    <color name="focus_indicator">@color/colorPrimary</color>
+
+    <!-- =============================================================== -->
+    <!-- STATUS AND INDICATOR COLORS                                     -->
+    <!-- =============================================================== -->
+    <color name="status_active">#4CAF50</color>
+    <color name="status_online">#10B981</color>
+    <color name="status_away">#F59E0B</color>
+    <color name="status_busy">#EF4444</color>
+    <color name="status_offline">#6B7280</color>
+    <color name="status_background">#F5F5F5</color>
+    <color name="status_text_color">#FF6B7280</color>
+
+    <!-- =============================================================== -->
+    <!-- SPINNER AND DROPDOWN COLORS                                    -->
+    <!-- =============================================================== -->
+    <color name="spinner_background">@color/surface</color>
+    <color name="spinner_dropdown_background">@color/surface</color>
+    <color name="spinner_selected_background">@color/selected_item_background</color>
+    <color name="spinner_item_text">@color/text_primary</color>
+    <color name="spinner_disabled_text">@color/text_disabled</color>
+
+    <!-- =============================================================== -->
+    <!-- THINKING AND REASONING COLORS                                  -->
+    <!-- =============================================================== -->
+    <color name="thinking_color">#9C27B0</color>
+    <color name="thinking_text_color">#7B1FA2</color>
+    <color name="thinking_background">#F3E5F5</color>
+    <color name="thinking_text_muted">#6B7280</color>
+    <color name="thinking_text_light">#9CA3AF</color>
+    <color name="thinking_background_ai">#F3F4F6</color>
+    <color name="reasoning_color">#FF6F00</color>
+    <color name="reasoning_text_color">#E65100</color>
+    <color name="reasoning_button_color">#6366F1</color>
+    <color name="web_search_button_color">#2563EB</color>
+    <color name="claude_thinking_color">#CD7F32</color>
+    <color name="built_in_thinking_color">#FF6B35</color>
+
+    <!-- Thinking Status Indicators -->
+    <color name="thinking_indicator_claude">#4A6FDC</color>
+    <color name="thinking_indicator_gpt">#10A37F</color>
+    <color name="thinking_indicator_default">#888888</color>
+    <color name="web_search_indicator">#FF9800</color>
+
+    <!-- =============================================================== -->
+    <!-- ORB AND ANIMATION COLORS                                        -->
+    <!-- =============================================================== -->
+    <color name="orb_idle">#667eea</color>
+    <color name="orb_listening">#00d4ff</color>
+    <color name="orb_speaking">#4ade80</color>
+    <color name="orb_processing">#f59e0b</color>
+
+    <!-- Status Indicator Colors -->
+    <color name="status_idle">#6B7280</color>
+    <color name="status_listening">#00d4ff</color>
+    <color name="status_speaking">#4ade80</color>
+    <color name="status_processing">#f59e0b</color>
+
+    <!-- =============================================================== -->
+    <!-- ERROR AND WARNING COLORS                                        -->
+    <!-- =============================================================== -->
+    <color name="error">#F44336</color>
+    <color name="errorColor">#F44336</color>
+    <color name="error_color">#F44336</color>
+    <color name="warning_color">#FF9800</color>
+    <color name="success_color">#4CAF50</color>
+    <color name="info_color">#2196F3</color>
+    <color name="colorOnError">#FFFFFF</color>
+
+    <!-- =============================================================== -->
+    <!-- NOTIFICATION AND ALERT COLORS                                  -->
+    <!-- =============================================================== -->
+    <color name="notification_color">#F44336</color>
+    <color name="notification_dot">@color/colorAccent</color>
+    <color name="enhanced_notification_dot">@color/colorPrimary</color>
+
+    <!-- =============================================================== -->
+    <!-- LINK AND INTERACTIVE COLORS                                    -->
+    <!-- =============================================================== -->
+    <color name="link_color">#2196F3</color>
+    <color name="blue">#1A73E8</color>
+    <color name="accent_color">#2196F3</color>
+    <color name="source_url_color">#1976D2</color>
+
+    <!-- =============================================================== -->
+    <!-- DOCUMENT AND FILE COLORS                                       -->
+    <!-- =============================================================== -->
+    <color name="document_background">#FAFAFA</color>
+    <color name="document_stroke">#DDDDDD</color>
+    <color name="source_card_background">#F5F5F5</color>
+    <color name="source_card_stroke">#E0E0E0</color>
+    <color name="source_domain_color">#666666</color>
+
+    <!-- =============================================================== -->
+    <!-- PRIVATE MODE COLORS                                            -->
+    <!-- =============================================================== -->
+    <color name="private_mode_active">#8E69D4</color>
+    <color name="private_mode_hint">#AA8BD7</color>
+    <color name="private_mode_input_background">#F4EFFF</color>
+    <color name="private_mode_background">#F0E6FF</color>
+    <color name="private_mode_indicator">#8B5CF6</color>
+
+    <!-- =============================================================== -->
+    <!-- DIALOG AND OVERLAY COLORS                                      -->
+    <!-- =============================================================== -->
+    <color name="dialog_background">#FFFFFF</color>
+    <color name="dialog_border">#E0E0E0</color>
+    <color name="dialog_overlay">#80000000</color>
+    <color name="overlay_color">#80000000</color>
+    <color name="shadow_color">#1A000000</color>
+
+    <!-- =============================================================== -->
+    <!-- UTILITY AND MISC COLORS                                        -->
+    <!-- =============================================================== -->
+    <color name="divider">#E0E0E0</color>
+    <color name="divider_color">@color/divider</color>
+    <color name="icon_tint">#BDBDBD</color>
+    <color name="icon_color">#666666</color>
+    <color name="separator_light">#E5E7EB</color>
+    <color name="transparent_overlay_light">#33000000</color>
+    
+    <!-- Gray Scale Colors -->
+    <color name="gray_50">#FAFAFA</color>
+    <color name="gray_200">#E0E0E0</color>
+    <color name="gray_300">#BDBDBD</color>
+    <color name="gray_500">#9E9E9E</color>
+
+    <!-- =============================================================== -->
+    <!-- ACCENT AND FEATURE COLORS                                      -->
+    <!-- =============================================================== -->
+    <color name="accent_primary">#6366F1</color>
+    <color name="accent_gold">#F59E0B</color>
+    <color name="accent_gold_light">#FCD34D</color>
+    <color name="accent_blue">#667eea</color>
+    <color name="accent_green">#4ade80</color>
+    <color name="accent_orange">#f59e0b</color>
+    <color name="accent_red">#ff4757</color>
+
+    <!-- =============================================================== -->
+    <!-- FEATURE CARD COLORS                                            -->
+    <!-- =============================================================== -->
+    <color name="feature_web_search">#7F5AF0</color>
+    <color name="feature_image_upload">#FF8BA7</color>
+    <color name="feature_ask_by_link">#2CB67D</color>
+    <color name="feature_prompt_day">#FF9E64</color>
+    <color name="feature_image_gen">#3B82F6</color>
+    <color name="feature_ocr">#EC4899</color>
+    <color name="feature_translator">#6366F1</color>
+    <color name="feature_file_upload">#10B981</color>
+
+    <!-- =============================================================== -->
+    <!-- GRADIENT COLORS                                                -->
+    <!-- =============================================================== -->
+    <color name="gradient_start">#F8FAFC</color>
+    <color name="gradient_end">#E2E8F0</color>
+    <color name="gradient_center">#764ba2</color>
+    <color name="gradient_start_claude">#F8F9FF</color>
+    <color name="gradient_end_claude">#F0F2FA</color>
+
+    <!-- =============================================================== -->
+    <!-- CODE SYNTAX HIGHLIGHTING COLORS - DEEPSEEK STYLE             -->
+    <!-- =============================================================== -->
+    <color name="code_background_light">#1E1E1E</color>
+    <color name="code_header_background_light">#F5F5F5</color>
+    <color name="code_line_number_light">#858585</color>
+    <color name="code_text">#D4D4D4</color>
+    <color name="code_text_light">#D4D4D4</color>
+    <color name="code_keyword">#C586C0</color> <!-- Purple for if, else, return, function -->
+    <color name="code_function">#4FC1FF</color> <!-- Blue for print, fetch, then, catch -->  
+    <color name="code_class">#4EC9B0</color> <!-- Teal for classes -->
+    <color name="code_property">#9CDCFE</color> <!-- Light blue for properties -->
+    <color name="code_annotation">#D19A66</color> <!-- Orange for annotations -->
+    <color name="code_generic">#C586C0</color> <!-- Purple for generics -->
+    <color name="code_builtin">#4FC1FF</color> <!-- Blue for built-ins -->
+    <color name="code_string">#CE9178</color> <!-- Orange/brown for strings -->
+    <color name="code_number">#B5CEA8</color> <!-- Light green for numbers -->
+    <color name="code_comment">#6A9955</color> <!-- Green for comments -->
+    <color name="code_operator">#D4D4D4</color> <!-- White for operators -->
+    <color name="code_punctuation">#D4D4D4</color> <!-- White for punctuation -->
+    <color name="code_tag">#569CD6</color> <!-- Blue for HTML tags -->
+    <color name="code_attribute">#9CDCFE</color> <!-- Light blue for attributes -->
+    <color name="code_doctype">#808080</color> <!-- Gray for doctype -->
+    <color name="code_selector">#D7BA7D</color> <!-- Yellow for CSS selectors -->
+    <color name="code_value">#CE9178</color> <!-- Orange for CSS values -->
+    <color name="code_color">#D19A66</color> <!-- Orange for color values -->
+    <color name="code_important">#569CD6</color> <!-- Blue for important -->
+    <color name="code_at_rule">#C586C0</color> <!-- Purple for at-rules -->
+    <color name="code_self">#569CD6</color> <!-- Blue for self -->
+    <color name="code_decorator">#DCDCAA</color> <!-- Yellow for decorators -->
+    <color name="code_linq">#C586C0</color> <!-- Purple for LINQ -->
+    <color name="code_preprocessor">#9B9B9B</color> <!-- Gray for preprocessor -->
+    <color name="code_type">#4EC9B0</color> <!-- Teal for types -->
+    <color name="code_interpolation">#CE9178</color> <!-- Orange for interpolation -->
+
+    <!-- =============================================================== -->
+    <!-- BEAUTIFUL PROMPT CHIP COLORS                                   -->
+    <!-- =============================================================== -->
+    <color name="chip_color_1">#FFE0B2</color> <!-- Soft Orange -->
+    <color name="chip_color_2">#C8E6C9</color> <!-- Soft Green -->
+    <color name="chip_color_3">#BBDEFB</color> <!-- Soft Blue -->
+    <color name="chip_color_4">#E1BEE7</color> <!-- Soft Purple -->
+    <color name="chip_color_5">#F8BBD0</color> <!-- Soft Pink -->
+    <color name="chip_color_6">#B2EBF2</color> <!-- Soft Teal -->
+    <color name="chip_color_7">#DCEDC8</color> <!-- Soft Lime -->
+    <color name="chip_color_8">#D7CCC8</color> <!-- Soft Brown -->
+    <color name="chip_color_9">#CFD8DC</color> <!-- Soft Blue Grey -->
+    <color name="chip_color_10">#F0F4C3</color> <!-- Soft Yellow -->
+    <color name="chip_color_11">#FFE0E0</color> <!-- Soft Red -->
+    <color name="chip_color_12">#E0E0FF</color> <!-- Soft Indigo -->
+    <color name="chip_color_13">#E8F5E9</color> <!-- Lighter Green -->
+    <color name="chip_color_14">#FFF3E0</color> <!-- Soft Deep Orange -->
+    <color name="chip_color_15">#E0F7FA</color> <!-- Lighter Cyan -->
+    <color name="chip_color_16">#F3E5F5</color> <!-- Lighter Purple -->
+    <color name="chip_color_17">#FFF8E1</color> <!-- Soft Amber -->
+    <color name="chip_color_18">#E1F5FE</color> <!-- Lighter Light Blue -->
+    <color name="chip_color_19">#FAFAFA</color> <!-- Light White -->
+    <color name="chip_color_20">#EFEBE9</color> <!-- Soft Brown -->
+
+    <!-- Additional slightly more vibrant colors -->
+    <color name="chip_vibrant_1">#FFCC80</color> <!-- Medium Orange -->
+    <color name="chip_vibrant_2">#A5D6A7</color> <!-- Medium Green -->
+    <color name="chip_vibrant_3">#90CAF9</color> <!-- Medium Blue -->
+    <color name="chip_vibrant_4">#CE93D8</color> <!-- Medium Purple -->
+    <color name="chip_vibrant_5">#F48FB1</color> <!-- Medium Pink -->
+    <color name="chip_vibrant_6">#80DEEA</color> <!-- Medium Cyan -->
+    <color name="chip_vibrant_7">#C5E1A5</color> <!-- Medium Lime -->
+    <color name="chip_vibrant_8">#BCAAA4</color> <!-- Medium Brown -->
+    <color name="chip_vibrant_9">#B0BEC5</color> <!-- Medium Blue Grey -->
+    <color name="chip_vibrant_10">#FFF59D</color> <!-- Medium Yellow -->
+
+    <!-- =============================================================== -->
+    <!-- LEGACY COMPATIBILITY COLORS                                    -->
+    <!-- =============================================================== -->
+    <color name="primary">@color/colorPrimary</color>
+    <color name="brand_primary">@color/colorPrimary</color>
+    <color name="brand_secondary">@color/colorSecondary</color>
+    <color name="brand_accent">@color/colorAccent</color>
+
+    <!-- =============================================================== -->
+    <!-- VERSION CONTROL AND BRANCH COLORS                             -->
+    <!-- =============================================================== -->
+    <color name="active_branch">#3F51B5</color>
+    <color name="inactive_branch_bg">#E0E0E0</color>
+    <color name="inactive_branch_text">#757575</color>
+    <color name="version_indicator">#616161</color>
+    <color name="rounded_version_control_background">#F5F5F5</color>
+
+    <!-- =============================================================== -->
+    <!-- THEME COLORS - LIGHT MODE                                      -->
+    <!-- =============================================================== -->
+
+    <!-- Slate Blue Theme -->
+    <color name="slate_primary">#90A4AE</color>
+    <color name="slate_primary_variant">#78909C</color>
+    <color name="slate_secondary">#B0BEC5</color>
+    <color name="slate_accent">#29B6F6</color>
+    <color name="slate_background">#F8F9FA</color>
+    <color name="slate_surface">#FFFFFF</color>
+    <color name="slate_error">#F44336</color>
+    <color name="slate_text_primary">#37474F</color>
+    <color name="slate_text_secondary">#78909C</color>
+    <color name="slate_card_background">#FFFFFF</color>
+    <color name="slate_card_stroke">#E0E0E0</color>
+
+    <!-- Olive Garden Theme -->
+    <color name="olive_primary">#8BC34A</color>
+    <color name="olive_primary_variant">#689F38</color>
+    <color name="olive_secondary">#C5E1A5</color>
+    <color name="olive_accent">#FF9800</color>
+    <color name="olive_background">#F1F8E9</color>
+    <color name="olive_surface">#FFFFFF</color>
+    <color name="olive_error">#F44336</color>
+    <color name="olive_text_primary">#33691E</color>
+    <color name="olive_text_secondary">#689F38</color>
+    <color name="olive_card_background">#FFFFFF</color>
+    <color name="olive_card_stroke">#E0E0E0</color>
+
+    <!-- Burgundy Theme -->
+    <color name="burgundy_primary">#E91E63</color>
+    <color name="burgundy_primary_variant">#C2185B</color>
+    <color name="burgundy_secondary">#F06292</color>
+    <color name="burgundy_accent">#FF7043</color>
+    <color name="burgundy_background">#FCE4EC</color>
+    <color name="burgundy_surface">#FFFFFF</color>
+    <color name="burgundy_error">#F44336</color>
+    <color name="burgundy_text_primary">#880E4F</color>
+    <color name="burgundy_text_secondary">#C2185B</color>
+    <color name="burgundy_card_background">#FFFFFF</color>
+    <color name="burgundy_card_stroke">#E0E0E0</color>
+
+    <!-- Rustic Copper Theme -->
+    <color name="copper_primary">#8D6E63</color>
+    <color name="copper_primary_variant">#6D4C41</color>
+    <color name="copper_secondary">#A1887F</color>
+    <color name="copper_accent">#4CAF50</color>
+    <color name="copper_background">#EFEBE9</color>
+    <color name="copper_surface">#FFFFFF</color>
+    <color name="copper_error">#F44336</color>
+    <color name="copper_text_primary">#3E2723</color>
+    <color name="copper_text_secondary">#6D4C41</color>
+    <color name="copper_card_background">#FFFFFF</color>
+    <color name="copper_card_stroke">#E0E0E0</color>
+
+    <!-- Carbon Theme -->
+    <color name="carbon_primary">#9E9E9E</color>
+    <color name="carbon_primary_variant">#757575</color>
+    <color name="carbon_secondary">#BDBDBD</color>
+    <color name="carbon_accent">#03DAC6</color>
+    <color name="carbon_background">#FAFAFA</color>
+    <color name="carbon_surface">#FFFFFF</color>
+    <color name="carbon_error">#F44336</color>
+    <color name="carbon_text_primary">#212121</color>
+    <color name="carbon_text_secondary">#757575</color>
+    <color name="carbon_card_background">#FFFFFF</color>
+    <color name="carbon_card_stroke">#E0E0E0</color>
+
+    <!-- Teal Harbor Theme -->
+    <color name="teal_primary">#009688</color>
+    <color name="teal_primary_variant">#00695C</color>
+    <color name="teal_secondary">#4DB6AC</color>
+    <color name="teal_accent">#FF5722</color>
+    <color name="teal_background">#E0F2F1</color>
+    <color name="teal_surface">#FFFFFF</color>
+    <color name="teal_error">#F44336</color>
+    <color name="teal_text_primary">#004D40</color>
+    <color name="teal_text_secondary">#00695C</color>
+    <color name="teal_card_background">#FFFFFF</color>
+    <color name="teal_card_stroke">#E0E0E0</color>
+
+    <!-- Serenity Theme -->
+    <color name="serenity_primary">#3F51B5</color>
+    <color name="serenity_primary_variant">#303F9F</color>
+    <color name="serenity_secondary">#7986CB</color>
+    <color name="serenity_accent">#FFC107</color>
+    <color name="serenity_background">#E8EAF6</color>
+    <color name="serenity_surface">#FFFFFF</color>
+    <color name="serenity_error">#F44336</color>
+    <color name="serenity_text_primary">#1A237E</color>
+    <color name="serenity_text_secondary">#303F9F</color>
+    <color name="serenity_card_background">#FFFFFF</color>
+    <color name="serenity_card_stroke">#E0E0E0</color>
+
+    <!-- Neon Cyberpunk Theme -->
+    <color name="neon_primary">#00E5FF</color>
+    <color name="neon_primary_variant">#00BCD4</color>
+    <color name="neon_secondary">#E91E63</color>
+    <color name="neon_accent">#8BC34A</color>
+    <color name="neon_background">#F0F4FF</color>
+    <color name="neon_surface">#FFFFFF</color>
+    <color name="neon_error">#F44336</color>
+    <color name="neon_text_primary">#0D47A1</color>
+    <color name="neon_text_secondary">#1976D2</color>
+    <color name="neon_card_background">#FFFFFF</color>
+    <color name="neon_card_stroke">#E0E0E0</color>
+
+    <!-- Aurora Borealis Theme -->
+    <color name="aurora_primary">#4CAF50</color>
+    <color name="aurora_primary_variant">#388E3C</color>
+    <color name="aurora_secondary">#2196F3</color>
+    <color name="aurora_accent">#00BCD4</color>
+    <color name="aurora_background">#E8F5E8</color>
+    <color name="aurora_surface">#FFFFFF</color>
+    <color name="aurora_error">#F44336</color>
+    <color name="aurora_text_primary">#1B5E20</color>
+    <color name="aurora_text_secondary">#388E3C</color>
+    <color name="aurora_card_background">#FFFFFF</color>
+    <color name="aurora_card_stroke">#E0E0E0</color>
+
+    <!-- Royal Jewel Theme -->
+    <color name="royal_primary">#673AB7</color>
+    <color name="royal_primary_variant">#512DA8</color>
+    <color name="royal_secondary">#03DAC6</color>
+    <color name="royal_accent">#E91E63</color>
+    <color name="royal_background">#EDE7F6</color>
+    <color name="royal_surface">#FFFFFF</color>
+    <color name="royal_error">#F44336</color>
+    <color name="royal_text_primary">#311B92</color>
+    <color name="royal_text_secondary">#512DA8</color>
+    <color name="royal_card_background">#FFFFFF</color>
+    <color name="royal_card_stroke">#E0E0E0</color>
+
+    <!-- Tropical Paradise Theme -->
+    <color name="tropical_primary">#FF5722</color>
+    <color name="tropical_primary_variant">#D84315</color>
+    <color name="tropical_secondary">#00BCD4</color>
+    <color name="tropical_accent">#FFEB3B</color>
+    <color name="tropical_background">#FFF3E0</color>
+    <color name="tropical_surface">#FFFFFF</color>
+    <color name="tropical_error">#F44336</color>
+    <color name="tropical_text_primary">#BF360C</color>
+    <color name="tropical_text_secondary">#D84315</color>
+    <color name="tropical_card_background">#FFFFFF</color>
+    <color name="tropical_card_stroke">#E0E0E0</color>
+
+    <!-- Monochrome Punch Theme -->
+    <color name="mono_primary">#424242</color>
+    <color name="mono_primary_variant">#212121</color>
+    <color name="mono_secondary">#757575</color>
+    <color name="mono_accent">#FF4081</color>
+    <color name="mono_background">#FAFAFA</color>
+    <color name="mono_surface">#FFFFFF</color>
+    <color name="mono_error">#F44336</color>
+    <color name="mono_text_primary">#212121</color>
+    <color name="mono_text_secondary">#757575</color>
+    <color name="mono_card_background">#FFFFFF</color>
+    <color name="mono_card_stroke">#E0E0E0</color>
+
+    <!-- Cosmic Gradient Theme -->
+    <color name="cosmic_primary">#9C27B0</color>
+    <color name="cosmic_primary_variant">#7B1FA2</color>
+    <color name="cosmic_secondary">#2196F3</color>
+    <color name="cosmic_accent">#E91E63</color>
+    <color name="cosmic_background">#F3E5F5</color>
+    <color name="cosmic_surface">#FFFFFF</color>
+    <color name="cosmic_error">#F44336</color>
+    <color name="cosmic_text_primary">#4A148C</color>
+    <color name="cosmic_text_secondary">#7B1FA2</color>
+    <color name="cosmic_card_background">#FFFFFF</color>
+    <color name="cosmic_card_stroke">#E0E0E0</color>
+
+    <!-- Vivid Gradient Theme -->
+    <color name="vivid_primary">#FF9800</color>
+    <color name="vivid_primary_variant">#F57C00</color>
+    <color name="vivid_secondary">#00BCD4</color>
+    <color name="vivid_accent">#3F51B5</color>
+    <color name="vivid_background">#FFF8E1</color>
+    <color name="vivid_surface">#FFFFFF</color>
+    <color name="vivid_error">#F44336</color>
+    <color name="vivid_text_primary">#E65100</color>
+    <color name="vivid_text_secondary">#F57C00</color>
+    <color name="vivid_card_background">#FFFFFF</color>
+    <color name="vivid_card_stroke">#E0E0E0</color>
+
+    <!-- =============================================================== -->
+    <!-- THEME GRADIENT COLORS - LIGHT MODE                             -->
+    <!-- =============================================================== -->
+
+    <!-- Neon Gradient Colors -->
+    <color name="neon_gradient_start">#00E5FF</color>
+    <color name="neon_gradient_end">#4FC3F7</color>
+    <color name="neon_gradient_accent_start">#E91E63</color>
+    <color name="neon_gradient_accent_end">#8BC34A</color>
+
+    <!-- Aurora Gradient Colors -->
+    <color name="aurora_gradient_start">#4CAF50</color>
+    <color name="aurora_gradient_mid">#00BCD4</color>
+    <color name="aurora_gradient_end">#2196F3</color>
+
+    <!-- Royal Gradient Colors -->
+    <color name="royal_gradient_start">#673AB7</color>
+    <color name="royal_gradient_end">#536DFE</color>
+
+    <!-- Tropical Gradient Colors -->
+    <color name="tropical_gradient_start">#FF5722</color>
+    <color name="tropical_gradient_end">#FFEB3B</color>
+
+    <!-- Cosmic Gradient Colors -->
+    <color name="cosmic_gradient_start">#9C27B0</color>
+    <color name="cosmic_gradient_end">#2196F3</color>
+    <color name="cosmic_gradient_accent_start">#E91E63</color>
+    <color name="cosmic_gradient_accent_end">#FF5858</color>
+
+    <!-- Vivid Gradient Colors -->
+    <color name="vivid_gradient_start">#FF9800</color>
+    <color name="vivid_gradient_end">#F57C00</color>
+    <color name="vivid_gradient_accent_start">#00BCD4</color>
+    <color name="vivid_gradient_accent_end">#3F51B5</color>
+
+    <!-- =============================================================== -->
+    <!-- FILE UPLOAD MENU COLORS                                        -->
+    <!-- =============================================================== -->
+    <color name="file_button_background">#F5F5F5</color>
+    <color name="file_button_text">#666666</color>
+    <color name="camera_button_background">#000000</color>
+    <color name="camera_button_icon">#FFFFFF</color>
+    <color name="upload_button_background">#F5F5F5</color>
+    <color name="upload_button_icon">#CCCCCC</color>
+    <color name="search_background">#F5F5F5</color>
+    <color name="search_icon_color">#999999</color>
+    <color name="search_hint_color">#999999</color>
+    <color name="empty_state_title">#333333</color>
+    <color name="empty_state_subtitle">#999999</color>
+    <color name="create_library_background">#F0F0F0</color>
+    <color name="create_library_text">#666666</color>
+
+    <!-- =============================================================== -->
+    <!-- MISSING COLOR REFERENCES                                       -->
+    <!-- =============================================================== -->
+    <color name="primary_text">@color/text_primary</color>
+    <color name="secondary_text">@color/text_secondary</color>
+    <color name="code_background_dark">@color/code_background_light</color>
+    <color name="code_header_background">@color/code_header_background_light</color>
+    <color name="code_line_number">@color/code_line_number_light</color>
+
+    <!-- =============================================================== -->
+    <!-- IMAGE GALLERY SPECIFIC COLORS                                  -->
+    <!-- =============================================================== -->
+    <color name="selection_overlay">#4D2196F3</color>
+    <color name="model_badge_background">#CC000000</color>
+    <color name="gradient_overlay_start">#80000000</color>
+    <color name="gradient_overlay_end">#00000000</color>
+
+    <!-- =============================================================== -->
+    <!-- ULTRA MODERN DESIGN COLORS                                     -->
+    <!-- =============================================================== -->
+    <color name="ultra_tab_icon_color">#64748B</color>
+    <color name="ultra_smooth_pattern">#F8FAFC</color>
+    <color name="app_logo_modern">#6366F1</color>
+    <color name="ic_model">#10B981</color>
+    <color name="ic_crown">#F59E0B</color>
+    <color name="tab_icon_modern">#64748B</color>
+    <color name="neumorphic_tab_color">#64748B</color>
+
+</resources>

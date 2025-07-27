@@ -1,0 +1,35 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="app_name">Qwin AI</string>
+
+
+    <string-array name="languages">
+        <item>English</item>
+        <item>Spanish</item>
+        <item>French</item>
+        <item>German</item>
+        <item>Italian</item>
+        <item>Portuguese</item>
+        <item>Russian</item>
+        <item>Chinese (Simplified)</item>
+        <item>Chinese (Traditional)</item>
+        <item>Japanese</item>
+        <item>Korean</item>
+        <item>Arabic</item>
+        <item>Hindi</item>
+        <item>Dutch</item>
+        <item>Swedish</item>
+        <item>Norwegian</item>
+        <item>Danish</item>
+        <item>Finnish</item>
+    </string-array>
+    <string name="arrow_icon">Arrow</string>
+    <string name="feature_icon">Feature Icon</string>
+
+    <!-- Removed duplicate XML declaration that was here -->
+    <string name="upload_image">Upload Image</string>
+    <string name="take_picture">Take Picture</string>
+    <string name="get_unlimited_credits">Get Unlimited Credits</string>
+    <string name="watch_an_ad">Watch an Ad</string>
+    <string name="watch_2_ads">Watch 2 Ads</string>
+    <!-- TODO: Remove or change this placeholder text -->
+</resources>

@@ -1,0 +1,431 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- =============================================================== -->
+    <!-- ORIGINAL STYLES - NIGHT MODE                                    -->
+    <!-- Keep all your existing night mode styles here                   -->
+    <!-- =============================================================== -->
+
+    <!-- Base application theme -->
+    <style name="AppTheme" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- Customize your theme here -->
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorPrimaryVariant">@color/colorPrimaryDark</item>
+        <item name="colorAccent">@color/colorAccent</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorSecondary">@color/colorSecondary</item>
+        <item name="colorOnSecondary">@android:color/white</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">@color/colorPrimaryDark</item>
+        <item name="android:navigationBarColor">@color/background</item>
+        <item name="android:windowBackground">@color/background</item>
+
+        <!-- Text colors -->
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+
+        <!-- Background colors -->
+        <item name="android:colorBackground">@color/background</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorError">@color/error</item>
+
+        <!-- On colors (text on surfaces) -->
+        <item name="colorOnBackground">@color/text_primary</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorOnError">@android:color/white</item>
+
+        <!-- Material button styles -->
+        <item name="materialButtonStyle">@style/DarkMaterialButton</item>
+
+        <!-- Card styles -->
+        <item name="cardViewStyle">@style/DarkCardView</item>
+
+        <!-- Dialog styles -->
+        <item name="materialAlertDialogTheme">@style/DarkAlertDialog</item>
+    </style>
+
+    <style name="DarkMaterialButton" parent="Widget.MaterialComponents.Button">
+        <item name="backgroundTint">@color/colorPrimary</item>
+        <item name="android:textColor">@android:color/white</item>
+        <item name="rippleColor">@color/colorPrimaryDark</item>
+    </style>
+
+    <style name="DarkCardView" parent="Widget.MaterialComponents.CardView">
+        <item name="cardBackgroundColor">@color/card_background</item>
+        <item name="cardElevation">2dp</item>
+    </style>
+
+    <style name="DarkAlertDialog" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorSurface">@color/card_background</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="buttonBarPositiveButtonStyle">@style/DarkPositiveButton</item>
+        <item name="buttonBarNegativeButtonStyle">@style/DarkNegativeButton</item>
+        <item name="buttonBarNeutralButtonStyle">@style/DarkNeutralButton</item>
+    </style>
+
+    <style name="DarkPositiveButton" parent="Widget.MaterialComponents.Button.TextButton.Dialog">
+        <item name="android:textColor">@color/colorPrimary</item>
+    </style>
+
+    <style name="DarkNegativeButton" parent="Widget.MaterialComponents.Button.TextButton.Dialog">
+        <item name="android:textColor">@color/text_primary</item>
+    </style>
+
+    <style name="DarkNeutralButton" parent="Widget.MaterialComponents.Button.TextButton.Dialog">
+        <item name="android:textColor">@color/text_secondary</item>
+    </style>
+
+    <style name="ShapeAppearanceOverlay.TopRounded" parent="">
+        <item name="cornerSizeTopLeft">24dp</item>
+        <item name="cornerSizeTopRight">24dp</item>
+        <item name="cornerSizeBottomLeft">0dp</item>
+        <item name="cornerSizeBottomRight">0dp</item>
+    </style>
+
+    <style name="TabTextAppearance" parent="TextAppearance.Design.Tab">
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/tab_icon_color</item>
+        <item name="textAllCaps">false</item>
+        <item name="fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="SpinnerDialogAnimation">
+        <item name="android:windowEnterAnimation">@anim/slide_up</item>
+        <item name="android:windowExitAnimation">@anim/slide_down</item>
+    </style>
+
+    <style name="ShapeAppearance.App.StartRounded" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSizeTopLeft">8dp</item>
+        <item name="cornerSizeBottomLeft">8dp</item>
+        <item name="cornerSizeTopRight">0dp</item>
+        <item name="cornerSizeBottomRight">0dp</item>
+    </style>
+
+    <style name="EditMessageDialogTheme" parent="Theme.MaterialComponents.Dialog">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowSoftInputMode">adjustResize</item>
+        <item name="android:windowAnimationStyle">@style/EditMessageDialogAnimation</item>
+        <item name="android:windowCloseOnTouchOutside">true</item>
+        <item name="android:windowElevation">0dp</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:backgroundDimAmount">0.5</item>
+        <item name="colorSurface">@color/card_background</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+    </style>
+
+    <style name="EditMessageDialogAnimation">
+        <item name="android:windowEnterAnimation">@anim/slide_up</item>
+        <item name="android:windowExitAnimation">@anim/slide_down</item>
+    </style>
+
+    <style name="ToolbarTitle">
+        <item name="android:textSize">20sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@android:color/white</item>
+    </style>
+
+    <!-- =============================================================== -->
+    <!-- COMPLETE THEMES - NIGHT MODE VARIANTS                          -->
+    <!-- =============================================================== -->
+
+    <!-- ELEGANT THEMES - NIGHT MODE -->
+
+    <!-- Slate Blue Theme - Night -->
+    <style name="Theme.Slate" parent="AppTheme">
+        <item name="colorPrimary">@color/slate_primary</item>
+        <item name="colorPrimaryVariant">@color/slate_primary_variant</item>
+        <item name="colorSecondary">@color/slate_secondary</item>
+        <item name="colorAccent">@color/slate_accent</item>
+        <item name="android:colorBackground">@color/slate_background</item>
+        <item name="colorSurface">@color/slate_surface</item>
+        <item name="colorError">@color/slate_error</item>
+        <item name="colorOnBackground">@color/slate_text_primary</item>
+        <item name="colorOnSurface">@color/slate_text_primary</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorOnSecondary">@android:color/white</item>
+        <item name="colorOnError">@android:color/white</item>
+        <item name="android:textColorPrimary">@color/slate_text_primary</item>
+        <item name="android:textColorSecondary">@color/slate_text_secondary</item>
+        <item name="android:statusBarColor">@color/slate_primary</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/slate_background</item>
+    </style>
+
+    <!-- Olive Garden Theme - Night -->
+    <style name="Theme.Olive" parent="AppTheme">
+        <item name="colorPrimary">@color/olive_primary</item>
+        <item name="colorPrimaryVariant">@color/olive_primary_variant</item>
+        <item name="colorSecondary">@color/olive_secondary</item>
+        <item name="colorAccent">@color/olive_accent</item>
+        <item name="android:colorBackground">@color/olive_background</item>
+        <item name="colorSurface">@color/olive_surface</item>
+        <item name="colorError">@color/olive_error</item>
+        <item name="colorOnBackground">@color/olive_text_primary</item>
+        <item name="colorOnSurface">@color/olive_text_primary</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorOnSecondary">@android:color/white</item>
+        <item name="colorOnError">@android:color/white</item>
+        <item name="android:textColorPrimary">@color/olive_text_primary</item>
+        <item name="android:textColorSecondary">@color/olive_text_secondary</item>
+        <item name="android:statusBarColor">@color/olive_primary</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/olive_background</item>
+    </style>
+
+    <!-- Burgundy Theme - Night -->
+    <style name="Theme.Burgundy" parent="AppTheme">
+        <item name="colorPrimary">@color/burgundy_primary</item>
+        <item name="colorPrimaryVariant">@color/burgundy_primary_variant</item>
+        <item name="colorSecondary">@color/burgundy_secondary</item>
+        <item name="colorAccent">@color/burgundy_accent</item>
+        <item name="android:colorBackground">@color/burgundy_background</item>
+        <item name="colorSurface">@color/burgundy_surface</item>
+        <item name="colorError">@color/burgundy_error</item>
+        <item name="colorOnBackground">@color/burgundy_text_primary</item>
+        <item name="colorOnSurface">@color/burgundy_text_primary</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorOnSecondary">@android:color/white</item>
+        <item name="colorOnError">@android:color/white</item>
+        <item name="android:textColorPrimary">@color/burgundy_text_primary</item>
+        <item name="android:textColorSecondary">@color/burgundy_text_secondary</item>
+        <item name="android:statusBarColor">@color/burgundy_primary</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/burgundy_background</item>
+    </style>
+
+    <!-- Rustic Copper Theme - Night -->
+    <style name="Theme.Copper" parent="AppTheme">
+        <item name="colorPrimary">@color/copper_primary</item>
+        <item name="colorPrimaryVariant">@color/copper_primary_variant</item>
+        <item name="colorSecondary">@color/copper_secondary</item>
+        <item name="colorAccent">@color/copper_accent</item>
+        <item name="android:colorBackground">@color/copper_background</item>
+        <item name="colorSurface">@color/copper_surface</item>
+        <item name="colorError">@color/copper_error</item>
+        <item name="colorOnBackground">@color/copper_text_primary</item>
+        <item name="colorOnSurface">@color/copper_text_primary</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorOnSecondary">@android:color/white</item>
+        <item name="colorOnError">@android:color/white</item>
+        <item name="android:textColorPrimary">@color/copper_text_primary</item>
+        <item name="android:textColorSecondary">@color/copper_text_secondary</item>
+        <item name="android:statusBarColor">@color/copper_primary</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/copper_background</item>
+    </style>
+
+    <!-- Carbon Theme - Night -->
+    <style name="Theme.Carbon" parent="AppTheme">
+        <item name="colorPrimary">@color/carbon_primary</item>
+        <item name="colorPrimaryVariant">@color/carbon_primary_variant</item>
+        <item name="colorSecondary">@color/carbon_secondary</item>
+        <item name="colorAccent">@color/carbon_accent</item>
+        <item name="android:colorBackground">@color/carbon_background</item>
+        <item name="colorSurface">@color/carbon_surface</item>
+        <item name="colorError">@color/carbon_error</item>
+        <item name="colorOnBackground">@color/carbon_text_primary</item>
+        <item name="colorOnSurface">@color/carbon_text_primary</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorOnSecondary">@android:color/white</item>
+        <item name="colorOnError">@android:color/white</item>
+        <item name="android:textColorPrimary">@color/carbon_text_primary</item>
+        <item name="android:textColorSecondary">@color/carbon_text_secondary</item>
+        <item name="android:statusBarColor">@color/carbon_primary</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/carbon_background</item>
+    </style>
+
+    <!-- Teal Harbor Theme - Night -->
+    <style name="Theme.Teal" parent="AppTheme">
+        <item name="colorPrimary">@color/teal_primary</item>
+        <item name="colorPrimaryVariant">@color/teal_primary_variant</item>
+        <item name="colorSecondary">@color/teal_secondary</item>
+        <item name="colorAccent">@color/teal_accent</item>
+        <item name="android:colorBackground">@color/teal_background</item>
+        <item name="colorSurface">@color/teal_surface</item>
+        <item name="colorError">@color/teal_error</item>
+        <item name="colorOnBackground">@color/teal_text_primary</item>
+        <item name="colorOnSurface">@color/teal_text_primary</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorOnSecondary">@android:color/white</item>
+        <item name="colorOnError">@android:color/white</item>
+        <item name="android:textColorPrimary">@color/teal_text_primary</item>
+        <item name="android:textColorSecondary">@color/teal_text_secondary</item>
+        <item name="android:statusBarColor">@color/teal_primary</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/teal_background</item>
+    </style>
+
+    <!-- Serenity Theme - Night -->
+    <style name="Theme.Serenity" parent="AppTheme">
+        <item name="colorPrimary">@color/serenity_primary</item>
+        <item name="colorPrimaryVariant">@color/serenity_primary_variant</item>
+        <item name="colorSecondary">@color/serenity_secondary</item>
+        <item name="colorAccent">@color/serenity_accent</item>
+        <item name="android:colorBackground">@color/serenity_background</item>
+        <item name="colorSurface">@color/serenity_surface</item>
+        <item name="colorError">@color/serenity_error</item>
+        <item name="colorOnBackground">@color/serenity_text_primary</item>
+        <item name="colorOnSurface">@color/serenity_text_primary</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorOnSecondary">@android:color/white</item>
+        <item name="colorOnError">@android:color/white</item>
+        <item name="android:textColorPrimary">@color/serenity_text_primary</item>
+        <item name="android:textColorSecondary">@color/serenity_text_secondary</item>
+        <item name="android:statusBarColor">@color/serenity_primary</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/serenity_background</item>
+    </style>
+
+    <!-- VIBRANT THEMES - NIGHT MODE -->
+
+    <!-- Neon Cyberpunk Theme - Night -->
+    <style name="Theme.Neon" parent="AppTheme">
+        <item name="colorPrimary">@color/neon_primary</item>
+        <item name="colorPrimaryVariant">@color/neon_primary_variant</item>
+        <item name="colorSecondary">@color/neon_secondary</item>
+        <item name="colorAccent">@color/neon_accent</item>
+        <item name="android:colorBackground">@color/neon_background</item>
+        <item name="colorSurface">@color/neon_surface</item>
+        <item name="colorError">@color/neon_error</item>
+        <item name="colorOnBackground">@color/neon_text_primary</item>
+        <item name="colorOnSurface">@color/neon_text_primary</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorOnSecondary">@android:color/white</item>
+        <item name="colorOnError">@android:color/white</item>
+        <item name="android:textColorPrimary">@color/neon_text_primary</item>
+        <item name="android:textColorSecondary">@color/neon_text_secondary</item>
+        <item name="android:statusBarColor">@color/neon_primary</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/neon_background</item>
+    </style>
+
+    <!-- Aurora Borealis Theme - Night -->
+    <style name="Theme.Aurora" parent="AppTheme">
+        <item name="colorPrimary">@color/aurora_primary</item>
+        <item name="colorPrimaryVariant">@color/aurora_primary_variant</item>
+        <item name="colorSecondary">@color/aurora_secondary</item>
+        <item name="colorAccent">@color/aurora_accent</item>
+        <item name="android:colorBackground">@color/aurora_background</item>
+        <item name="colorSurface">@color/aurora_surface</item>
+        <item name="colorError">@color/aurora_error</item>
+        <item name="colorOnBackground">@color/aurora_text_primary</item>
+        <item name="colorOnSurface">@color/aurora_text_primary</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorOnSecondary">@android:color/white</item>
+        <item name="colorOnError">@android:color/white</item>
+        <item name="android:textColorPrimary">@color/aurora_text_primary</item>
+        <item name="android:textColorSecondary">@color/aurora_text_secondary</item>
+        <item name="android:statusBarColor">@color/aurora_primary</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/aurora_background</item>
+    </style>
+
+    <!-- Royal Jewel Theme - Night -->
+    <style name="Theme.Royal" parent="AppTheme">
+        <item name="colorPrimary">@color/royal_primary</item>
+        <item name="colorPrimaryVariant">@color/royal_primary_variant</item>
+        <item name="colorSecondary">@color/royal_secondary</item>
+        <item name="colorAccent">@color/royal_accent</item>
+        <item name="android:colorBackground">@color/royal_background</item>
+        <item name="colorSurface">@color/royal_surface</item>
+        <item name="colorError">@color/royal_error</item>
+        <item name="colorOnBackground">@color/royal_text_primary</item>
+        <item name="colorOnSurface">@color/royal_text_primary</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorOnSecondary">@android:color/white</item>
+        <item name="colorOnError">@android:color/white</item>
+        <item name="android:textColorPrimary">@color/royal_text_primary</item>
+        <item name="android:textColorSecondary">@color/royal_text_secondary</item>
+        <item name="android:statusBarColor">@color/royal_primary</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/royal_background</item>
+    </style>
+
+    <!-- Tropical Paradise Theme - Night -->
+    <style name="Theme.Tropical" parent="AppTheme">
+        <item name="colorPrimary">@color/tropical_primary</item>
+        <item name="colorPrimaryVariant">@color/tropical_primary_variant</item>
+        <item name="colorSecondary">@color/tropical_secondary</item>
+        <item name="colorAccent">@color/tropical_accent</item>
+        <item name="android:colorBackground">@color/tropical_background</item>
+        <item name="colorSurface">@color/tropical_surface</item>
+        <item name="colorError">@color/tropical_error</item>
+        <item name="colorOnBackground">@color/tropical_text_primary</item>
+        <item name="colorOnSurface">@color/tropical_text_primary</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorOnSecondary">@android:color/white</item>
+        <item name="colorOnError">@android:color/white</item>
+        <item name="android:textColorPrimary">@color/tropical_text_primary</item>
+        <item name="android:textColorSecondary">@color/tropical_text_secondary</item>
+        <item name="android:statusBarColor">@color/tropical_primary</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/tropical_background</item>
+    </style>
+
+    <!-- Monochrome Punch Theme - Night -->
+    <style name="Theme.Monochrome" parent="AppTheme">
+        <item name="colorPrimary">@color/mono_primary</item>
+        <item name="colorPrimaryVariant">@color/mono_primary_variant</item>
+        <item name="colorSecondary">@color/mono_secondary</item>
+        <item name="colorAccent">@color/mono_accent</item>
+        <item name="android:colorBackground">@color/mono_background</item>
+        <item name="colorSurface">@color/mono_surface</item>
+        <item name="colorError">@color/mono_error</item>
+        <item name="colorOnBackground">@color/mono_text_primary</item>
+        <item name="colorOnSurface">@color/mono_text_primary</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorOnSecondary">@android:color/white</item>
+        <item name="colorOnError">@android:color/white</item>
+        <item name="android:textColorPrimary">@color/mono_text_primary</item>
+        <item name="android:textColorSecondary">@color/mono_text_secondary</item>
+        <item name="android:statusBarColor">@color/mono_primary</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/mono_background</item>
+    </style>
+
+    <!-- Cosmic Gradient Theme - Night -->
+    <style name="Theme.Cosmic" parent="AppTheme">
+        <item name="colorPrimary">@color/cosmic_primary</item>
+        <item name="colorPrimaryVariant">@color/cosmic_primary_variant</item>
+        <item name="colorSecondary">@color/cosmic_secondary</item>
+        <item name="colorAccent">@color/cosmic_accent</item>
+        <item name="android:colorBackground">@color/cosmic_background</item>
+        <item name="colorSurface">@color/cosmic_surface</item>
+        <item name="colorError">@color/cosmic_error</item>
+        <item name="colorOnBackground">@color/cosmic_text_primary</item>
+        <item name="colorOnSurface">@color/cosmic_text_primary</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorOnSecondary">@android:color/white</item>
+        <item name="colorOnError">@android:color/white</item>
+        <item name="android:textColorPrimary">@color/cosmic_text_primary</item>
+        <item name="android:textColorSecondary">@color/cosmic_text_secondary</item>
+        <item name="android:statusBarColor">@color/cosmic_primary</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/cosmic_background</item>
+    </style>
+
+    <!-- Vivid Gradient Theme - Night -->
+    <style name="Theme.Vivid" parent="AppTheme">
+        <item name="colorPrimary">@color/vivid_primary</item>
+        <item name="colorPrimaryVariant">@color/vivid_primary_variant</item>
+        <item name="colorSecondary">@color/vivid_secondary</item>
+        <item name="colorAccent">@color/vivid_accent</item>
+        <item name="android:colorBackground">@color/vivid_background</item>
+        <item name="colorSurface">@color/vivid_surface</item>
+        <item name="colorError">@color/vivid_error</item>
+        <item name="colorOnBackground">@color/vivid_text_primary</item>
+        <item name="colorOnSurface">@color/vivid_text_primary</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorOnSecondary">@android:color/white</item>
+        <item name="colorOnError">@android:color/white</item>
+        <item name="android:textColorPrimary">@color/vivid_text_primary</item>
+        <item name="android:textColorSecondary">@color/vivid_text_secondary</item>
+        <item name="android:statusBarColor">@color/vivid_primary</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/vivid_background</item>
+    </style>
+
+</resources>

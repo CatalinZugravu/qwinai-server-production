@@ -1,0 +1,13 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,9C10.5,9 8.91,9.54 7.5,10.5L6,9C7.91,7.5 10,6.5 12,6.5S16.09,7.5 18,9L16.5,10.5C15.09,9.54 13.5,9 12,9M15.2,13.2L14,12C13.35,12.65 12.7,13 12,13S10.65,12.65 10,12L8.8,13.2C9.7,14.1 10.8,14.5 12,14.5S14.3,14.1 15.2,13.2Z" />
+    <!-- Phone handset outline -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M6.62,10.79C6.57,10.84 6.54,10.9 6.5,10.96L9.04,13.5C9.1,13.46 9.16,13.43 9.21,13.38L10.38,12.21C11.19,12.69 12.19,12.69 13,12.21L14.17,13.38C14.22,13.43 14.28,13.46 14.34,13.5L16.88,10.96C16.84,10.9 16.81,10.84 16.76,10.79C15.67,9.7 14.38,9 13,9H11C9.62,9 8.33,9.7 7.24,10.79H6.62Z" />
+</vector>

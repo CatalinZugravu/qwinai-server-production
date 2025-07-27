@@ -1,0 +1,66 @@
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/mainDialogContainer"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/dialog_top_rounded_background"
+    android:elevation="8dp">
+
+    <!-- Drag handle at the top -->
+    <FrameLayout
+        android:id="@+id/dragHandleContainer"
+        android:layout_width="match_parent"
+        android:layout_height="24dp"
+        android:clickable="true"
+        android:focusable="true">
+
+        <View
+            android:id="@+id/dragHandle"
+            android:layout_width="40dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center"
+            android:background="@drawable/drag_handle_background"
+            android:layout_marginTop="10dp"
+            android:layout_marginBottom="10dp" />
+    </FrameLayout>
+
+    <!-- Enhanced TabLayout with bigger text and icons -->
+    <com.google.android.material.tabs.TabLayout
+        android:id="@+id/tabLayout"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:background="@drawable/tab_background"
+        app:tabIndicatorColor="@color/accent_color"
+        app:tabIndicatorHeight="4dp"
+        app:tabSelectedTextColor="@color/accent_color"
+        app:tabTextColor="#757575"
+        app:tabRippleColor="@color/ripple_color"
+        app:tabIconTint="@color/tab_icon_selector"
+        app:tabInlineLabel="true"
+        app:tabGravity="fill"
+        app:tabMode="fixed"
+        app:tabTextAppearance="@style/CustomTabTextAppearance" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#E0E0E0" />
+
+    <!-- Custom Page Indicator -->
+    <LinearLayout
+        android:id="@+id/pageIndicatorContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:paddingVertical="8dp"
+        android:background="@android:color/white" />
+
+    <androidx.viewpager2.widget.ViewPager2
+        android:id="@+id/viewPager"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+</LinearLayout>

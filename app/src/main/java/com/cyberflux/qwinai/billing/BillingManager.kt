@@ -1,0 +1,497 @@
+package com.cyberflux.qwinai.billing
+
+import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
+import android.os.Handler
+import android.os.Looper
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MediatorLiveData
+import com.cyberflux.qwinai.MyApp
+import com.cyberflux.qwinai.utils.PrefsManager
+import timber.log.Timber
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+
+/**
+ * BillingManager - Detects platform and delegates to appropriate billing provider
+ * Optimized version with faster initialization and improved caching
+ */
+class BillingManager private constructor(private val context: Context) {
+
+    companion object {
+        @SuppressLint("StaticFieldLeak")
+        private var instance: BillingManager? = null
+
+        // Flag to track if initialization has started
+        private var initializationStarted = false
+
+        fun getInstance(context: Context): BillingManager {
+            return instance ?: synchronized(this) {
+                instance ?: BillingManager(context.applicationContext).also {
+                    instance = it
+                    // Start pre-initialization immediately when instance is created
+                    it.preInitialize()
+                }
+            }
+        }
+    }
+
+    // Billing providers
+    private var googleProvider: GooglePlayBillingProvider? = null
+    private var huaweiProvider: HuaweiIapProvider? = null
+
+    // Active provider based on device
+    var activeProvider: BillingProvider? = null
+        private set
+
+    // Connection state
+    private var isConnected = false
+    private var isInitialized = false
+
+    // LiveData
+    private val _productDetails = MediatorLiveData<List<ProductInfo>>()
+    val productDetails: LiveData<List<ProductInfo>> = _productDetails
+
+    private val _subscriptionStatus = MediatorLiveData<Boolean>()
+
+    private val _errorMessage = MediatorLiveData<String>()
+    val errorMessage: LiveData<String> = _errorMessage
+
+    init {
+        // Only start immediate initialization if MyApp device detection is already complete
+        if (MyApp.isHuaweiDeviceCache != null) {
+            initializeBillingProviders()
+        }
+    }
+
+    /**
+     * Pre-initialize the billing manager without blocking
+     * This helps speed up the eventual user experience
+     */
+    private fun preInitialize() {
+        if (initializationStarted) return
+        initializationStarted = true
+
+        // Run this on a background thread to avoid blocking the UI
+        CoroutineScope(Dispatchers.Default).launch {
+            try {
+                Timber.d("Pre-initializing billing providers")
+
+                // First, determine if we're on a Huawei device - use non-blocking method
+                val isHuaweiDevice = MyApp.isHuaweiDeviceCache ?: MyApp.isHuaweiDeviceNonBlocking()
+
+                Timber.d("Pre-init detected device as ${if (isHuaweiDevice) "Huawei" else "Google"}")
+
+                // Initialize the appropriate provider based on quick device detection
+                if (isHuaweiDevice) {
+                    // Don't do HMS Core check here - that'll happen in full initialization
+                    Timber.d("Pre-initializing Huawei IAP Provider")
+                    if (huaweiProvider == null) {
+                        huaweiProvider = HuaweiIapProvider(context)
+                    }
+                } else {
+                    Timber.d("Pre-initializing Google Play Billing Provider")
+                    if (googleProvider == null) {
+                        googleProvider = GooglePlayBillingProvider(context)
+                    }
+                }
+
+                // We don't set activeProvider yet - that happens in full initialization
+
+            } catch (e: Exception) {
+                Timber.e(e, "Error in billing pre-initialization: ${e.message}")
+                // Errors here are not critical since this is just optimization
+            }
+        }
+    }
+
+    /**
+     * Process the purchase result from Activity
+     */
+    fun processPurchaseResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
+        Timber.d("Processing purchase result: requestCode=$requestCode, resultCode=$resultCode")
+
+        // Handle HMS IAP result for Huawei
+        if (activeProvider is HuaweiIapProvider && requestCode == HuaweiIapProvider.REQ_CODE_BUY) {
+            Timber.d("Delegating to HuaweiIapProvider")
+            val result = HuaweiIapProvider.processPurchaseResult(requestCode, data, context)
+            Timber.d("HuaweiIapProvider.processPurchaseResult returned: $result")
+            return result
+        }
+
+        // For Google billing, no processing needed here as it's handled through the BillingClient listener
+        Timber.d("Google Play doesn't need explicit result processing")
+        return false
+    }
+
+    /**
+     * Refresh UI based on subscription status
+     * Call this after processing a purchase result
+     */
+    fun refreshSubscriptionStatus() {
+        // First validate the current status
+        validateSubscriptionStatus()
+
+        // Then update the LiveData
+        _subscriptionStatus.postValue(PrefsManager.isSubscribed(context))
+
+        Timber.d("Subscription status refreshed: ${PrefsManager.isSubscribed(context)}")
+    }
+
+    /**
+     * Initialize the appropriate billing provider based on device with improved detection
+     */
+    private fun initializeBillingProviders() {
+        if (isInitialized) {
+            Timber.d("Billing providers already initialized")
+            return
+        }
+
+        try {
+            // Use cached device detection result if available for fastest path
+            val isHuaweiDevice: Boolean
+            val hmsAvailable: Boolean
+
+            // Use the cached value if available (should be set by MyApp initialization)
+            if (MyApp.isHuaweiDeviceCache != null) {
+                isHuaweiDevice = MyApp.isHuaweiDeviceCache!!
+                Timber.d("Using cached device detection: isHuaweiDevice=$isHuaweiDevice")
+            } else {
+                // Fallback to direct check if cache not available
+                isHuaweiDevice = MyApp.isHuaweiDevice()
+                Timber.d("Using direct device detection: isHuaweiDevice=$isHuaweiDevice")
+            }
+
+            // For Huawei devices, verify HMS Core availability separately
+            if (isHuaweiDevice) {
+                hmsAvailable = verifyHMSCoreAvailability()
+                Timber.d("HMS Core availability verified: $hmsAvailable")
+            } else {
+                hmsAvailable = false
+            }
+
+            Timber.d("Final billing provider selection: Device=${if (isHuaweiDevice) "Huawei" else "Google"}, HMS=$hmsAvailable")
+
+            if (isHuaweiDevice && hmsAvailable) {
+                // Initialize Huawei IAP only if device is Huawei AND HMS Core is available
+                Timber.d("Initializing Huawei IAP Provider")
+
+                // Reuse pre-initialized provider if available
+                if (huaweiProvider == null) {
+                    huaweiProvider = HuaweiIapProvider(context)
+                }
+                activeProvider = huaweiProvider
+
+                // Set up LiveData sources for Huawei
+                setupHuaweiLiveData()
+            } else {
+                // Initialize Google Play Billing for non-Huawei devices or when HMS Core is missing
+                val reason = if (!isHuaweiDevice) "non-Huawei device" else "HMS Core not available"
+                Timber.d("Initializing Google Play Billing Provider ($reason)")
+
+                // Reuse pre-initialized provider if available
+                if (googleProvider == null) {
+                    googleProvider = GooglePlayBillingProvider(context)
+                }
+                activeProvider = googleProvider
+
+                // Set up LiveData sources for Google
+                setupGoogleLiveData()
+            }
+
+            isInitialized = true
+
+        } catch (e: Exception) {
+            Timber.e(e, "Error initializing billing providers: ${e.message}")
+
+            // If there's an error with the detected provider, use Google as fallback
+            if (activeProvider == null) {
+                Timber.d("Error detected, using Google billing as fallback")
+                try {
+                    googleProvider = GooglePlayBillingProvider(context)
+                    activeProvider = googleProvider
+                    setupGoogleLiveData()
+                    isInitialized = true
+                } catch (fallbackException: Exception) {
+                    Timber.e(fallbackException, "Google fallback also failed")
+
+                    // If Google also fails, try to create mockup data
+                    Timber.d("Both providers failed, using mockup data")
+                    provideMockupProducts()
+                }
+            }
+        }
+    }
+
+    /**
+     * Verify HMS Core availability for Huawei devices
+     */
+    private fun verifyHMSCoreAvailability(): Boolean {
+        return try {
+            // Check if HMS Core classes are available
+            Class.forName("com.huawei.hms.iap.Iap")
+            Class.forName("com.huawei.hms.api.HuaweiApiAvailability")
+            
+            // Check if HMS Core service is available
+            val intent = android.content.Intent("com.huawei.hms.core.aidlservice")
+            intent.setPackage("com.huawei.hwid")
+            val resolveInfo = context.packageManager.resolveService(intent, 0)
+            
+            val available = resolveInfo != null
+            Timber.d("HMS Core verification: classes available, service available=$available")
+            available
+        } catch (e: Exception) {
+            Timber.w(e, "HMS Core verification failed: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * Set up LiveData observers for Huawei provider
+     */
+    private fun setupHuaweiLiveData() {
+        huaweiProvider?.let { provider ->
+            _productDetails.addSource(provider.productDetails) { products ->
+                _productDetails.value = products
+                Timber.d("Updated product details from Huawei: ${products.size} products")
+            }
+
+            _subscriptionStatus.addSource(provider.subscriptionStatus) { status ->
+                _subscriptionStatus.value = status
+                Timber.d("Updated subscription status from Huawei: $status")
+            }
+
+            _errorMessage.addSource(provider.errorMessage) { message ->
+                _errorMessage.value = message
+                Timber.d("Received error message from Huawei: $message")
+            }
+        }
+    }
+
+    /**
+     * Set up LiveData observers for Google provider
+     */
+    private fun setupGoogleLiveData() {
+        googleProvider?.let { provider ->
+            _productDetails.addSource(provider.productDetails) { products ->
+                _productDetails.value = products
+                Timber.d("Updated product details from Google: ${products.size} products")
+            }
+
+            _subscriptionStatus.addSource(provider.subscriptionStatus) { status ->
+                _subscriptionStatus.value = status
+                Timber.d("Updated subscription status from Google: $status")
+            }
+
+            _errorMessage.addSource(provider.errorMessage) { message ->
+                _errorMessage.value = message
+                Timber.d("Received error message from Google: $message")
+            }
+        }
+    }
+
+    /**
+     * Connect to billing service with callback support and improved retry
+     */
+    fun connectToPlayBilling(callback: (Boolean) -> Unit = {}) {
+        if (isConnected) {
+            Timber.d("Already connected to billing service")
+            callback(true)
+            return
+        }
+
+        Timber.d("Connecting to billing service")
+
+        // Ensure billing providers are initialized
+        if (!isInitialized) {
+            initializeBillingProviders()
+        }
+
+        // If no valid provider available, use mockup for development
+        if (activeProvider == null) {
+            Timber.w("No valid billing provider found, using mockup data")
+            isConnected = true
+            // Use mockup product details for testing
+            provideMockupProducts()
+            callback(true)
+            return
+        }
+
+        // Initialize the provider
+        activeProvider?.initialize()
+
+        // Assume connection successful for now, provider will handle actual connection
+        isConnected = true
+        callback(true)
+
+        // Double-check connection status after a delay
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (activeProvider is HuaweiIapProvider) {
+                // For Huawei, query products again to ensure connection is working
+                activeProvider?.queryProducts()
+            }
+        }, 1000) // Reduced from 2000ms to 1000ms for faster response
+    }
+
+    /**
+     * Provide mockup products for testing
+     */
+    private fun provideMockupProducts() {
+        val mockProducts = listOf(
+            ProductInfo(
+                productId = BillingProvider.SUBSCRIPTION_WEEKLY,
+                title = "Weekly Premium",
+                description = "7 days of premium features",
+                price = "4.99 USD",
+                rawPriceInMicros = 4990000,
+                currencyCode = "USD"
+            ),
+            ProductInfo(
+                productId = BillingProvider.SUBSCRIPTION_MONTHLY,
+                title = "Monthly Premium",
+                description = "30 days of premium features",
+                price = "9.99 USD",
+                rawPriceInMicros = 9990000,
+                currencyCode = "USD"
+            )
+        )
+
+        // Update product details
+        Handler(Looper.getMainLooper()).postDelayed({
+            _productDetails.postValue(mockProducts)
+        }, 500) // Reduced delay for faster response
+    }
+
+    /**
+     * Query available subscription products
+     */
+    fun queryProducts() {
+        if (!isConnected) {
+            connectToPlayBilling { success ->
+                if (success) {
+                    activeProvider?.queryProducts()
+                }
+            }
+            return
+        }
+
+        activeProvider?.queryProducts()
+    }
+
+    /**
+     * Launch subscription purchase flow with improved error handling and connectivity
+     */
+    fun launchBillingFlow(activity: Activity, productId: String) {
+        Timber.d("Attempting to launch billing flow for $productId")
+
+        // Check activity state
+        if (activity.isFinishing || activity.isDestroyed) {
+            _errorMessage.value = "Cannot start purchase - activity is no longer valid"
+            return
+        }
+
+        // Check if we need to reconnect first
+        if (!isConnected) {
+            _errorMessage.value = "Connecting to billing service..."
+            connectToPlayBilling { success ->
+                if (success) {
+                    // If we just connected successfully, delay slightly before continuing
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        launchBillingFlow(activity, productId)
+                    }, 500) // Reduced from 1000ms to 500ms
+                } else {
+                    _errorMessage.value = "Could not connect to billing service. Please try again later."
+                }
+            }
+            return
+        }
+
+        // Extra logging before launching billing flow
+        Timber.d("Preparing to launch billing flow")
+        Timber.d("Active provider: ${activeProvider?.javaClass?.simpleName}")
+        Timber.d("Product ID: $productId")
+
+        try {
+            activeProvider?.launchBillingFlow(activity, productId)
+            Timber.d("Billing flow launched successfully")
+        } catch (e: Exception) {
+            Timber.e(e, "Error launching billing flow: ${e.message}")
+            _errorMessage.value = "Error launching purchase: ${e.message}"
+
+            // Try Google as fallback if Huawei fails
+            if (activeProvider is HuaweiIapProvider) {
+                Timber.d("Huawei billing failed, trying Google as fallback")
+                try {
+                    // Initialize Google if needed
+                    if (googleProvider == null) {
+                        googleProvider = GooglePlayBillingProvider(context)
+                    }
+                    // Use Google directly this time
+                    googleProvider?.launchBillingFlow(activity, productId)
+                } catch (fallbackError: Exception) {
+                    Timber.e(fallbackError, "Google fallback also failed")
+                    _errorMessage.value = "Could not process purchase. Please try again later."
+                }
+            }
+        }
+    }
+
+    /**
+     * Check and restore existing subscriptions on app startup
+     */
+    fun restoreSubscriptions() {
+        Timber.d("Attempting to restore subscriptions")
+
+        // Ensure providers are initialized
+        if (!isInitialized) {
+            initializeBillingProviders()
+        }
+
+        if (!isConnected) {
+            connectToPlayBilling { success ->
+                if (success) {
+                    activeProvider?.checkSubscriptionStatus()
+                    Timber.d("Subscription restoration started after connection")
+                }
+            }
+            return
+        }
+
+        activeProvider?.checkSubscriptionStatus()
+        Timber.d("Subscription restoration check initiated")
+    }
+
+    /**
+     * Validate subscription status against local data
+     */
+    fun validateSubscriptionStatus() {
+        val isCurrentlySubscribed = PrefsManager.isSubscribed(context)
+        val subscriptionEndTime = PrefsManager.getSubscriptionEndTime(context)
+
+        // Check if subscription has expired
+        if (isCurrentlySubscribed && subscriptionEndTime > 0 &&
+            subscriptionEndTime < System.currentTimeMillis()) {
+
+            // Subscription has expired, update status
+            PrefsManager.setSubscribed(context, false, 0)
+            Timber.d("Expired subscription detected and reset")
+        }
+    }
+
+    /**
+     * Release resources
+     */
+    fun release() {
+        googleProvider?.release()
+        huaweiProvider?.release()
+
+        // Clear instance
+        instance = null
+        isInitialized = false
+        isConnected = false
+        initializationStarted = false
+    }
+}

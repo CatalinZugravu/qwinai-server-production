@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Main document shape -->
+    <path
+        android:fillColor="#607D8B"
+        android:pathData="M14,2L6,2c-1.1,0 -2,0.9 -2,2v16c0,1.1 0.9,2 2,2h12c1.1,0 2,-0.9 2,-2L20,8l-6,-6z" />
+
+    <!-- Folded corner effect (darker shade) -->
+    <path
+        android:fillColor="#455A64"
+        android:pathData="M14,2v6h6L14,2z" />
+
+    <!-- Document lines -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M16,14H8v-1h8V14zM16,17H8v-1h8V17zM13,11H8v-1h5V11z" />
+</vector>

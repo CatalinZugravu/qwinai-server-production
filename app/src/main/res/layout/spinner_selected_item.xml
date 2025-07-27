@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/spinner_selected_background"
+    android:id="@+id/selectedItemBackground"
+    android:paddingVertical="6dp"
+    android:paddingHorizontal="12dp"
+    android:minHeight="32dp">
+
+    <!-- Model Icon - Smaller size -->
+    <ImageView
+        android:id="@+id/ivModelIcon"
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:padding="1dp"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent" />
+
+    <!-- Model Name - Optimized for smaller height -->
+    <TextView
+        android:id="@+id/tvModelName"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="6dp"
+        android:textColor="@color/text_primary"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:gravity="center_vertical"
+        app:layout_constraintStart_toEndOf="@id/ivModelIcon"
+        app:layout_constraintEnd_toStartOf="@id/tvProBadge"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent" />
+
+    <!-- PRO Badge - Smaller -->
+    <TextView
+        android:id="@+id/tvProBadge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/premium_badge_gradient"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
+        android:paddingTop="1dp"
+        android:paddingBottom="1dp"
+        android:text="PRO"
+        android:textColor="@android:color/white"
+        android:textSize="8sp"
+        android:textStyle="bold"
+        android:layout_marginEnd="6dp"
+        android:visibility="gone"
+        app:layout_constraintEnd_toStartOf="@id/ivDropdownArrow"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent" />
+
+    <!-- Warning Indicator for Translation Mode - Smaller -->
+    <ImageView
+        android:id="@+id/ivWarningIndicator"
+        android:layout_width="14dp"
+        android:layout_height="14dp"
+        android:src="@drawable/ic_warning"
+        android:visibility="gone"
+        android:layout_marginEnd="6dp"
+        app:layout_constraintEnd_toStartOf="@id/ivDropdownArrow"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:tint="#F44336" />
+
+    <!-- Checkmark (hidden in main view) -->
+    <ImageView
+        android:id="@+id/ivCheckmark"
+        android:layout_width="14dp"
+        android:layout_height="14dp"
+        android:src="@drawable/ic_checkmark_circle"
+        android:visibility="gone"
+        app:layout_constraintEnd_toStartOf="@id/ivDropdownArrow"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent" />
+
+    <!-- Dropdown Arrow - Smaller -->
+    <ImageView
+        android:id="@+id/ivDropdownArrow"
+        android:layout_width="14dp"
+        android:layout_height="14dp"
+        android:src="@drawable/ic_dropdown_arrow"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:tint="@color/text_secondary" />
+</androidx.constraintlayout.widget.ConstraintLayout>

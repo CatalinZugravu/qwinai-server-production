@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="utf-8"?>
+    <!-- res/layout/dialog_credit_breakdown.xml -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <!-- Title -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="💳 Credit Breakdown"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textColor="@color/black"
+            android:gravity="center"
+            android:layout_marginBottom="16dp"/>
+
+        <!-- Current Selection Cost -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="4dp"
+            app:cardBackgroundColor="@color/colorAccent">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Current Selection"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/white"
+                    android:layout_marginBottom="8dp"/>
+
+                <TextView
+                    android:id="@+id/tvCurrentCost"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Total: 15 credits"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/white"/>
+
+                <TextView
+                    android:id="@+id/tvCurrentBreakdown"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Base: 10 • Style: 1.2x • Images: 2x"
+                    android:textSize="12sp"
+                    android:textColor="@color/white"
+                    android:alpha="0.9"
+                    android:layout_marginTop="4dp"/>
+
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- Model Costs Table -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🤖 Model Base Costs"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:textColor="@color/black"
+            android:layout_marginBottom="8dp"/>
+
+        <!-- Text-to-Image Models -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Text-to-Image Models:"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="@color/black"
+            android:layout_marginBottom="4dp"/>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="• Flux Schnell: 3 credits (⚡ Fast)\n• Stable Diffusion v3.5: 5 credits\n• SeedDream 3.0: 6 credits\n• Flux Realism: 7 credits\n• DALL-E 3: 8 credits (🌟 Premium)\n• Recraft v3: 10 credits (🎨 Most Styles)"
+            android:textSize="12sp"
+            android:textColor="@color/black"
+            android:layout_marginBottom="12dp"
+            android:lineSpacingMultiplier="1.2"/>
+
+        <!-- Image-to-Image Models -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Image-to-Image Models:"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="@color/black"
+            android:layout_marginBottom="4dp"/>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="• Flux Dev I2I: 9 credits\n• Flux Kontext Max I2I: 12 credits (🖼️ Multi-Image)\n• Flux Kontext Pro I2I: 15 credits (🔥 Ultimate)"
+            android:textSize="12sp"
+            android:textColor="@color/black"
+            android:layout_marginBottom="16dp"
+            android:lineSpacingMultiplier="1.2"/>
+
+        <!-- Multipliers -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="📊 Cost Multipliers"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:textColor="@color/black"
+            android:layout_marginBottom="8dp"/>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Quality Multipliers:\n• Standard: 1.0x\n• HD: 1.5x (DALL-E 3 only)\n\nNumber of Images:\n• Each additional image multiplies cost\n• Example: 3 images = 3x cost\n\nRecraft v3 Style Multipliers:\n• Basic styles: 1.0x - 1.2x\n• Advanced styles: 1.3x - 1.6x\n• Custom colors: +1.2x"
+            android:textSize="12sp"
+            android:textColor="@color/black"
+            android:layout_marginBottom="16dp"
+            android:lineSpacingMultiplier="1.2"/>
+
+        <!-- Credit Earning -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="4dp"
+            app:cardBackgroundColor="@color/colorPrimary">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="📺 Earn Free Credits"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/white"
+                    android:layout_marginBottom="8dp"/>
+
+                <TextView
+                    android:id="@+id/tvAdInfo"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Watch ads to earn 10 credits each\nUp to 5 ads per day (50 credits max)\nNext ad available: Now"
+                    android:textSize="12sp"
+                    android:textColor="@color/white"
+                    android:lineSpacingMultiplier="1.2"/>
+
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- Pro Benefits -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="4dp"
+            app:cardBackgroundColor="@color/black">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="✨ Pro Benefits"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/white"
+                    android:layout_marginBottom="8dp"/>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="• Unlimited image generation\n• No ads or waiting\n• Priority support\n• Early access to new models"
+                    android:textSize="12sp"
+                    android:textColor="@color/white"
+                    android:lineSpacingMultiplier="1.2"/>
+
+                <androidx.appcompat.widget.AppCompatButton
+                    android:id="@+id/btnUpgradeToPro"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="Upgrade to Pro"
+                    android:textAllCaps="false"
+                    android:textColor="@color/black"
+                    android:background="@color/white"
+                    android:padding="12dp"/>
+
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+    </LinearLayout>
+</ScrollView>

@@ -1,0 +1,583 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- =============================================================== -->
+    <!-- BASE SYSTEM COLORS - DARK MODE                                 -->
+    <!-- =============================================================== -->
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+    <color name="transparent">#00000000</color>
+
+    <!-- =============================================================== -->
+    <!-- MATERIAL DESIGN PRIMARY THEME COLORS - DARK MODE              -->
+    <!-- =============================================================== -->
+    <color name="colorPrimary">#818CF8</color>
+    <color name="colorPrimaryDark">#4F46E5</color>
+    <color name="colorPrimaryVariant">#6366F1</color>
+    <color name="colorAccent">#F59E0B</color>
+    <color name="colorSecondary">#A78BFA</color>
+    <color name="colorSecondaryVariant">#7C3AED</color>
+    <color name="colorOnPrimary">#FFFFFF</color>
+    <color name="colorOnSecondary">#FFFFFF</color>
+
+    <!-- =============================================================== -->
+    <!-- BACKGROUND COLORS - DARK MODE                                  -->
+    <!-- =============================================================== -->
+    <color name="background">#121212</color>
+    <color name="background_light">#1F1F1F</color>
+    <color name="backgroundColorSecondary">#1E1E1E</color>
+    <color name="surface">#1F1F1F</color>
+    <color name="surface_elevated">#2A2A2A</color>
+    <color name="surface_container">#1E1E1E</color>
+    <color name="surface_variant">#2A2A2A</color>
+    <color name="primary_surface">#1E3A8A</color>
+    <color name="colorOnBackground">#E6E7EB</color>
+    <color name="colorOnSurface">#E6E7EB</color>
+
+    <!-- =============================================================== -->
+    <!-- TEXT COLORS - DARK MODE                                        -->
+    <!-- =============================================================== -->
+    <color name="text_primary">#E6E7EB</color>
+    <color name="text_secondary">#9CA3AF</color>
+    <color name="text_tertiary">#6B7280</color>
+    <color name="text_disabled">#6B7280</color>
+    <color name="hint_color">#9CA3AF</color>
+
+    <!-- =============================================================== -->
+    <!-- HEADER AND TOOLBAR COLORS - DARK MODE                         -->
+    <!-- =============================================================== -->
+    <color name="header_background">@color/surface</color>
+    <color name="toolbar_background">@color/colorPrimary</color>
+    <color name="toolbar_text">#FFFFFF</color>
+    <color name="status_bar_color">@color/background</color>
+
+    <!-- =============================================================== -->
+    <!-- TAB COLORS - DARK MODE                                         -->
+    <!-- =============================================================== -->
+    <color name="tab_background">@color/surface</color>
+    <color name="tab_icon_color">#9CA3AF</color>
+    <color name="tab_ripple_color">#1A6366F1</color>
+    <color name="tab_selected_color">@color/colorPrimary</color>
+    <color name="tab_unselected_color">@color/text_secondary</color>
+
+    <!-- =============================================================== -->
+    <!-- CARD COLORS - DARK MODE                                        -->
+    <!-- =============================================================== -->
+    <color name="card_background">#1F1F1F</color>
+    <color name="card_background_dark">#1F1F1F</color>
+    <color name="card_stroke">#383838</color>
+    <color name="card_greeting_background">#1F1F1F</color>
+    <color name="card_model_background">#252525</color>
+    <color name="card_tip_background">#252525</color>
+    <color name="card_weather_background">#1F1F1F</color>
+    <color name="card_whats_new_background">#2D2A1A</color>
+    <color name="card_upgrade_background">#1A2333</color>
+    <color name="disabled_card_background">#1A1A1A</color>
+
+    <!-- =============================================================== -->
+    <!-- BUTTON COLORS - DARK MODE                                      -->
+    <!-- =============================================================== -->
+    <color name="button_primary_background">@color/colorPrimary</color>
+    <color name="button_secondary_background">#374151</color>
+    <color name="button_danger_background">#DC2626</color>
+    <color name="button_success_background">#059669</color>
+    <color name="button_enabled_bg">#2A2A2A</color>
+    <color name="button_disabled_bg">#1A1A1A</color>
+    <color name="button_text_enabled">#E6E7EB</color>
+    <color name="button_text_disabled">#6B7280</color>
+    <color name="button_primary">#FF6B6B</color>
+    <color name="button_danger">#FF4757</color>
+    <color name="button_secondary">#2A2A2A</color>
+
+    <!-- =============================================================== -->
+    <!-- INPUT AND FORM COLORS - DARK MODE                              -->
+    <!-- =============================================================== -->
+    <color name="input_background">#2A2A2A</color>
+    <color name="input_background_light">#2A2A2A</color>
+    <color name="input_border">#4B5563</color>
+    <color name="input_focused_border">@color/colorPrimary</color>
+
+    <!-- =============================================================== -->
+    <!-- MESSAGE AND CHAT COLORS - DARK MODE                            -->
+    <!-- =============================================================== -->
+    <color name="ai_message_background">#1A2938</color>
+    <color name="message_ai_background">#1F1F1F</color>
+    <color name="message_user_background">#1E3A8A</color>
+    <color name="message_border">#374151</color>
+
+    <!-- =============================================================== -->
+    <!-- SELECTION AND INTERACTION COLORS - DARK MODE                  -->
+    <!-- =============================================================== -->
+    <color name="selected_item_background">#283040</color>
+    <color name="selected_option_background">#283040</color>
+    <color name="ripple_color">#33FFFFFF</color>
+    <color name="selection_background">#1E40AF</color>
+    <color name="focus_indicator">@color/colorPrimary</color>
+
+    <!-- =============================================================== -->
+    <!-- STATUS AND INDICATOR COLORS - DARK MODE                        -->
+    <!-- =============================================================== -->
+    <color name="status_active">#4ADE80</color>
+    <color name="status_online">#10B981</color>
+    <color name="status_away">#F59E0B</color>
+    <color name="status_busy">#EF4444</color>
+    <color name="status_offline">#9CA3AF</color>
+    <color name="status_background">#2A2A2A</color>
+    <color name="status_text_color">#9CA3AF</color>
+
+    <!-- =============================================================== -->
+    <!-- SPINNER AND DROPDOWN COLORS - DARK MODE                       -->
+    <!-- =============================================================== -->
+    <color name="spinner_background">@color/surface</color>
+    <color name="spinner_dropdown_background">@color/surface</color>
+    <color name="spinner_selected_background">@color/selected_item_background</color>
+    <color name="spinner_item_text">@color/text_primary</color>
+    <color name="spinner_disabled_text">@color/text_disabled</color>
+
+    <!-- =============================================================== -->
+    <!-- THINKING AND REASONING COLORS - DARK MODE                     -->
+    <!-- =============================================================== -->
+    <color name="thinking_color">#9C27B0</color>
+    <color name="thinking_text_color">#7B1FA2</color>
+    <color name="thinking_background">#F3E5F5</color>
+    <color name="thinking_text_muted">#9CA3AF</color>
+    <color name="thinking_text_light">#D1D5DB</color>
+    <color name="thinking_background_ai">#2A2A2A</color>
+    <color name="reasoning_color">#FF6F00</color>
+    <color name="reasoning_text_color">#E65100</color>
+    <color name="reasoning_button_color">#6366F1</color>
+    <color name="web_search_button_color">#2563EB</color>
+    <color name="claude_thinking_color">#CD7F32</color>
+    <color name="built_in_thinking_color">#FF6B35</color>
+
+    <!-- Thinking Status Indicators - Dark Mode -->
+    <color name="thinking_indicator_claude">#4A6FDC</color>
+    <color name="thinking_indicator_gpt">#10A37F</color>
+    <color name="thinking_indicator_default">#888888</color>
+    <color name="web_search_indicator">#FF9800</color>
+
+    <!-- =============================================================== -->
+    <!-- ORB AND ANIMATION COLORS - DARK MODE                           -->
+    <!-- =============================================================== -->
+    <color name="orb_idle">#667eea</color>
+    <color name="orb_listening">#00d4ff</color>
+    <color name="orb_speaking">#4ade80</color>
+    <color name="orb_processing">#f59e0b</color>
+
+    <!-- Status Indicator Colors - Dark Mode -->
+    <color name="status_idle">#6B7280</color>
+    <color name="status_listening">#00d4ff</color>
+    <color name="status_speaking">#4ade80</color>
+    <color name="status_processing">#f59e0b</color>
+
+    <!-- =============================================================== -->
+    <!-- ERROR AND WARNING COLORS - DARK MODE                           -->
+    <!-- =============================================================== -->
+    <color name="error">#FF5252</color>
+    <color name="errorColor">#F87171</color>
+    <color name="error_color">#F87171</color>
+    <color name="warning_color">#FCD34D</color>
+    <color name="success_color">#4ADE80</color>
+    <color name="info_color">#4DA6FF</color>
+    <color name="colorOnError">#000000</color>
+
+    <!-- =============================================================== -->
+    <!-- NOTIFICATION AND ALERT COLORS - DARK MODE                     -->
+    <!-- =============================================================== -->
+    <color name="notification_color">#F87171</color>
+    <color name="notification_dot">@color/colorAccent</color>
+    <color name="enhanced_notification_dot">@color/colorPrimary</color>
+
+    <!-- =============================================================== -->
+    <!-- LINK AND INTERACTIVE COLORS - DARK MODE                       -->
+    <!-- =============================================================== -->
+    <color name="link_color">#4DA6FF</color>
+    <color name="blue">#4DA6FF</color>
+    <color name="accent_color">#4DA6FF</color>
+    <color name="source_url_color">#4DA6FF</color>
+
+    <!-- =============================================================== -->
+    <!-- DOCUMENT AND FILE COLORS - DARK MODE                          -->
+    <!-- =============================================================== -->
+    <color name="document_background">#1F1F1F</color>
+    <color name="document_stroke">#383838</color>
+    <color name="source_card_background">#2A2A2A</color>
+    <color name="source_card_stroke">#383838</color>
+    <color name="source_domain_color">#9CA3AF</color>
+
+    <!-- =============================================================== -->
+    <!-- PRIVATE MODE COLORS - DARK MODE                               -->
+    <!-- =============================================================== -->
+    <color name="private_mode_active">#9D7BE8</color>
+    <color name="private_mode_hint">#B69BED</color>
+    <color name="private_mode_input_background">#1A1632</color>
+    <color name="private_mode_background">#2A1F3D</color>
+    <color name="private_mode_indicator">#A78BFA</color>
+
+    <!-- =============================================================== -->
+    <!-- DIALOG AND OVERLAY COLORS - DARK MODE                         -->
+    <!-- =============================================================== -->
+    <color name="dialog_background">#1F2937</color>
+    <color name="dialog_overlay">#80000000</color>
+    <color name="overlay_color">#80000000</color>
+    <color name="shadow_color">#40000000</color>
+
+    <!-- =============================================================== -->
+    <!-- UTILITY AND MISC COLORS - DARK MODE                           -->
+    <!-- =============================================================== -->
+    <color name="divider">#383838</color>
+    <color name="divider_color">@color/divider</color>
+    <color name="icon_tint">#9CA3AF</color>
+    <color name="separator_light">#374151</color>
+    <color name="transparent_overlay_light">#33FFFFFF</color>
+
+    <!-- =============================================================== -->
+    <!-- ACCENT AND FEATURE COLORS - DARK MODE                         -->
+    <!-- =============================================================== -->
+    <color name="accent_primary">@color/colorPrimary</color>
+    <color name="accent_gold">@color/colorAccent</color>
+    <color name="accent_gold_light">#F0B050</color>
+    <color name="accent_blue">#667eea</color>
+    <color name="accent_green">#4ade80</color>
+    <color name="accent_orange">#f59e0b</color>
+    <color name="accent_red">#ff4757</color>
+
+    <!-- =============================================================== -->
+    <!-- FEATURE CARD COLORS - DARK MODE                               -->
+    <!-- =============================================================== -->
+    <color name="feature_web_search">#2C384A</color>
+    <color name="feature_image_upload">#3D2E12</color>
+    <color name="feature_ask_by_link">#1A3D28</color>
+    <color name="feature_prompt_day">#3D1A1A</color>
+    <color name="feature_image_gen">#301934</color>
+    <color name="feature_ocr">#0E3A42</color>
+    <color name="feature_translator">#2E211C</color>
+    <color name="feature_file_upload">#1A3D28</color>
+
+    <!-- =============================================================== -->
+    <!-- GRADIENT COLORS - DARK MODE                                    -->
+    <!-- =============================================================== -->
+    <color name="gradient_start">#1E1E1E</color>
+    <color name="gradient_end">#121212</color>
+    <color name="gradient_center">#764ba2</color>
+    <color name="gradient_start_claude">#1E1E2E</color>
+    <color name="gradient_end_claude">#161626</color>
+
+    <!-- =============================================================== -->
+    <!-- CODE SYNTAX HIGHLIGHTING COLORS - DARK MODE                  -->
+    <!-- =============================================================== -->
+    <color name="code_background_light">#1F2937</color>
+    <color name="code_header_background_light">#374151</color>
+    <color name="code_line_number_light">#9CA3AF</color>
+    <color name="code_text">#E6E7EB</color>
+    <color name="code_text_light">#F3F4F6</color>
+    <color name="code_keyword">#FF7849</color>
+    <color name="code_function">#4DA6FF</color>
+    <color name="code_class">#BD66FF</color>
+    <color name="code_property">#33D975</color>
+    <color name="code_annotation">#FF5A6A</color>
+    <color name="code_generic">#9D7BE8</color>
+    <color name="code_builtin">#33D9E8</color>
+    <color name="code_string">#33D975</color>
+    <color name="code_number">#FFD633</color>
+    <color name="code_comment">#A0A0A0</color>
+    <color name="code_operator">#FF8521</color>
+    <color name="code_punctuation">#B0B0B0</color>
+    <color name="code_tag">#E066FF</color>
+    <color name="code_attribute">#33C2FF</color>
+    <color name="code_doctype">#C2C2C2</color>
+    <color name="code_selector">#FF6B6B</color>
+    <color name="code_value">#5A8CFF</color>
+    <color name="code_color">#FF6B9E</color>
+    <color name="code_important">#FF5A5A</color>
+    <color name="code_at_rule">#865AFF</color>
+    <color name="code_self">#FF5A8C</color>
+    <color name="code_decorator">#FF5A8C</color>
+    <color name="code_linq">#FF5A8C</color>
+    <color name="code_preprocessor">#FF9E33</color>
+    <color name="code_type">#5A7CFF</color>
+    <color name="code_interpolation">#FFB54D</color>
+
+    <!-- =============================================================== -->
+    <!-- BEAUTIFUL PROMPT CHIP COLORS - DARK MODE ADAPTED             -->
+    <!-- =============================================================== -->
+    <color name="chip_color_1">#5D4037</color> <!-- Darkened Orange -->
+    <color name="chip_color_2">#2E7D32</color> <!-- Darkened Green -->
+    <color name="chip_color_3">#1976D2</color> <!-- Darkened Blue -->
+    <color name="chip_color_4">#7B1FA2</color> <!-- Darkened Purple -->
+    <color name="chip_color_5">#C2185B</color> <!-- Darkened Pink -->
+    <color name="chip_color_6">#00695C</color> <!-- Darkened Teal -->
+    <color name="chip_color_7">#689F38</color> <!-- Darkened Lime -->
+    <color name="chip_color_8">#5D4037</color> <!-- Darkened Brown -->
+    <color name="chip_color_9">#455A64</color> <!-- Darkened Blue Grey -->
+    <color name="chip_color_10">#F57F17</color> <!-- Darkened Yellow -->
+    <color name="chip_color_11">#D32F2F</color> <!-- Darkened Red -->
+    <color name="chip_color_12">#303F9F</color> <!-- Darkened Indigo -->
+    <color name="chip_color_13">#388E3C</color> <!-- Darkened Green -->
+    <color name="chip_color_14">#E65100</color> <!-- Darkened Deep Orange -->
+    <color name="chip_color_15">#00838F</color> <!-- Darkened Cyan -->
+    <color name="chip_color_16">#8E24AA</color> <!-- Darkened Purple -->
+    <color name="chip_color_17">#FFA000</color> <!-- Darkened Amber -->
+    <color name="chip_color_18">#0277BD</color> <!-- Darkened Light Blue -->
+    <color name="chip_color_19">#616161</color> <!-- Darkened White -->
+    <color name="chip_color_20">#6D4C41</color> <!-- Darkened Brown -->
+
+    <!-- Additional vibrant colors - Dark Mode -->
+    <color name="chip_vibrant_1">#FF8A65</color> <!-- Medium Orange -->
+    <color name="chip_vibrant_2">#81C784</color> <!-- Medium Green -->
+    <color name="chip_vibrant_3">#64B5F6</color> <!-- Medium Blue -->
+    <color name="chip_vibrant_4">#BA68C8</color> <!-- Medium Purple -->
+    <color name="chip_vibrant_5">#F06292</color> <!-- Medium Pink -->
+    <color name="chip_vibrant_6">#4DD0E1</color> <!-- Medium Cyan -->
+    <color name="chip_vibrant_7">#AED581</color> <!-- Medium Lime -->
+    <color name="chip_vibrant_8">#A1887F</color> <!-- Medium Brown -->
+    <color name="chip_vibrant_9">#90A4AE</color> <!-- Medium Blue Grey -->
+    <color name="chip_vibrant_10">#FFF176</color> <!-- Medium Yellow -->
+
+    <!-- =============================================================== -->
+    <!-- LEGACY COMPATIBILITY COLORS - DARK MODE                       -->
+    <!-- =============================================================== -->
+    <color name="primary">@color/colorPrimary</color>
+    <color name="brand_primary">@color/colorPrimary</color>
+    <color name="brand_secondary">@color/colorSecondary</color>
+    <color name="brand_accent">@color/colorAccent</color>
+
+    <!-- =============================================================== -->
+    <!-- VERSION CONTROL AND BRANCH COLORS - DARK MODE                -->
+    <!-- =============================================================== -->
+    <color name="active_branch">#6366F1</color>
+    <color name="inactive_branch_bg">#2A2A2A</color>
+    <color name="inactive_branch_text">#9CA3AF</color>
+    <color name="version_indicator">#9CA3AF</color>
+    <color name="rounded_version_control_background">#2A2A2A</color>
+
+    <!-- =============================================================== -->
+    <!-- THEME COLORS - DARK MODE                                       -->
+    <!-- =============================================================== -->
+
+    <!-- Slate Blue Theme - Dark -->
+    <color name="slate_primary">#78909C</color>
+    <color name="slate_primary_variant">#546E7A</color>
+    <color name="slate_secondary">#90A4AE</color>
+    <color name="slate_accent">#4FC3F7</color>
+    <color name="slate_background">#202E36</color>
+    <color name="slate_surface">#263238</color>
+    <color name="slate_error">#EF5350</color>
+    <color name="slate_text_primary">#ECEFF1</color>
+    <color name="slate_text_secondary">#B0BEC5</color>
+    <color name="slate_card_background">#2C3A41</color>
+    <color name="slate_card_stroke">#37474F</color>
+
+    <!-- Olive Garden Theme - Dark -->
+    <color name="olive_primary">#9CCC65</color>
+    <color name="olive_primary_variant">#8BC34A</color>
+    <color name="olive_secondary">#AED581</color>
+    <color name="olive_accent">#FFB300</color>
+    <color name="olive_background">#2A2E25</color>
+    <color name="olive_surface">#33372D</color>
+    <color name="olive_error">#EF5350</color>
+    <color name="olive_text_primary">#DCEDC8</color>
+    <color name="olive_text_secondary">#C5E1A5</color>
+    <color name="olive_card_background">#3B4132</color>
+    <color name="olive_card_stroke">#4C5340</color>
+
+    <!-- Burgundy Theme - Dark -->
+    <color name="burgundy_primary">#AB47BC</color>
+    <color name="burgundy_primary_variant">#9C27B0</color>
+    <color name="burgundy_secondary">#BA68C8</color>
+    <color name="burgundy_accent">#FF9E80</color>
+    <color name="burgundy_background">#2D1F33</color>
+    <color name="burgundy_surface">#352840</color>
+    <color name="burgundy_error">#EF5350</color>
+    <color name="burgundy_text_primary">#E1BEE7</color>
+    <color name="burgundy_text_secondary">#CE93D8</color>
+    <color name="burgundy_card_background">#3E2E4A</color>
+    <color name="burgundy_card_stroke">#4A3757</color>
+
+    <!-- Rustic Copper Theme - Dark -->
+    <color name="copper_primary">#BCAAA4</color>
+    <color name="copper_primary_variant">#A1887F</color>
+    <color name="copper_secondary">#D7CCC8</color>
+    <color name="copper_accent">#7CB342</color>
+    <color name="copper_background">#3A2E2A</color>
+    <color name="copper_surface">#4E342E</color>
+    <color name="copper_error">#EF5350</color>
+    <color name="copper_text_primary">#EFEBE9</color>
+    <color name="copper_text_secondary">#D7CCC8</color>
+    <color name="copper_card_background">#5D4037</color>
+    <color name="copper_card_stroke">#6D4C41</color>
+
+    <!-- Carbon Theme - Dark -->
+    <color name="carbon_primary">#616161</color>
+    <color name="carbon_primary_variant">#424242</color>
+    <color name="carbon_secondary">#9E9E9E</color>
+    <color name="carbon_accent">#29B6F6</color>
+    <color name="carbon_background">#212121</color>
+    <color name="carbon_surface">#303030</color>
+    <color name="carbon_error">#EF5350</color>
+    <color name="carbon_text_primary">#F5F5F5</color>
+    <color name="carbon_text_secondary">#BDBDBD</color>
+    <color name="carbon_card_background">#424242</color>
+    <color name="carbon_card_stroke">#616161</color>
+
+    <!-- Teal Harbor Theme - Dark -->
+    <color name="teal_primary">#26A69A</color>
+    <color name="teal_primary_variant">#009688</color>
+    <color name="teal_secondary">#4DB6AC</color>
+    <color name="teal_accent">#FF7043</color>
+    <color name="teal_background">#1D3332</color>
+    <color name="teal_surface">#263C3B</color>
+    <color name="teal_error">#EF5350</color>
+    <color name="teal_text_primary">#E0F2F1</color>
+    <color name="teal_text_secondary">#B2DFDB</color>
+    <color name="teal_card_background">#2E4644</color>
+    <color name="teal_card_stroke">#00796B</color>
+
+    <!-- Serenity Theme - Dark -->
+    <color name="serenity_primary">#7986CB</color>
+    <color name="serenity_primary_variant">#5C6BC0</color>
+    <color name="serenity_secondary">#9FA8DA</color>
+    <color name="serenity_accent">#FFD54F</color>
+    <color name="serenity_background">#252D47</color>
+    <color name="serenity_surface">#2E3555</color>
+    <color name="serenity_error">#EF5350</color>
+    <color name="serenity_text_primary">#E8EAF6</color>
+    <color name="serenity_text_secondary">#C5CAE9</color>
+    <color name="serenity_card_background">#3A4068</color>
+    <color name="serenity_card_stroke">#4A4F78</color>
+
+    <!-- Neon Cyberpunk Theme - Dark -->
+    <color name="neon_primary">#00F2FE</color>
+    <color name="neon_primary_variant">#01CDFE</color>
+    <color name="neon_secondary">#FF00C1</color>
+    <color name="neon_accent">#9600FF</color>
+    <color name="neon_background">#0D0221</color>
+    <color name="neon_surface">#1A1625</color>
+    <color name="neon_error">#FF124F</color>
+    <color name="neon_text_primary">#FFFFFF</color>
+    <color name="neon_text_secondary">#CCCCCC</color>
+    <color name="neon_card_background">#1E1A29</color>
+    <color name="neon_card_stroke">#332940</color>
+
+    <!-- Aurora Borealis Theme - Dark -->
+    <color name="aurora_primary">#50C878</color>
+    <color name="aurora_primary_variant">#3AA856</color>
+    <color name="aurora_secondary">#5B5BFF</color>
+    <color name="aurora_accent">#01BAEF</color>
+    <color name="aurora_background">#06070E</color>
+    <color name="aurora_surface">#0F111A</color>
+    <color name="aurora_error">#FF3D71</color>
+    <color name="aurora_text_primary">#FFFFFF</color>
+    <color name="aurora_text_secondary">#B8C4E8</color>
+    <color name="aurora_card_background">#191A24</color>
+    <color name="aurora_card_stroke">#2A2E42</color>
+
+    <!-- Royal Jewel Theme - Dark -->
+    <color name="royal_primary">#7C4DFF</color>
+    <color name="royal_primary_variant">#651FFF</color>
+    <color name="royal_secondary">#64FFDA</color>
+    <color name="royal_accent">#FF4081</color>
+    <color name="royal_background">#0C0617</color>
+    <color name="royal_surface">#170B2A</color>
+    <color name="royal_error">#FF1744</color>
+    <color name="royal_text_primary">#FFFFFF</color>
+    <color name="royal_text_secondary">#D1C4E9</color>
+    <color name="royal_card_background">#231442</color>
+    <color name="royal_card_stroke">#371E6A</color>
+
+    <!-- Tropical Paradise Theme - Dark -->
+    <color name="tropical_primary">#FF6B6B</color>
+    <color name="tropical_primary_variant">#FF5252</color>
+    <color name="tropical_secondary">#4ECDC4</color>
+    <color name="tropical_accent">#FFD166</color>
+    <color name="tropical_background">#1F2D3D</color>
+    <color name="tropical_surface">#2C3E50</color>
+    <color name="tropical_error">#FF5252</color>
+    <color name="tropical_text_primary">#FFFFFF</color>
+    <color name="tropical_text_secondary">#C0CCDA</color>
+    <color name="tropical_card_background">#344960</color>
+    <color name="tropical_card_stroke">#415A77</color>
+
+    <!-- Monochrome Punch Theme - Dark -->
+    <color name="mono_primary">#FFFFFF</color>
+    <color name="mono_primary_variant">#E0E0E0</color>
+    <color name="mono_secondary">#BDBDBD</color>
+    <color name="mono_accent">#FF2E63</color>
+    <color name="mono_background">#121212</color>
+    <color name="mono_surface">#1E1E1E</color>
+    <color name="mono_error">#FF5252</color>
+    <color name="mono_text_primary">#FFFFFF</color>
+    <color name="mono_text_secondary">#B0B0B0</color>
+    <color name="mono_card_background">#2C2C2C</color>
+    <color name="mono_card_stroke">#383838</color>
+
+    <!-- Cosmic Gradient Theme - Dark -->
+    <color name="cosmic_primary">#8A3BF2</color>
+    <color name="cosmic_primary_variant">#7A2CF2</color>
+    <color name="cosmic_secondary">#6FB1FC</color>
+    <color name="cosmic_accent">#F857A6</color>
+    <color name="cosmic_background">#0F0422</color>
+    <color name="cosmic_surface">#1C0B36</color>
+    <color name="cosmic_error">#FF1744</color>
+    <color name="cosmic_text_primary">#FFFFFF</color>
+    <color name="cosmic_text_secondary">#D9BAFF</color>
+    <color name="cosmic_card_background">#280F51</color>
+    <color name="cosmic_card_stroke">#3A196A</color>
+
+    <!-- Vivid Gradient Theme - Dark -->
+    <color name="vivid_primary">#FF512F</color>
+    <color name="vivid_primary_variant">#F09819</color>
+    <color name="vivid_secondary">#36D1DC</color>
+    <color name="vivid_accent">#5B86E5</color>
+    <color name="vivid_background">#121212</color>
+    <color name="vivid_surface">#1E1E1E</color>
+    <color name="vivid_error">#CF6679</color>
+    <color name="vivid_text_primary">#FFFFFF</color>
+    <color name="vivid_text_secondary">#B0B0B0</color>
+    <color name="vivid_card_background">#2C2C2C</color>
+    <color name="vivid_card_stroke">#383838</color>
+
+    <!-- =============================================================== -->
+    <!-- THEME GRADIENT COLORS - DARK MODE                              -->
+    <!-- =============================================================== -->
+
+    <!-- Neon Gradient Colors - Dark Mode -->
+    <color name="neon_gradient_start">#00F2FE</color>
+    <color name="neon_gradient_end">#4FACFE</color>
+    <color name="neon_gradient_accent_start">#FF00C1</color>
+    <color name="neon_gradient_accent_end">#9600FF</color>
+
+    <!-- Aurora Gradient Colors - Dark Mode -->
+    <color name="aurora_gradient_start">#50C878</color>
+    <color name="aurora_gradient_mid">#01BAEF</color>
+    <color name="aurora_gradient_end">#5B5BFF</color>
+
+    <!-- Royal Gradient Colors - Dark Mode -->
+    <color name="royal_gradient_start">#7C4DFF</color>
+    <color name="royal_gradient_end">#536DFE</color>
+
+    <!-- Tropical Gradient Colors - Dark Mode -->
+    <color name="tropical_gradient_start">#FF6B6B</color>
+    <color name="tropical_gradient_end">#FFE66D</color>
+
+    <!-- Cosmic Gradient Colors - Dark Mode -->
+    <color name="cosmic_gradient_start">#8A3BF2</color>
+    <color name="cosmic_gradient_end">#6FB1FC</color>
+    <color name="cosmic_gradient_accent_start">#F857A6</color>
+    <color name="cosmic_gradient_accent_end">#FF5858</color>
+
+    <!-- Vivid Gradient Colors - Dark Mode -->
+    <color name="vivid_gradient_start">#FF512F</color>
+    <color name="vivid_gradient_end">#F09819</color>
+    <color name="vivid_gradient_accent_start">#36D1DC</color>
+    <color name="vivid_gradient_accent_end">#5B86E5</color>
+
+    <!-- =============================================================== -->
+    <!-- MISSING COLOR REFERENCES - DARK MODE                          -->
+    <!-- =============================================================== -->
+    <color name="primary_text">@color/text_primary</color>
+    <color name="secondary_text">@color/text_secondary</color>
+    <color name="code_background_dark">#0D1117</color>
+    <color name="code_header_background">#161B22</color>
+    <color name="code_line_number">#484F58</color>
+
+</resources>
