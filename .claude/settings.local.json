@@ -40,7 +40,8 @@
       "Read(C:\\Users\\Catalin\\Pictures\\Screenshots/**)",
       "Bash(adb logcat:*)",
       "Bash(git push:*)",
-      "Bash(git remote add:*)"
+      "Bash(git remote add:*)",
+      "Bash(git pull:*)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits",
