@@ -16,8 +16,8 @@ const fileProcessorRoutes = require('./routes/fileProcessor');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Trust Railway's proxy for accurate IP addresses
-app.set('trust proxy', 1);
+// Trust Railway's proxy for accurate IP addresses (MUST be set before any middleware)
+app.set('trust proxy', true);
 
 // Ensure uploads directory exists
 if (!fs.existsSync('uploads')) {
@@ -31,11 +31,15 @@ app.use(cors({
     credentials: true
 }));
 
-// Rate limiting
+// Rate limiting with proper proxy configuration
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 100, // limit each IP to 100 requests per windowMs
-    message: 'Too many requests from this IP'
+    message: 'Too many requests from this IP',
+    standardHeaders: true,
+    legacyHeaders: false,
+    // Trust the proxy headers
+    trustProxy: true
 });
 app.use(limiter);
 
@@ -43,7 +47,10 @@ app.use(limiter);
 const fileProcessingLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 10, // Only 10 file uploads per 15 minutes per IP
-    message: 'Too many file uploads, please try again later.'
+    message: 'Too many file uploads, please try again later.',
+    standardHeaders: true,
+    legacyHeaders: false,
+    trustProxy: true
 });
 
 // Body parsing
