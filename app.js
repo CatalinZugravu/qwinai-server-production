@@ -16,6 +16,9 @@ const fileProcessorRoutes = require('./routes/fileProcessor');
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Trust Railway's proxy for accurate IP addresses
+app.set('trust proxy', 1);
+
 // Ensure uploads directory exists
 if (!fs.existsSync('uploads')) {
     fs.mkdirSync('uploads');
