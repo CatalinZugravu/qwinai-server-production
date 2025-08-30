@@ -364,20 +364,23 @@ object ImageUploadUtils {
                         Timber.e("Image validation failed: invalid dimensions ($width x $height)")
                         false
                     }
+
                     width < MIN_DIMENSION || height < MIN_DIMENSION -> {
                         Timber.e("Image too small: ${width}x${height} (minimum: ${MIN_DIMENSION}x${MIN_DIMENSION})")
                         false
                     }
+
                     width > MAX_DIMENSION * 4 || height > MAX_DIMENSION * 4 -> {
                         Timber.e("Image too large: ${width}x${height} (maximum recommended: ${MAX_DIMENSION * 4}x${MAX_DIMENSION * 4})")
                         false
                     }
+
                     else -> {
                         Timber.d("Image validation passed: ${width}x${height}")
                         true
                     }
                 }
-            } ?: false
+            } == true
         } catch (e: SecurityException) {
             Timber.e(e, "Security exception validating image URI: ${e.message}")
             false

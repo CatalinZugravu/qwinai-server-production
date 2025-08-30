@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Mediation manager specifically for Huawei devices
- * Prioritizes AppLovin, then IronSource, then Huawei Ads Kit
+ * FIXED: Uses Huawei Ads Kit ONLY, with AdMob fallback if HMS unavailable
  * IMPORTANT: This class must NOT be abstract
  */
 class HuaweiDeviceMediationManager : AdMediationManager {
@@ -45,19 +45,17 @@ class HuaweiDeviceMediationManager : AdMediationManager {
                 false
             }
 
-            // Build provider list for Huawei devices: AppLovin, IronSource, Huawei Ads Kit
+            // FIXED: Use Huawei Ads ONLY for Huawei devices as requested
             adProviders.clear() // Clear any existing providers to avoid duplicates
 
-            // Always add AppLovin and IronSource as they work on Huawei devices
-            adProviders.add(AppLovinAdProvider())     // Primary network
-            adProviders.add(IronSourceAdProvider())   // Secondary network
-
             if (isHmsAvailable) {
-                // Add Huawei Ads Kit if available
-                adProviders.add(HuaweiAdProvider())   // Tertiary network on Huawei
-                Timber.d("Using AppLovin, IronSource, and Huawei Ads Kit for Huawei device")
+                // Add Huawei Ads Kit ONLY if available
+                adProviders.add(HuaweiAdProvider())   // Huawei Ads ONLY for Huawei devices
+                Timber.d("Using Huawei Ads Kit ONLY for Huawei device")
             } else {
-                Timber.d("Using AppLovin and IronSource for Huawei device without HMS")
+                // Fallback: If HMS not available on Huawei device, use AdMob as fallback
+                adProviders.add(GoogleAdProvider())
+                Timber.w("HMS not available on Huawei device, using AdMob as fallback")
             }
 
             // Initialize all providers with proper tracking
@@ -83,7 +81,7 @@ class HuaweiDeviceMediationManager : AdMediationManager {
                 }.start()
             }
 
-            Timber.d("Initialized Huawei device mediation with ${adProviders.size} providers")
+            Timber.d("Initialized Huawei device mediation with ${adProviders.size} provider: ${if (isHmsAvailable) "Huawei Ads ONLY" else "AdMob fallback"}")
         } catch (e: Exception) {
             Timber.e(e, "Error setting up Huawei device mediation: ${e.message}")
         }
@@ -258,9 +256,9 @@ class HuaweiDeviceMediationManager : AdMediationManager {
         } ?: Timber.d("No rewarded ad ready to show")
     }
 
-    override fun isRewardedAdLoaded(): Boolean = currentRewardedProvider?.isRewardedAdLoaded() ?: false
+    override fun isRewardedAdLoaded(): Boolean = currentRewardedProvider?.isRewardedAdLoaded() == true
 
-    override fun isInterstitialAdLoaded(): Boolean = currentInterstitialProvider?.isInterstitialAdLoaded() ?: false
+    override fun isInterstitialAdLoaded(): Boolean = currentInterstitialProvider?.isInterstitialAdLoaded() == true
 
     override fun release() {
         // Release resources for all providers

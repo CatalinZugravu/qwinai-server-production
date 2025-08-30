@@ -53,8 +53,8 @@ import com.cyberflux.qwinai.service.OCROptions
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.imageview.ShapeableImageView
-import com.google.common.reflect.TypeToken
-import com.google.gson.Gson
+import com.cyberflux.qwinai.utils.JsonUtils
+import com.cyberflux.qwinai.utils.SupportedFileTypes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -66,11 +66,26 @@ import java.util.UUID
 
 class FileHandler(private val activity: MainActivity) {
     private val animator = FileSendAnimator(activity)
-    private val documentExtractor = DocumentContentExtractor(activity)
+    private val fileProcessor = OptimizedFileProcessor(activity)
+    private val tokenManager = SimplifiedTokenManager(activity)
 
     fun openFilePicker(filePickerLauncher: ActivityResultLauncher<Intent>) {
-        // Check if adding files would exceed the 5-file limit
-        if (activity.selectedFiles.size >= 5) {
+        // Check if current model is an OCR model (specifically Mistral OCR)
+        val isOcrModel = ModelValidator.isOcrModel(ModelManager.selectedModel.id)
+        val isMistralOcr = ModelManager.selectedModel.id == ModelManager.MISTRAL_OCR_ID
+
+        // For Mistral OCR, enforce single file only and check if any files already selected
+        if (isMistralOcr && activity.selectedFiles.isNotEmpty()) {
+            Toast.makeText(
+                activity,
+                "Mistral OCR allows only one file at a time. Please remove the current file first.",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        // Check if adding files would exceed the 5-file limit (for non-OCR models)
+        if (!isOcrModel && activity.selectedFiles.size >= 5) {
             Toast.makeText(
                 activity,
                 "Maximum 5 files allowed. Please remove some first.",
@@ -80,32 +95,59 @@ class FileHandler(private val activity: MainActivity) {
         }
 
         // Calculate how many more files can be added
-        val remainingSlots = 5 - activity.selectedFiles.size
-
-        // Check if current model is an OCR model
-        val isOcrModel = ModelValidator.isOcrModel(ModelManager.selectedModel.id)
+        val remainingSlots = if (isMistralOcr) 1 else (5 - activity.selectedFiles.size)
 
         Intent(Intent.ACTION_GET_CONTENT).apply {
             if (isOcrModel) {
-                // For OCR models, allow both PDF and image files, but PDFs require OCR options
+                // For OCR models, allow PDFs and images for OCR processing
                 type = "*/*"
                 putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/pdf", "image/*"))
             } else {
-                // For non-OCR models, only allow images
-                type = "image/*"
-                putExtra(Intent.EXTRA_MIME_TYPES, SupportedFileTypes.SUPPORTED_IMAGE_TYPES)
+                // For non-OCR models, only allow simplified supported document types
+                val currentModelId = ModelManager.selectedModel.id
+                val supportedTypes = mutableListOf<String>()
+                
+                // Always support text and CSV
+                supportedTypes.addAll(arrayOf("text/plain", "text/csv", "text/tab-separated-values"))
+                
+                // Add PDF only if the current AI model supports it
+                if (SupportedFileTypes.isPdfSupportedForModel(currentModelId)) {
+                    supportedTypes.add("application/pdf")
+                    Timber.d("PDF support enabled for model: $currentModelId")
+                } else {
+                    Timber.d("PDF support disabled for model: $currentModelId")
+                }
+                
+                type = "*/*"
+                putExtra(Intent.EXTRA_MIME_TYPES, supportedTypes.toTypedArray())
+                
+                // Show user what's supported
+                val supportedFormats = if (supportedTypes.contains("application/pdf")) {
+                    "text files, CSV files, and PDF files"
+                } else {
+                    "text files and CSV files only"
+                }
+                
+                if (activity.selectedFiles.isEmpty()) {
+                    Toast.makeText(
+                        activity,
+                        "📄 Supported formats: $supportedFormats",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
             }
 
-            // Only allow multiple selection if we have more than 1 slot left
-            // For OCR models with PDFs, always limit to single file
-            val allowMultiple = remainingSlots > 1 && !isOcrModel
+            // For OCR models, restrict to single file selection
+            // For non-OCR models, allow multiple documents if slots available
+            val allowMultiple = !isOcrModel && remainingSlots > 1
             putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple)
             
             // Show user feedback about selection capabilities
             if (allowMultiple) {
+                val fileType = if (isOcrModel) "image(s)" else "document(s)"
                 Toast.makeText(
                     activity,
-                    "You can select up to $remainingSlots more file(s)",
+                    "You can select up to $remainingSlots more $fileType",
                     Toast.LENGTH_SHORT
                 ).show()
             }
@@ -120,8 +162,21 @@ class FileHandler(private val activity: MainActivity) {
     }
 
     fun openDocumentPicker(filePickerLauncher: ActivityResultLauncher<Intent>) {
-        // Check if adding files would exceed the limit
-        if (activity.selectedFiles.size >= 5) {
+        // Check if current model is Mistral OCR
+        val isMistralOcr = ModelManager.selectedModel.id == ModelManager.MISTRAL_OCR_ID
+
+        // For Mistral OCR, enforce single file only and check if any files already selected
+        if (isMistralOcr && activity.selectedFiles.isNotEmpty()) {
+            Toast.makeText(
+                activity,
+                "Mistral OCR allows only one file at a time. Please remove the current file first.",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        // Check if adding files would exceed the limit (for non-Mistral OCR models)
+        if (!isMistralOcr && activity.selectedFiles.size >= 5) {
             Toast.makeText(
                 activity,
                 "Maximum 5 files allowed. Please remove some first.",
@@ -131,17 +186,18 @@ class FileHandler(private val activity: MainActivity) {
         }
 
         // Calculate how many more files can be added
-        val remainingSlots = 5 - activity.selectedFiles.size
+        val remainingSlots = if (isMistralOcr) 1 else (5 - activity.selectedFiles.size)
 
         // Check if current model supports documents
         val currentModel = ModelManager.selectedModel
-        val needsExtraction = !ModelValidator.hasNativeDocumentSupport(currentModel.id)
+        !ModelValidator.hasNativeDocumentSupport(currentModel.id)
 
         Intent(Intent.ACTION_GET_CONTENT).apply {
             type = "*/*"
             putExtra(Intent.EXTRA_MIME_TYPES, SupportedFileTypes.SUPPORTED_DOCUMENT_TYPES)
-            // Allow multiple selection if we have more than 1 slot left
-            val allowMultiple = remainingSlots > 1
+            // For Mistral OCR, always restrict to single file selection
+            // For other models, allow multiple if slots available
+            val allowMultiple = !isMistralOcr && remainingSlots > 1
             putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple)
             
             // Show user feedback about selection capabilities
@@ -161,9 +217,186 @@ class FileHandler(private val activity: MainActivity) {
             filePickerLauncher.launch(this)
         }
     }
-    suspend fun processDocumentWithExtractor(uri: Uri): Result<DocumentContentExtractor.ExtractedContent> {
-        return documentExtractor.extractContent(uri)
+    suspend fun processDocumentWithExtractor(uri: Uri): Result<SimplifiedDocumentExtractor.ExtractedContent> {
+        val currentModelId = ModelManager.selectedModel.id
+        val extractor = SimplifiedDocumentExtractor(activity)
+        return extractor.extractContent(uri, aiModelId = currentModelId)
     }
+
+    /**
+     * NEW: Process file using OptimizedFileProcessor with token counting integration
+     */
+    suspend fun processFileOptimized(
+        uri: Uri,
+        tracker: FileProgressTracker? = null
+    ): Result<OptimizedFileProcessor.ProcessedFileResult> {
+        val currentModelId = ModelManager.selectedModel.id
+        return fileProcessor.processFile(uri, currentModelId, tracker)
+    }
+
+    /**
+     * Check if file type is supported by the new optimized system
+     */
+    fun isFileTypeSupported(uri: Uri, fileName: String): Boolean {
+        val mimeType = activity.contentResolver.getType(uri) ?: ""
+        return when {
+            mimeType == "application/pdf" || fileName.endsWith(".pdf", true) -> true
+            mimeType == "text/plain" || fileName.endsWith(".txt", true) -> true
+            mimeType == "text/csv" || fileName.endsWith(".csv", true) -> true
+            else -> false
+        }
+    }
+
+    /**
+     * Calculate total tokens for current message including files and prompt
+     */
+    suspend fun calculateTotalTokens(
+        conversationId: String,
+        modelId: String,
+        userPrompt: String,
+        isSubscribed: Boolean
+    ): TokenCalculationResult = withContext(Dispatchers.IO) {
+        try {
+            // Get files that are ready (extracted and cached)
+            val readyFiles = activity.selectedFiles.filter { 
+                it.isExtracted && !it.isExtracting 
+            }
+            
+            // Create URI list for SimplifiedTokenManager
+            val fileUris = readyFiles.map { it.uri }
+            
+            Timber.d("🧮 Calculating tokens: Prompt=${userPrompt.length} chars, Files=${readyFiles.size}")
+            
+            // Use SimplifiedTokenManager to validate
+            val validationResult = SimplifiedTokenManager.quickValidate(
+                context = activity,
+                conversationId = conversationId,
+                modelId = modelId,
+                userPrompt = userPrompt,
+                attachedFiles = fileUris,
+                isSubscribed = isSubscribed
+            )
+            
+            // Calculate individual components for display
+            val promptTokens = TokenValidator.estimateTokenCount(userPrompt)
+            val fileTokens = readyFiles.sumOf { file -> 
+                // Try to get token count from processing info or calculate
+                extractTokenCountFromProcessingInfo(file) ?: 0
+            }
+            val totalTokens = promptTokens + fileTokens
+            
+            when (validationResult) {
+                is ContextWindowManager.ValidationResult.Allowed -> {
+                    TokenCalculationResult.Allowed(
+                        promptTokens = promptTokens,
+                        fileTokens = fileTokens,
+                        totalTokens = totalTokens,
+                        message = "Ready to send • $totalTokens total tokens"
+                    )
+                }
+                
+                is ContextWindowManager.ValidationResult.Warning -> {
+                    TokenCalculationResult.Warning(
+                        promptTokens = promptTokens,
+                        fileTokens = fileTokens,
+                        totalTokens = totalTokens,
+                        usagePercentage = (validationResult.usagePercentage * 100).toInt(),
+                        message = "Conversation is ${(validationResult.usagePercentage * 100).toInt()}% of limit. Consider starting a new chat."
+                    )
+                }
+                
+                is ContextWindowManager.ValidationResult.Blocked -> {
+                    TokenCalculationResult.Blocked(
+                        promptTokens = promptTokens,
+                        fileTokens = fileTokens,
+                        totalTokens = totalTokens,
+                        usagePercentage = (validationResult.usagePercentage * 100).toInt(),
+                        message = "Conversation is ${(validationResult.usagePercentage * 100).toInt()}% over the length limit. Try replacing the attached files with smaller excerpts."
+                    )
+                }
+            }
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Error calculating tokens: ${e.message}")
+            TokenCalculationResult.Error("Failed to calculate tokens: ${e.message}")
+        }
+    }
+    
+    /**
+     * Extract token count from file processing info string
+     */
+    fun extractTokenCountFromProcessingInfo(file: FileUtil.FileUtil.SelectedFile): Int? {
+        return try {
+            val processingInfo = file.processingInfo ?: return null
+            val regex = """(\d+)\s+tokens""".toRegex()
+            val match = regex.find(processingInfo)
+            match?.groupValues?.get(1)?.toInt()
+        } catch (e: Exception) {
+            Timber.w("Failed to extract token count from processing info: ${e.message}")
+            null
+        }
+    }
+    
+    /**
+     * Show token limit warning dialog if needed before sending message
+     */
+    suspend fun validateTokensBeforeSend(
+        conversationId: String,
+        modelId: String,
+        userPrompt: String,
+        isSubscribed: Boolean,
+        onAllowed: () -> Unit,
+        onNewConversationRequired: () -> Unit,
+        onCancel: () -> Unit,
+        onUpgrade: () -> Unit = {}
+    ) {
+        val fileUris = activity.selectedFiles.filter { 
+            it.isExtracted && !it.isExtracting 
+        }.map { it.uri }
+        
+        tokenManager.validateMessage(
+            conversationId = conversationId,
+            modelId = modelId,
+            userPrompt = userPrompt,
+            attachedFiles = fileUris,
+            isSubscribed = isSubscribed,
+            onAllowed = onAllowed,
+            onNewConversationRequired = onNewConversationRequired,
+            onCancel = onCancel,
+            onUpgrade = onUpgrade
+        )
+    }
+
+    /**
+     * Token calculation result
+     */
+    sealed class TokenCalculationResult {
+        data class Allowed(
+            val promptTokens: Int,
+            val fileTokens: Int,
+            val totalTokens: Int,
+            val message: String
+        ) : TokenCalculationResult()
+        
+        data class Warning(
+            val promptTokens: Int,
+            val fileTokens: Int,
+            val totalTokens: Int,
+            val usagePercentage: Int,
+            val message: String
+        ) : TokenCalculationResult()
+        
+        data class Blocked(
+            val promptTokens: Int,
+            val fileTokens: Int,
+            val totalTokens: Int,
+            val usagePercentage: Int,
+            val message: String
+        ) : TokenCalculationResult()
+        
+        data class Error(val message: String) : TokenCalculationResult()
+    }
+
 
     fun handleSelectedDocument(uri: Uri) {
         try {
@@ -187,14 +420,34 @@ class FileHandler(private val activity: MainActivity) {
             Timber.d("  Native support: $hasNativeSupport")
             Timber.d("  OCR model: $isOcrModel")
 
+            // First, check if this is an unsupported Office file type
+            if (SupportedFileTypes.isUnsupportedOfficeType(mimeType)) {
+                Timber.w("  -> Unsupported Office file type detected: $mimeType")
+                showUnsupportedFileDialog(fileName, mimeType)
+                return
+            }
+
+            // Check if document is supported for extraction
+            if (!SupportedFileTypes.isDocumentTypeSupported(mimeType) && !isOcrModel) {
+                // Special case: PDF with non-supporting model
+                if (mimeType == "application/pdf" && !SupportedFileTypes.isPdfSupportedForModel(currentModel.id)) {
+                    Timber.w("  -> PDF not supported for current model: ${currentModel.id}")
+                    showPdfNotSupportedDialog(fileName, currentModel.displayName)
+                    return
+                } else {
+                    Timber.w("  -> Unsupported document type: $mimeType")
+                    showUnsupportedFileDialog(fileName, mimeType)
+                    return
+                }
+            }
+
             if (isOcrModel) {
                 // Handle OCR specifically - show OCR options dialog
                 Timber.d("  -> Routing to OCR options display")
                 showOcrOptionsDialog(uri, fileName, fileSize)
             } else {
-                // CRITICAL FIX: Always route to extraction for all models
-                // This ensures content is extracted and can be read by AI models
-                Timber.d("  -> Routing to extraction process for all models (native support: $hasNativeSupport)")
+                // Route to simplified extraction process
+                Timber.d("  -> Routing to simplified extraction process")
                 processDocumentWithExtractionAndUI(uri, fileName, mimeType, fileSize)
             }
 
@@ -223,6 +476,9 @@ class FileHandler(private val activity: MainActivity) {
         activity.selectedFiles.add(tempFile)
         activity.fileHandler.updateSelectedFilesView()
         
+        // Update button state to disable during extraction
+        activity.updateButtonVisibilityAndState()
+        
         Timber.d("  Added file to UI, starting extraction...")
 
         // Find file view to update progress
@@ -230,6 +486,9 @@ class FileHandler(private val activity: MainActivity) {
         if (fileView == null) {
             Timber.e("Could not find view for document: $uri")
             Toast.makeText(activity, "Error displaying document", Toast.LENGTH_SHORT).show()
+            // Clean up on error
+            activity.selectedFiles.remove(tempFile)
+            activity.updateButtonVisibilityAndState()
             return
         }
 
@@ -251,107 +510,133 @@ class FileHandler(private val activity: MainActivity) {
                     FileProgressTracker.ProcessingStage.READING_FILE
                 )
 
-                // Process document using extractor
-                val documentExtractor = DocumentContentExtractor(activity)
-                val result = documentExtractor.processDocumentForModel(uri)
+                // Check if file type is supported
+                if (!isFileTypeSupported(uri, fileName)) {
+                    withContext(Dispatchers.Main) {
+                        activity.selectedFiles.remove(tempFile)
+                        updateSelectedFilesView()
+                        showUnsupportedFileDialog(fileName ?: "Unknown file", mimeType)
+                        progressTracker.hideProgress()
+                    }
+                    return@launch
+                }
+
+                // Process document using optimized processor
+                val result = processFileOptimized(uri, progressTracker)
 
                 if (result.isSuccess) {
-                    val extractedContent = result.getOrNull()
-                    
-                    Timber.d("✅ Document extraction SUCCESS for: $fileName")
-                    if (extractedContent != null) {
-                        Timber.d("  Content length: ${extractedContent.textContent.length} chars")
-                        Timber.d("  Token count: ${extractedContent.tokenCount}")
-                        Timber.d("  Content preview: ${extractedContent.textContent.take(100)}...")
-                    } else {
-                        Timber.w("  ⚠️ Extracted content is NULL despite success!")
-                    }
+                    val processedFile = result.getOrNull()!!
+                    val extractedContent = processedFile.extractedContent ?: "PDF processed directly by AI model"
+                        
+                        Timber.d("✅ Document processing SUCCESS: ${processedFile.getSummary()}")
 
-                    withContext(Dispatchers.Main) {
-                        // Update progress
-                        progressTracker.updateProgress(
-                            90,
-                            "Document ready",
-                            FileProgressTracker.ProcessingStage.COMPLETE
-                        )
+                        withContext(Dispatchers.Main) {
+                            // Progress is handled by processor
+                            
+                            // Use the URI string consistently for the extractedContentId
+                            val uriString = uri.toString()
 
-                        // CRITICAL FIX: Use the URI string consistently for the extractedContentId
-                        val uriString = uri.toString()
+                            // Cache the processed content if it's extracted content (not PDF)
+                            if (processedFile.extractedContent != null) {
+                                val contentForCache = SimplifiedDocumentExtractor.ExtractedContent(
+                                    fileName = processedFile.fileName,
+                                    mimeType = mimeType,
+                                    fileSize = processedFile.fileSize,
+                                    textContent = processedFile.extractedContent,
+                                    containsImages = false,
+                                    tokenCount = processedFile.tokenCount,
+                                    pageCount = 1
+                                )
+                                SimplifiedDocumentExtractor.cacheContent(uriString, contentForCache)
+                            }
+                            
+                            // Update file status with token information
+                            val updatedFile = tempFile.copy(
+                                isExtracting = false,
+                                isExtracted = true,
+                                extractedContentId = uriString,
+                                processingInfo = "✅ ${processedFile.processingMessage} • ${processedFile.tokenCount} tokens"
+                            )
 
-                        // Update file status
-                        val updatedFile = tempFile.copy(
-                            isExtracting = false,
-                            isExtracted = true,
-                            extractedContentId = uriString  // Store URI string as the content ID
-                        )
+                            // Replace in selected files list
+                            val index = activity.selectedFiles.indexOf(tempFile)
+                            if (index != -1) {
+                                activity.selectedFiles[index] = updatedFile
+                            }
 
-                        // Debug what we're storing
-                        Timber.d("📝 Document processed - storing with ID: $uriString")
-                        val isCached = DocumentContentExtractor.getCachedContent(uriString) != null
-                        Timber.d("  Content cached: $isCached")
-                        if (!isCached) {
-                            Timber.e("  ❌ CRITICAL: Content not found in cache after processing!")
+                            // Update UI
+                            updateSelectedFilesView()
+                            progressTracker.hideProgress()
+                            
+                            // Update button state to re-enable after extraction
+                            activity.updateButtonVisibilityAndState()
+
+                            // Provide feedback with token count
+                            Toast.makeText(
+                                activity,
+                                "📄 ${processedFile.fileName} ready • ${processedFile.tokenCount} tokens",
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
-
-                        // Replace in selected files list
-                        val index = activity.selectedFiles.indexOf(tempFile)
-                        if (index != -1) {
-                            activity.selectedFiles[index] = updatedFile
-                        }
-
-                        // Update UI
-                        activity.fileHandler.updateSelectedFilesView()
-                        progressTracker.hideProgress()
-
-                        // Provide feedback
-                        Toast.makeText(
-                            activity,
-                            "Document processed successfully",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
                 } else {
                     val error = result.exceptionOrNull()
-                    Timber.e("❌ Document extraction FAILED for: $fileName")
-                    Timber.e("  Error: ${error?.message}")
-                    Timber.e("  Exception: ${error?.toString()}")
+                    val errorMessage = error?.message ?: "Unknown error"
+                    Timber.e("❌ Document processing FAILED for: $fileName")
+                    Timber.e("  Error: $errorMessage")
                     
                     withContext(Dispatchers.Main) {
                         progressTracker.updateProgress(
                             100,
-                            "Error: ${error?.message}",
+                            "Error: $errorMessage",
                             FileProgressTracker.ProcessingStage.ERROR
                         )
 
-                        Toast.makeText(
-                            activity,
-                            "Error processing document: ${error?.message}",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        // Show specific error messages
+                        val userMessage = when {
+                            errorMessage.contains("not supported", true) -> 
+                                "File type not supported. Only PDF, TXT, and CSV files are allowed."
+                            errorMessage.contains("PDF", true) ->
+                                "PDF processing failed. This AI model may not support PDF files."
+                            else -> "Error processing document: $errorMessage"
+                        }
+
+                        Toast.makeText(activity, userMessage, Toast.LENGTH_LONG).show()
 
                         // Remove file from selected files on error
                         activity.selectedFiles.remove(tempFile)
-                        activity.fileHandler.updateSelectedFilesView()
+                        updateSelectedFilesView()
+                        
+                        // Update button state after error
+                        activity.updateButtonVisibilityAndState()
+
+                        // Hide progress
+                        progressTracker.hideProgress()
                     }
                 }
             } catch (e: Exception) {
-                Timber.e(e, "Error extracting document content: ${e.message}")
+                Timber.e(e, "❌ Critical error in document processing: ${e.message}")
                 withContext(Dispatchers.Main) {
                     progressTracker.updateProgress(
                         100,
-                        "Error processing document",
+                        "Critical error",
                         FileProgressTracker.ProcessingStage.ERROR
                     )
 
                     Toast.makeText(
                         activity,
-                        "Error processing document: ${e.message}",
-                        Toast.LENGTH_SHORT
+                        "Critical error processing document: ${e.message}",
+                        Toast.LENGTH_LONG
                     ).show()
 
                     // Remove file from selected files on error
                     activity.selectedFiles.remove(tempFile)
-                    activity.fileHandler.updateSelectedFilesView()
+                    updateSelectedFilesView()
+                    
+                    // Update button state after error
+                    activity.updateButtonVisibilityAndState()
+
+                    // Hide progress
+                    progressTracker.hideProgress()
                 }
             }
         }
@@ -361,6 +646,9 @@ class FileHandler(private val activity: MainActivity) {
      */
     private fun handleImageWithOcrOptions(uri: Uri, fileName: String, fileSize: Long) {
         try {
+            // Check if this is Mistral OCR model
+            val isMistralOcr = ModelManager.selectedModel.id == ModelManager.MISTRAL_OCR_ID
+            
             // Add image to selected files for display (but don't auto-send)
             val selectedFile = FileUtil.FileUtil.SelectedFile(
                 uri = uri,
@@ -372,14 +660,32 @@ class FileHandler(private val activity: MainActivity) {
             activity.selectedFiles.add(selectedFile)
             updateSelectedFilesView()
             
-            // OCR options are now always visible in the main UI
+            // Update UI state
+            activity.updateButtonVisibilityAndState()
+            activity.saveDraftIfNeeded()
             
-            // Provide feedback that image is ready for OCR processing
-            Toast.makeText(
-                activity,
-                "Image selected. Configure OCR options and click Send to process.",
-                Toast.LENGTH_LONG
-            ).show()
+            // Provide haptic feedback
+            HapticManager.mediumVibration(activity)
+            
+            if (isMistralOcr) {
+                // For Mistral OCR with images: hide OCR options panel
+                activity.binding.ocrOptionsPanel.visibility = View.GONE
+                
+                Toast.makeText(
+                    activity,
+                    "Image selected for Mistral OCR processing. Click Send when ready.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            } else {
+                // For other OCR models: show OCR options panel
+                activity.binding.ocrOptionsPanel.visibility = View.VISIBLE
+                
+                Toast.makeText(
+                    activity,
+                    "Image selected. Configure OCR options and click Send to process.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
             
         } catch (e: Exception) {
             Timber.e(e, "Error handling image with OCR options: ${e.message}")
@@ -407,7 +713,7 @@ class FileHandler(private val activity: MainActivity) {
             activity.lifecycleScope.launch {
                 try {
                     // Create conversation if needed
-                    val conversationId = if (activity is MainActivity) {
+                    if (activity is MainActivity) {
                         (activity as MainActivity).createOrGetConversation("Image Analysis: $fileName")
                     } else {
                         UUID.randomUUID().toString()
@@ -439,15 +745,30 @@ class FileHandler(private val activity: MainActivity) {
      */
     private fun handlePdfWithOcrOptions(uri: Uri, fileName: String, fileSize: Long) {
         try {
-            // Check if we already have a PDF selected (only one allowed)
-            val existingPdf = activity.selectedFiles.find { it.name.endsWith(".pdf", ignoreCase = true) }
-            if (existingPdf != null) {
+            // Check if this is Mistral OCR model
+            val isMistralOcr = ModelManager.selectedModel.id == ModelManager.MISTRAL_OCR_ID
+            
+            // For Mistral OCR, check if any files already selected (only one allowed)
+            if (isMistralOcr && activity.selectedFiles.isNotEmpty()) {
                 Toast.makeText(
                     activity,
-                    "Only one PDF file can be selected at a time. Please remove the existing PDF first.",
-                    Toast.LENGTH_LONG
+                    "Mistral OCR allows only one file at a time. Please remove the current file first.",
+                    Toast.LENGTH_SHORT
                 ).show()
                 return
+            }
+            
+            // For other OCR models, check if we already have a PDF selected (only one PDF allowed)
+            if (!isMistralOcr) {
+                val existingPdf = activity.selectedFiles.find { it.name.endsWith(".pdf", ignoreCase = true) }
+                if (existingPdf != null) {
+                    Toast.makeText(
+                        activity,
+                        "Only one PDF file can be selected at a time. Please remove the existing PDF first.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return
+                }
             }
             
             // Add PDF to selected files for display (but don't auto-send)
@@ -461,7 +782,15 @@ class FileHandler(private val activity: MainActivity) {
             activity.selectedFiles.add(selectedFile)
             updateSelectedFilesView()
             
-            // OCR options are now always visible in the main UI
+            // Update UI state
+            activity.updateButtonVisibilityAndState()
+            activity.saveDraftIfNeeded()
+            
+            // Provide haptic feedback
+            HapticManager.mediumVibration(activity)
+            
+            // Always show OCR options panel for PDFs (both Mistral and other OCR models)
+            activity.binding.ocrOptionsPanel.visibility = View.VISIBLE
             
             // Provide feedback that PDF is ready for OCR processing
             Toast.makeText(
@@ -804,13 +1133,14 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
         // Process in background
         activity.lifecycleScope.launch {
             try {
-                val result = documentExtractor.extractContent(uri)
+                val extractor = SimplifiedDocumentExtractor(activity)
+                val result = extractor.extractContent(uri)
 
                 withContext(Dispatchers.Main) {
                     loadingDialog.dismiss()
 
                     if (result.isSuccess) {
-                        val extractedContent = result.getOrNull()
+                        val extractedContent: SimplifiedDocumentExtractor.ExtractedContent? = result.getOrNull()
                         if (extractedContent != null) {
                             // Add the extracted text to the input field instead of as a file
                             val currentText = activity.binding.etInputText.text.toString()
@@ -868,15 +1198,35 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
             val isImageFile = isImageFile(fileName)
             val isPdfFile = fileName.endsWith(".pdf", ignoreCase = true)
             val isOcrModel = ModelValidator.isOcrModel(ModelManager.selectedModel.id)
+            
+            // Auto-detect if this is actually a document file based on extension
+            val actuallyIsDocument = isDocument || isDocumentFile(fileName)
+            Timber.d("File classification - isImageFile: $isImageFile, actuallyIsDocument: $actuallyIsDocument, passed isDocument: $isDocument")
 
-            // For OCR models with images: show OCR options instead of auto-sending
-            if (isOcrModel && isImageFile) {
+            // Special handling for Mistral OCR model
+            val isMistralOcr = ModelManager.selectedModel.id == ModelManager.MISTRAL_OCR_ID
+            
+            if (isMistralOcr) {
+                if (isImageFile) {
+                    // For Mistral OCR with images: add file without showing OCR options
+                    // OCR options should not appear for images
+                    addFileToSelectionWithoutOcrOptions(uri, fileName, fileSize, isDocument = false)
+                    return
+                } else if (isPdfFile) {
+                    // For Mistral OCR with PDFs: show OCR options
+                    handlePdfWithOcrOptions(uri, fileName, fileSize)
+                    return
+                }
+            }
+            
+            // For other OCR models with images: show OCR options
+            if (isOcrModel && !isMistralOcr && isImageFile) {
                 handleImageWithOcrOptions(uri, fileName, fileSize)
                 return
             }
 
-            // For OCR models with PDFs: show file and OCR options, don't auto-send
-            if (isOcrModel && isPdfFile) {
+            // For other OCR models with PDFs: show file and OCR options
+            if (isOcrModel && !isMistralOcr && isPdfFile) {
                 handlePdfWithOcrOptions(uri, fileName, fileSize)
                 return
             }
@@ -886,8 +1236,8 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
                 uri = uri,
                 name = fileName,
                 size = fileSize,
-                isDocument = isDocument,
-                isExtracting = isDocument, // Set to true for documents that need processing
+                isDocument = actuallyIsDocument,
+                isExtracting = actuallyIsDocument, // Set to true for documents that need processing
                 isExtracted = false
             )
 
@@ -896,7 +1246,33 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
             updateSelectedFilesView()
             
             // Update submit button state immediately
-            updateSubmitButtonState()
+            activity.updateButtonVisibilityAndState()
+            
+            // For images, make persistent immediately to prevent URI invalidation
+            if (isImageFile && !actuallyIsDocument) {
+                Timber.d("Making image file persistent immediately: ${fileName}")
+                activity.lifecycleScope.launch {
+                    try {
+                        val persistentStorage = PersistentFileStorage(activity)
+                        val persistentFile = tempFile.toPersistent(persistentStorage)
+                        if (persistentFile != null) {
+                            // Replace the temp file with persistent version
+                            val index = activity.selectedFiles.indexOf(tempFile)
+                            if (index != -1) {
+                                activity.selectedFiles[index] = persistentFile
+                                withContext(Dispatchers.Main) {
+                                    updateSelectedFilesView()
+                                }
+                                Timber.d("Image made persistent successfully: ${fileName}")
+                            }
+                        } else {
+                            Timber.w("Failed to make image persistent: ${fileName}")
+                        }
+                    } catch (e: Exception) {
+                        Timber.e(e, "Error making image persistent: ${e.message}")
+                    }
+                }
+            }
             
             // Save draft when files are added
             activity.saveDraftIfNeeded()
@@ -904,9 +1280,18 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
             // Vibrate to provide feedback that the file was added
             HapticManager.mediumVibration(activity)
 
-            // For documents, extract content immediately to ensure it's cached
-            if (isDocument) {
-                Timber.d("Document detected, starting immediate content extraction")
+            // For documents, check if supported and process accordingly
+            if (actuallyIsDocument) {
+                // Check if this file type is supported by the optimized system
+                if (!isFileTypeSupported(uri, fileName)) {
+                    // Remove from selected files and show unsupported dialog
+                    activity.selectedFiles.remove(tempFile)
+                    updateSelectedFilesView()
+                    showUnsupportedFileDialog(fileName, mimeType)
+                    return
+                }
+
+                Timber.d("📄 Supported document detected, processing with OptimizedFileProcessor: $fileName")
 
                 // Find file view to show extraction progress
                 val fileView = FileUtil.findFileViewForUri(uri, activity)
@@ -919,40 +1304,44 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
                     progressTracker.showProgress()
                     progressTracker.observeProgress(activity)
 
-                    // Process extraction in background
+                    // Process file using new optimized processor
                     activity.lifecycleScope.launch {
                         try {
-                            // Update progress
-                            progressTracker.updateProgress(
-                                10,
-                                "Reading document...",
-                                FileProgressTracker.ProcessingStage.READING_FILE
-                            )
-
-                            // Extract content
-                            val documentExtractor = DocumentContentExtractor(activity)
-                            val result = documentExtractor.processDocumentForModel(uri)
+                            // Use optimized file processor
+                            val result = processFileOptimized(uri, progressTracker)
 
                             if (result.isSuccess) {
-                                val extractedContent = result.getOrNull()
+                                val processedFile = result.getOrNull()!!
 
                                 withContext(Dispatchers.Main) {
-                                    // Update progress to complete
-                                    progressTracker.updateProgress(
-                                        100,
-                                        "Document ready",
-                                        FileProgressTracker.ProcessingStage.COMPLETE
-                                    )
-
+                                    // Update progress is handled by the processor
+                                    
                                     // Use the URI string consistently as the extracted content ID
                                     val uriString = uri.toString()
 
-                                    // Update file object
+                                    // Update file object with processing results
                                     val updatedFile = tempFile.copy(
                                         isExtracting = false,
                                         isExtracted = true,
-                                        extractedContentId = uriString  // Store URI string as the content ID
+                                        extractedContentId = uriString,
+                                        // Store token count and processing info
+                                        processingInfo = "✅ ${processedFile.processingMessage} • ${processedFile.tokenCount} tokens"
                                     )
+
+                                    // Cache the processed content if it's extracted content (not PDF)
+                                    if (processedFile.extractedContent != null) {
+                                        // For compatibility with existing system, create a simplified content object
+                                        val contentForCache = SimplifiedDocumentExtractor.ExtractedContent(
+                                            fileName = processedFile.fileName,
+                                            mimeType = activity.contentResolver.getType(uri) ?: "",
+                                            fileSize = processedFile.fileSize,
+                                            textContent = processedFile.extractedContent,
+                                            containsImages = false,
+                                            tokenCount = processedFile.tokenCount,
+                                            pageCount = 1
+                                        )
+                                        SimplifiedDocumentExtractor.cacheContent(uriString, contentForCache)
+                                    }
 
                                     // Replace in selected files list
                                     val index = activity.selectedFiles.indexOf(tempFile)
@@ -960,28 +1349,29 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
                                         activity.selectedFiles[index] = updatedFile
                                     }
 
-                                    // Update UI
+                                    // Update UI to hide loading overlay and show completion
                                     updateSelectedFilesView()
                                     
                                     // Update submit button state now that processing is complete
-                                    updateSubmitButtonState()
+                                    activity.updateButtonVisibilityAndState()
+                                    
+                                    Timber.d("✅ Document processing completed: ${processedFile.getSummary()}")
 
                                     // Hide progress after a short delay
                                     Handler(Looper.getMainLooper()).postDelayed({
                                         progressTracker.hideProgress()
                                     }, 500)
 
-                                    // Log successful extraction
-                                    val contentSize = extractedContent?.textContent?.length ?: 0
-                                    Timber.d("Document extraction complete: $fileName, content size: $contentSize chars")
-
-                                    // Verify content was cached properly
-                                    val cached = DocumentContentExtractor.getCachedContent(uriString)
-                                    Timber.d("Cache verification: ${cached != null}, content size: ${cached?.textContent?.length}")
+                                    // Show success message with token count
+                                    Toast.makeText(
+                                        activity, 
+                                        "📄 ${processedFile.fileName} ready • ${processedFile.tokenCount} tokens",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
                                 }
                             } else {
                                 val error = result.exceptionOrNull()
-                                Timber.e(error, "Error extracting document content: ${error?.message}")
+                                Timber.e(error, "❌ File processing failed: ${error?.message}")
 
                                 withContext(Dispatchers.Main) {
                                     progressTracker.updateProgress(
@@ -990,30 +1380,23 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
                                         FileProgressTracker.ProcessingStage.ERROR
                                     )
 
-                                    // Show error but don't remove file - we'll still send metadata
-                                    Toast.makeText(
-                                        activity,
-                                        "Warning: Could not extract text from document.",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
+                                    // Remove file from selection as it cannot be processed
+                                    activity.selectedFiles.remove(tempFile)
+                                    updateSelectedFilesView()
 
-                                    // Update file as not extracted
-                                    val updatedFile = tempFile.copy(
-                                        isExtracting = false,
-                                        isExtracted = false
-                                    )
-
-                                    // Replace in selected files list
-                                    val index = activity.selectedFiles.indexOf(tempFile)
-                                    if (index != -1) {
-                                        activity.selectedFiles[index] = updatedFile
+                                    // Show error message with details
+                                    val errorMsg = when {
+                                        error?.message?.contains("not supported", true) == true -> 
+                                            "File type not supported. Only PDF, TXT, and CSV files are allowed."
+                                        error?.message?.contains("PDF", true) == true ->
+                                            "PDF processing failed. This AI model may not support PDF files."
+                                        else -> "File processing failed: ${error?.message}"
                                     }
 
-                                    // Update UI
-                                    updateSelectedFilesView()
+                                    Toast.makeText(activity, errorMsg, Toast.LENGTH_LONG).show()
                                     
-                                    // Update submit button state after error
-                                    updateSubmitButtonState()
+                                    // Update submit button state after removal
+                                    activity.updateButtonVisibilityAndState()
 
                                     // Hide progress after a short delay
                                     Handler(Looper.getMainLooper()).postDelayed({
@@ -1022,14 +1405,25 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
                                 }
                             }
                         } catch (e: Exception) {
-                            Timber.e(e, "Error in document extraction: ${e.message}")
+                            Timber.e(e, "❌ Critical error in document processing: ${e.message}")
 
                             withContext(Dispatchers.Main) {
                                 progressTracker.updateProgress(
                                     100,
-                                    "Error processing",
+                                    "Critical error",
                                     FileProgressTracker.ProcessingStage.ERROR
                                 )
+
+                                // Remove file due to processing failure
+                                activity.selectedFiles.remove(tempFile)
+                                updateSelectedFilesView()
+                                activity.updateButtonVisibilityAndState()
+
+                                Toast.makeText(
+                                    activity,
+                                    "File processing failed: ${e.message}",
+                                    Toast.LENGTH_LONG
+                                ).show()
 
                                 // Hide progress after a short delay
                                 Handler(Looper.getMainLooper()).postDelayed({
@@ -1039,23 +1433,37 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
                         }
                     }
                 } else {
-                    // No file view found, just extract in background without UI updates
+                    // No file view found, process in background with optimized processor
                     activity.lifecycleScope.launch(Dispatchers.IO) {
                         try {
-                            val documentExtractor = DocumentContentExtractor(activity)
-                            val result = documentExtractor.processDocumentForModel(uri)
+                            val result = processFileOptimized(uri, null)
 
                             if (result.isSuccess) {
-                                // Get cache key (URI string)
+                                val processedFile = result.getOrNull()!!
                                 val uriString = uri.toString()
+
+                                // Cache the processed content if it's extracted content (not PDF)
+                                if (processedFile.extractedContent != null) {
+                                    val contentForCache = SimplifiedDocumentExtractor.ExtractedContent(
+                                        fileName = processedFile.fileName,
+                                        mimeType = activity.contentResolver.getType(uri) ?: "",
+                                        fileSize = processedFile.fileSize,
+                                        textContent = processedFile.extractedContent,
+                                        containsImages = false,
+                                        tokenCount = processedFile.tokenCount,
+                                        pageCount = 1
+                                    )
+                                    SimplifiedDocumentExtractor.cacheContent(uriString, contentForCache)
+                                }
 
                                 // Update file status on main thread
                                 withContext(Dispatchers.Main) {
-                                    // Update file as extracted
+                                    // Update file as extracted with token info
                                     val updatedFile = tempFile.copy(
                                         isExtracting = false,
                                         isExtracted = true,
-                                        extractedContentId = uriString
+                                        extractedContentId = uriString,
+                                        processingInfo = "✅ ${processedFile.processingMessage} • ${processedFile.tokenCount} tokens"
                                     )
 
                                     // Replace in selected files list
@@ -1066,15 +1474,31 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
 
                                     // Update UI
                                     updateSelectedFilesView()
+                                    activity.updateButtonVisibilityAndState()
                                 }
 
                                 // Log success
-                                Timber.d("Background document extraction complete: $fileName")
+                                Timber.d("✅ Background processing complete: ${processedFile.getSummary()}")
                             } else {
-                                Timber.e("Background extraction failed: ${result.exceptionOrNull()?.message}")
+                                val error = result.exceptionOrNull()
+                                Timber.e("❌ Background processing failed: ${error?.message}")
+                                
+                                withContext(Dispatchers.Main) {
+                                    // Remove file due to processing failure
+                                    activity.selectedFiles.remove(tempFile)
+                                    updateSelectedFilesView()
+                                    activity.updateButtonVisibilityAndState()
+                                }
                             }
                         } catch (e: Exception) {
-                            Timber.e(e, "Error in background document extraction: ${e.message}")
+                            Timber.e(e, "❌ Error in background document processing: ${e.message}")
+                            
+                            // Remove file from selection on critical error
+                            withContext(Dispatchers.Main) {
+                                activity.selectedFiles.remove(tempFile)
+                                updateSelectedFilesView()
+                                activity.updateButtonVisibilityAndState()
+                            }
                         }
                     }
                 }
@@ -1173,7 +1597,7 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
 
                 // Check if file is accessible
                 val isAccessible = try {
-                    activity.contentResolver.openInputStream(file.uri)?.use { true } ?: false
+                    activity.contentResolver.openInputStream(file.uri)?.use { true } == true
                 } catch (e: Exception) {
                     Timber.e(e, "File not accessible: ${file.uri}")
                     false
@@ -1343,9 +1767,7 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
      */
     fun serializeSelectedFiles(files: List<FileUtil.FileUtil.SelectedFile>): String {
         return try {
-            // Use activity as the context
-            val gson = GsonFactory.createGson(activity)
-            gson.toJson(files)
+            JsonUtils.listToJson(files)
         } catch (e: Exception) {
             Timber.e(e, "Error serializing files: ${e.message}")
             "[]" // Return empty array as fallback
@@ -1357,10 +1779,7 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
      */
     fun deserializeSelectedFiles(json: String): List<FileUtil.FileUtil.SelectedFile> {
         return try {
-            // Use activity as the context
-            val gson = GsonFactory.createGson(activity)
-            val type = object : TypeToken<List<FileUtil.FileUtil.SelectedFile>>() {}.type
-            gson.fromJson(json, type) ?: emptyList()
+            JsonUtils.fromJsonList(json, FileUtil.FileUtil.SelectedFile::class.java) ?: emptyList()
         } catch (e: Exception) {
             Timber.e(e, "Error deserializing files: ${e.message}")
             emptyList()
@@ -1411,10 +1830,11 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
         val fileType = fileView.findViewById<TextView>(R.id.file_type)
         val fileSize = fileView.findViewById<TextView>(R.id.file_size)
         val removeButton = fileView.findViewById<MaterialButton>(R.id.remove_button)
-        val previewContainer = fileView.findViewById<FrameLayout>(R.id.previewContainer)
+        fileView.findViewById<FrameLayout>(R.id.previewContainer)
         val imagePreview = fileView.findViewById<ShapeableImageView>(R.id.image_preview)
         val documentIcon = fileView.findViewById<ImageView>(R.id.document_icon)
         val progressLayout = fileView.findViewById<View>(R.id.progressLayout)
+        val loadingOverlay = fileView.findViewById<FrameLayout>(R.id.loadingOverlay)
 
         fileName.text = file.name
         fileType.text = FileUtil.getFileType(file.name)
@@ -1422,22 +1842,39 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
 
         val isImage = isImageFile(file.name)
         val isPdf = file.name.endsWith(".pdf", ignoreCase = true)
+        
+        Timber.d("Creating file view for: ${file.name}, isImage: $isImage, isDocument: ${file.isDocument}, isPdf: $isPdf")
 
         if (isImage) {
             imagePreview.visibility = View.VISIBLE
             documentIcon.visibility = View.GONE
             progressLayout.visibility = View.GONE
+            
+            // Show loading overlay if file is being processed
+            if (file.isExtracting) {
+                loadingOverlay.visibility = View.VISIBLE
+                Timber.d("Showing loading overlay for image: ${file.name}")
+            } else {
+                loadingOverlay.visibility = View.GONE
+            }
 
-            Glide.with(activity)
-                .load(file.uri)
-                .placeholder(R.drawable.ic_image_placeholder)
-                .error(R.drawable.ic_image_error)
-                .centerCrop()
-                .into(imagePreview)
+            Timber.d("Loading image with Glide: ${file.uri}")
+            try {
+                Glide.with(activity)
+                    .load(file.uri)
+                    .placeholder(R.drawable.ic_image_placeholder)
+                    .error(R.drawable.ic_image_error)
+                    .centerCrop()
+                    .into(imagePreview)
+                Timber.d("Glide load request initiated for: ${file.uri}")
+            } catch (e: Exception) {
+                Timber.e(e, "Error setting up Glide load for image: ${file.uri}")
+            }
 
             imagePreview.setOnClickListener { openImage(file.uri) }
         } else if (file.isDocument) {
             // Show document icon
+            Timber.d("Setting up document view for: ${file.name}")
             imagePreview.visibility = View.GONE
             documentIcon.visibility = View.VISIBLE
 
@@ -1451,6 +1888,7 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
                 "txt" -> R.drawable.ic_text
                 else -> R.drawable.ic_document
             }
+            Timber.d("Setting document icon for extension '$extension': $iconDrawable")
             documentIcon.setImageResource(iconDrawable)
 
             // Show extraction status if applicable
@@ -1458,10 +1896,14 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
             if (file.isExtracting) {
                 fileInfoLayout.visibility = View.GONE
                 progressLayout.visibility = View.VISIBLE
+                loadingOverlay.visibility = View.VISIBLE
+                Timber.d("Showing loading overlay for document: ${file.name} (extracting)")
                 // The progress is handled by FileProgressTracker
             } else {
                 progressLayout.visibility = View.GONE
                 fileInfoLayout.visibility = View.VISIBLE
+                loadingOverlay.visibility = View.GONE
+                Timber.d("Document processing complete, hiding loading overlay: ${file.name}")
                 // Document is processed - show normal file info
             }
 
@@ -1472,9 +1914,18 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
             }
         } else {
             // Handle other document types
+            Timber.d("Setting up generic file view for: ${file.name} (not marked as image or document)")
             imagePreview.visibility = View.GONE
             documentIcon.visibility = View.VISIBLE
             progressLayout.visibility = View.GONE
+            
+            // Show loading overlay if file is being processed
+            if (file.isExtracting) {
+                loadingOverlay.visibility = View.VISIBLE
+                Timber.d("Showing loading overlay for generic file: ${file.name}")
+            } else {
+                loadingOverlay.visibility = View.GONE
+            }
 
             val extension = file.name.substringAfterLast('.', "").lowercase()
             val iconDrawable = when (extension) {
@@ -1485,6 +1936,7 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
                 "txt" -> R.drawable.ic_text
                 else -> R.drawable.ic_document
             }
+            Timber.d("Setting generic file icon for extension '$extension': $iconDrawable")
             documentIcon.setImageResource(iconDrawable)
             documentIcon.setOnClickListener { openFile(file.uri, file.name) }
         }
@@ -1523,7 +1975,7 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
             
             updateSelectedFilesView()
             // Update submit button state after file removal
-            updateSubmitButtonState()
+            activity.updateButtonVisibilityAndState()
             // Save draft when files are removed
             activity.saveDraftIfNeeded()
         }
@@ -1565,13 +2017,20 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
             fileView.strokeWidth = 0
             fileView.alpha = 1.0f
         }
-
+        
+        // Final debug log
+        Timber.d("File view created for ${file.name}: imagePreview=${imagePreview.visibility}, documentIcon=${documentIcon.visibility}")
         return fileView
     }
 
     private fun isImageFile(fileName: String): Boolean {
         val extension = fileName.substringAfterLast('.', "").lowercase()
         return extension in listOf("jpg", "jpeg", "png", "gif", "bmp", "webp")
+    }
+    
+    private fun isDocumentFile(fileName: String): Boolean {
+        val extension = fileName.substringAfterLast('.', "").lowercase()
+        return extension in listOf("pdf", "doc", "docx", "txt", "xls", "xlsx", "ppt", "pptx", "rtf", "odt", "ods", "odp")
     }
 
 
@@ -1720,12 +2179,19 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
         val isProcessing = areFilesStillProcessing()
         val hasText = activity.binding.etInputText.text.toString().trim().isNotEmpty()
         val hasFiles = activity.selectedFiles.isNotEmpty()
+        val isOcrModel = ModelValidator.isOcrModel(ModelManager.selectedModel.id)
         
         // Button should be enabled only if:
         // 1. There's text or files to send
         // 2. No files are currently being processed
         // 3. Not currently generating a response
-        val shouldEnable = (hasText || hasFiles) && !isProcessing && !activity.isGenerating
+        // For non-OCR models: also enable if there's text (even without files)
+        val shouldEnable = if (isOcrModel) {
+            (hasText || hasFiles) && !isProcessing && !activity.isGenerating
+        } else {
+            // For non-OCR models: enable if there's text, regardless of files
+            hasText && !isProcessing && !activity.isGenerating
+        }
         
         activity.binding.btnSubmitText.isEnabled = shouldEnable
         
@@ -2481,5 +2947,185 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
             Timber.d("=== END DEBUG ===")
         }
     }
+
+    /**
+     * Add file to selection without showing OCR options - used for Mistral OCR with images
+     */
+    private fun addFileToSelectionWithoutOcrOptions(uri: Uri, fileName: String, fileSize: Long, isDocument: Boolean) {
+        try {
+            // Check if Mistral OCR already has files selected (only one file allowed)
+            val isMistralOcr = ModelManager.selectedModel.id == ModelManager.MISTRAL_OCR_ID
+            if (isMistralOcr && activity.selectedFiles.isNotEmpty()) {
+                Toast.makeText(
+                    activity,
+                    "Mistral OCR allows only one file at a time. Please remove the current file first.",
+                    Toast.LENGTH_SHORT
+                ).show()
+                return
+            }
+            
+            // Create selected file
+            val selectedFile = FileUtil.FileUtil.SelectedFile(
+                uri = uri,
+                name = fileName,
+                size = fileSize,
+                isDocument = isDocument
+            )
+
+            // Add to selected files
+            activity.selectedFiles.add(selectedFile)
+            updateSelectedFilesView()
+
+            // For images, make persistent immediately to prevent URI invalidation
+            if (!isDocument && isImageFile(fileName)) {
+                Timber.d("Making image file persistent immediately (OCR path): ${fileName}")
+                activity.lifecycleScope.launch {
+                    try {
+                        val persistentStorage = PersistentFileStorage(activity)
+                        val persistentFile = selectedFile.toPersistent(persistentStorage)
+                        if (persistentFile != null) {
+                            // Replace the temp file with persistent version
+                            val index = activity.selectedFiles.indexOf(selectedFile)
+                            if (index != -1) {
+                                activity.selectedFiles[index] = persistentFile
+                                withContext(Dispatchers.Main) {
+                                    updateSelectedFilesView()
+                                }
+                                Timber.d("Image made persistent successfully (OCR path): ${fileName}")
+                            }
+                        } else {
+                            Timber.w("Failed to make image persistent (OCR path): ${fileName}")
+                        }
+                    } catch (e: Exception) {
+                        Timber.e(e, "Error making image persistent (OCR path): ${e.message}")
+                    }
+                }
+            }
+
+            // Update UI state
+            activity.updateButtonVisibilityAndState()
+            activity.saveDraftIfNeeded()
+
+            // Provide haptic feedback
+            HapticManager.mediumVibration(activity)
+
+            // Hide OCR options panel since this is an image for Mistral OCR
+            activity.binding.ocrOptionsPanel.visibility = View.GONE
+
+            Toast.makeText(
+                activity,
+                "Image selected for Mistral OCR processing",
+                Toast.LENGTH_SHORT
+            ).show()
+
+        } catch (e: Exception) {
+            Timber.e(e, "Error adding file without OCR options")
+            Toast.makeText(
+                activity,
+                "Error selecting file: ${e.message}",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    /**
+     * Show dialog for unsupported Office file types
+     */
+    private fun showUnsupportedFileDialog(fileName: String, mimeType: String) {
+        val alternatives = SupportedFileTypes.getAlternativesForUnsupportedType(mimeType)
+        
+        AlertDialog.Builder(activity)
+            .setTitle("⚠️ File Type Not Supported")
+            .setMessage("""
+                📄 File: $fileName
+                
+                This file type cannot be processed directly due to compatibility issues with Android.
+                
+                $alternatives
+                
+                📋 FULLY SUPPORTED FORMATS:
+                • Text files (.txt)
+                • CSV files (.csv)
+                • PDF files (with compatible AI models)
+                
+                For the best experience, please convert your file to one of these formats.
+            """.trimIndent())
+            .setPositiveButton("OK") { dialog, _ ->
+                dialog.dismiss()
+            }
+            .setNeutralButton("Show Supported Formats") { _, _ ->
+                showSupportedFormatsDialog()
+            }
+            .show()
+    }
+
+    /**
+     * Show dialog for PDF files with non-supporting AI models
+     */
+    private fun showPdfNotSupportedDialog(fileName: String, modelName: String) {
+        AlertDialog.Builder(activity)
+            .setTitle("📄 PDF Not Supported by Current AI Model")
+            .setMessage("""
+                File: $fileName
+                Current Model: $modelName
+                
+                This AI model cannot process PDF files directly.
+                
+                💡 SOLUTIONS:
+                
+                1. 🤖 SWITCH TO PDF-COMPATIBLE MODEL:
+                   • GPT-4o, GPT-4 Turbo
+                   • Claude 3/3.5 (Opus, Sonnet)
+                   • Gemini Pro/1.5/2.0
+                   • Perplexity models
+                
+                2. 📝 CONVERT PDF:
+                   • Use Google Drive: PDF → Text
+                   • Online tools: PDF to TXT converter
+                   • Copy text manually from PDF
+                
+                3. 📋 PASTE CONTENT:
+                   • Open PDF in any viewer
+                   • Select and copy text
+                   • Paste directly in chat
+            """.trimIndent())
+            .setPositiveButton("Switch AI Model") { dialog, _ ->
+                dialog.dismiss()
+                // Guide user to model selection in main UI
+                Toast.makeText(activity, "Tap the model name at the top to switch models", Toast.LENGTH_LONG).show()
+                // Note: Model selector highlighting could be added here if needed
+            }
+            .setNeutralButton("OK") { dialog, _ ->
+                dialog.dismiss()
+            }
+            .show()
+    }
+
+    /**
+     * Show supported formats information dialog
+     */
+    private fun showSupportedFormatsDialog() {
+        AlertDialog.Builder(activity)
+            .setTitle("📄 Supported File Formats")
+            .setMessage(SupportedFileTypes.getSupportedDocumentFormatsDescription())
+            .setPositiveButton("Got it") { dialog, _ ->
+                dialog.dismiss()
+            }
+            .show()
+    }
+    
+    /**
+     * Update file upload limits based on subscription status
+     */
+    fun updateLimits(maxFiles: Int, maxSizeMB: Int) {
+        this.maxFiles = maxFiles
+        this.maxFileSizeMB = maxSizeMB
+        
+        Timber.d("File limits updated: maxFiles=$maxFiles, maxSize=${maxSizeMB}MB")
+    }
+    
+    // File limits (default values for free users)
+    private var maxFiles = 3
+    private var maxFileSizeMB = 5
 
 }

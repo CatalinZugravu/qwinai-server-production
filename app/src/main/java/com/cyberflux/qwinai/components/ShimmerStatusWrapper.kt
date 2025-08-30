@@ -85,7 +85,7 @@ class ShimmerStatusWrapper @JvmOverloads constructor(
         android.util.Log.d("ShimmerStatusWrapper", "setStatus: '$status', active: $active")
         
         // Instant visibility changes for seamless transitions
-        visibility = if (active && status.isNotEmpty()) View.VISIBLE else View.GONE
+        visibility = if (active && status.isNotEmpty()) VISIBLE else GONE
         alpha = 1f // Ensure full visibility
         updateContent()
     }
@@ -93,23 +93,9 @@ class ShimmerStatusWrapper @JvmOverloads constructor(
     fun hideStatus() {
         isActive = false
         // Instant hide to prevent gaps between indicators
-        visibility = View.GONE
+        visibility = GONE
         alpha = 1f // Reset for next use
         updateContent()
     }
 
-    fun showStatus() {
-        if (currentStatus.isNotEmpty()) {
-            isActive = true
-            visibility = View.VISIBLE
-            updateContent()
-        }
-    }
-
-    fun updateStatus(newStatus: String) {
-        currentStatus = newStatus
-        if (isActive) {
-            updateContent()
-        }
-    }
 }

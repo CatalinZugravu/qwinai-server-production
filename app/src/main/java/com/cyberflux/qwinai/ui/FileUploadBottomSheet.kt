@@ -34,6 +34,7 @@ class FileUploadBottomSheet : BottomSheetDialogFragment() {
     private lateinit var mediaThumbnailAdapter: MediaThumbnailAdapter
     private var onFileSelectedListener: ((Uri) -> Unit)? = null
     private var onCameraClickListener: (() -> Unit)? = null
+    private var onPickerLaunchListener: (() -> Unit)? = null
     
     // Camera permission launcher
     private val cameraPermissionLauncher = registerForActivityResult(
@@ -110,11 +111,13 @@ class FileUploadBottomSheet : BottomSheetDialogFragment() {
     companion object {
         fun newInstance(
             onFileSelected: (Uri) -> Unit,
-            onCameraClick: () -> Unit
+            onCameraClick: () -> Unit,
+            onPickerLaunch: (() -> Unit)? = null
         ): FileUploadBottomSheet {
             return FileUploadBottomSheet().apply {
                 this.onFileSelectedListener = onFileSelected
                 this.onCameraClickListener = onCameraClick
+                this.onPickerLaunchListener = onPickerLaunch
             }
         }
     }
@@ -274,6 +277,8 @@ class FileUploadBottomSheet : BottomSheetDialogFragment() {
         }
         
         try {
+            // Notify that we're about to launch external picker
+            onPickerLaunchListener?.invoke()
             imagePickerLauncher.launch(Intent.createChooser(intent, "Select Images"))
         } catch (e: Exception) {
             // Handle exception
@@ -286,19 +291,19 @@ class FileUploadBottomSheet : BottomSheetDialogFragment() {
             putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
             addCategory(Intent.CATEGORY_OPENABLE)
             
-            // Add MIME types for common file formats
+            // Only allow supported file formats: PDF, CSV, TXT, and images
             val mimeTypes = arrayOf(
                 "image/*",
                 "application/pdf",
                 "text/plain",
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                "text/csv"
             )
             putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes)
         }
         
         try {
+            // Notify that we're about to launch external picker
+            onPickerLaunchListener?.invoke()
             filePickerLauncher.launch(Intent.createChooser(intent, "Select Files"))
         } catch (e: Exception) {
             // Handle exception

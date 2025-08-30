@@ -17,10 +17,12 @@ object MediationManagerFactory {
 
     /**
      * Gets the appropriate mediation manager for the current device.
+     * FIXED: Use non-blocking device detection to prevent startup deadlocks in release builds
      */
     fun getMediationManager(): AdMediationManager {
         return lock.withLock {
-            if (com.cyberflux.qwinai.MyApp.isHuaweiDevice()) {
+            // CRITICAL FIX: Use non-blocking device detection to prevent release build startup deadlocks
+            if (com.cyberflux.qwinai.MyApp.isHuaweiDeviceNonBlocking()) {
                 getHuaweiMediationManager()
             } else {
                 getGoogleMediationManager()

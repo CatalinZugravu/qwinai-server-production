@@ -9,10 +9,42 @@ import java.util.regex.Pattern
  */
 object TokenValidator {
 
-    // Improved token estimation constants
-    private const val AVG_CHARS_PER_TOKEN = 4.0
-    private const val WHITESPACE_ADJUSTMENT = 0.8 // Whitespace tends to be more efficient in tokenization
-    private const val SAFETY_MARGIN = 1.05 // 5% safety margin for token estimation
+    // Model-specific token estimation constants
+    private val MODEL_TOKEN_PATTERNS = mapOf(
+        // OpenAI models (using tiktoken-like estimation)
+        "gpt" to ModelTokenPattern(3.8, 0.75, 1.10), // GPT models are more efficient
+        "o1" to ModelTokenPattern(3.9, 0.75, 1.12), // O1 models similar to GPT
+        "o3" to ModelTokenPattern(3.9, 0.75, 1.12), // O3 models similar to GPT
+        "chatgpt" to ModelTokenPattern(3.8, 0.75, 1.10),
+        
+        // Anthropic models (Claude tokenizer)
+        "claude" to ModelTokenPattern(4.2, 0.80, 1.15), // Claude is less efficient
+        
+        // Meta models (Llama tokenizer)
+        "llama" to ModelTokenPattern(4.5, 0.85, 1.20), // Llama less efficient
+        "meta" to ModelTokenPattern(4.5, 0.85, 1.20),
+        
+        // Google models (SentencePiece)
+        "gemma" to ModelTokenPattern(5.0, 0.90, 1.25), // Gemma least efficient
+        "gemini" to ModelTokenPattern(4.8, 0.85, 1.20),
+        
+        // Other models
+        "qwen" to ModelTokenPattern(4.3, 0.80, 1.18),
+        "mistral" to ModelTokenPattern(4.1, 0.78, 1.15),
+        "deepseek" to ModelTokenPattern(4.4, 0.82, 1.18),
+        "grok" to ModelTokenPattern(4.0, 0.77, 1.12),
+        "cohere" to ModelTokenPattern(4.2, 0.80, 1.15),
+        "perplexity" to ModelTokenPattern(4.0, 0.77, 1.12)
+    )
+    
+    // Default pattern for unknown models
+    private val DEFAULT_TOKEN_PATTERN = ModelTokenPattern(4.2, 0.80, 1.15)
+    
+    data class ModelTokenPattern(
+        val avgCharsPerToken: Double,
+        val whitespaceAdjustment: Double,
+        val safetyMargin: Double
+    )
 
     // Cache token counts for better performance
     private val tokenCountCache = mutableMapOf<String, Int>()
@@ -20,7 +52,7 @@ object TokenValidator {
 
     /**
      * Get the effective maximum input tokens based on subscription status
-     * Non-subscribers get half the maximum token limit
+     * Free users get exactly 1000 input tokens as per new requirements
      */
     fun getEffectiveMaxInputTokens(modelId: String, isSubscribed: Boolean): Int {
         // Get model configuration from ModelConfigManager
@@ -29,17 +61,14 @@ object TokenValidator {
         // If model not found, use a reasonable default
         if (config == null) {
             Timber.w("Model configuration not found for $modelId, using default fallback")
-            return if (isSubscribed) 16000 else 8000  // Default fallback
+            return if (isSubscribed) 16000 else 1000  // New: 1000 for free users
         }
 
-        // Get the explicitly defined maxInputTokens
-        val maxInputTokens = config.maxInputTokens
-
-        // For non-subscribers, limit to half of the regular limit
+        // For free users, use the new unified limit of 1000 tokens
         val effectiveTokens = if (isSubscribed) {
-            maxInputTokens
+            config.maxInputTokens
         } else {
-            maxInputTokens / 2
+            1000  // New: Fixed 1000 input tokens for free users
         }
 
         Timber.d("Effective input tokens for $modelId (subscribed: $isSubscribed): $effectiveTokens")
@@ -48,7 +77,7 @@ object TokenValidator {
 
     /**
      * Get the effective maximum output tokens based on subscription status
-     * Non-subscribers get half the maximum token limit
+     * Free users get exactly 1500 output tokens as per new requirements
      */
     fun getEffectiveMaxOutputTokens(modelId: String, isSubscribed: Boolean): Int {
         // Get model configuration from ModelConfigManager
@@ -57,17 +86,14 @@ object TokenValidator {
         // If model not found, use a reasonable default
         if (config == null) {
             Timber.w("Model configuration not found for $modelId, using default fallback")
-            return if (isSubscribed) 4000 else 2000  // Default fallback
+            return if (isSubscribed) 4000 else 1500  // New: 1500 for free users
         }
 
-        // Get the explicitly defined maxOutputTokens
-        val maxOutputTokens = config.maxOutputTokens
-
-        // For non-subscribers, limit to half of the regular limit
+        // For free users, use the new unified limit of 1500 tokens
         val effectiveTokens = if (isSubscribed) {
-            maxOutputTokens
+            config.maxOutputTokens
         } else {
-            maxOutputTokens / 2
+            1500  // New: Fixed 1500 output tokens for free users
         }
 
         Timber.d("Effective output tokens for $modelId (subscribed: $isSubscribed): $effectiveTokens")
@@ -84,26 +110,28 @@ object TokenValidator {
     }
 
     /**
-     * Improved token count estimation that better matches real tokenizers
+     * Model-aware token count estimation that matches real tokenizers
      */
-    fun estimateTokenCount(text: String): Int {
+    fun estimateTokenCount(text: String, modelId: String = ""): Int {
         if (text.isEmpty()) {
             return 0
         }
 
-        // Check cache first
-        tokenCountCache[text]?.let { return it }
+        // Create cache key including model info for accuracy
+        val cacheKey = if (modelId.isNotEmpty()) "$modelId:$text" else text
+        tokenCountCache[cacheKey]?.let { return it }
 
         // If text is too long, split and estimate
         if (text.length > 1000) {
             val chunks = text.chunked(1000)
-            val total = chunks.sumOf { estimateTokenCount(it) }
-
-            // Don't cache very long texts
+            val total = chunks.sumOf { estimateTokenCount(it, modelId) }
             return total
         }
 
-        // Count words - this correlates well with many tokenizers
+        // Get model-specific pattern
+        val pattern = getModelTokenPattern(modelId)
+        
+        // Count words - correlates well with many tokenizers
         val words = text.trim().split(Pattern.compile("\\s+")).size
 
         // Count characters without whitespace
@@ -115,24 +143,52 @@ object TokenValidator {
         // Calculate whitespace
         val whitespace = totalChars - charsNoWhitespace
 
-        // Estimated token calculation based on GPT-style tokenization patterns
-        // This is more accurate than just chars/4 or word count alone
-        val charBasedEstimate = charsNoWhitespace / AVG_CHARS_PER_TOKEN +
-                (whitespace * WHITESPACE_ADJUSTMENT) / AVG_CHARS_PER_TOKEN
+        // Model-specific token calculation
+        val charBasedEstimate = charsNoWhitespace / pattern.avgCharsPerToken +
+                (whitespace * pattern.whitespaceAdjustment) / pattern.avgCharsPerToken
 
-        // For languages like English, words correlate well with tokens
-        // For others, character-based estimation works better
-        val estimate = maxOf(words, charBasedEstimate.toInt())
+        // Account for special tokens and encoding differences
+        val estimate = when {
+            // Code or structured text (more tokens due to symbols)
+            text.contains("{") || text.contains("[") || text.contains("<") -> 
+                maxOf(words * 1.2, charBasedEstimate * 1.1).toInt()
+            // Natural language text
+            else -> maxOf(words, charBasedEstimate.toInt())
+        }
 
-        // Apply safety margin to avoid underestimation
-        val finalEstimate = (estimate * SAFETY_MARGIN).toInt()
+        // Apply model-specific safety margin
+        val finalEstimate = (estimate * pattern.safetyMargin).toInt()
 
         // Cache result if cache isn't too large
         if (tokenCountCache.size < MAX_CACHE_SIZE) {
-            tokenCountCache[text] = finalEstimate
+            tokenCountCache[cacheKey] = finalEstimate
         }
 
         return finalEstimate
+    }
+    
+    /**
+     * Legacy method for backward compatibility
+     */
+    fun estimateTokenCount(text: String): Int = estimateTokenCount(text, "")
+    
+    /**
+     * Get model-specific token pattern
+     */
+    private fun getModelTokenPattern(modelId: String): ModelTokenPattern {
+        if (modelId.isEmpty()) return DEFAULT_TOKEN_PATTERN
+        
+        val lowerModelId = modelId.lowercase()
+        return MODEL_TOKEN_PATTERNS.entries.find { (key, _) ->
+            lowerModelId.contains(key)
+        }?.value ?: DEFAULT_TOKEN_PATTERN
+    }
+    
+    /**
+     * Get more accurate token count for specific model
+     */
+    fun getAccurateTokenCount(text: String, modelId: String): Int {
+        return estimateTokenCount(text, modelId)
     }
 
     /**
@@ -165,10 +221,10 @@ object TokenValidator {
     }
 
     /**
-     * Truncate text to fit within specified token count
+     * Truncate text to fit within specified token count with model awareness
      */
-    fun truncateToTokenCount(text: String, maxTokens: Int): String {
-        val currentTokens = estimateTokenCount(text)
+    fun truncateToTokenCount(text: String, maxTokens: Int, modelId: String = ""): String {
+        val currentTokens = estimateTokenCount(text, modelId)
 
         // ✅ FIX: Nu trunca dacă nu e nevoie
         if (currentTokens <= maxTokens) {
@@ -180,7 +236,7 @@ object TokenValidator {
 
         // Reserve tokens for truncation indicator ONLY when actually truncating
         val truncationIndicator = "\n\n[Message truncated to fit $maxTokens token limit]"
-        val truncationTokens = estimateTokenCount(truncationIndicator)
+        val truncationTokens = estimateTokenCount(truncationIndicator, modelId)
         val targetTokens = maxTokens - truncationTokens
 
         if (targetTokens <= 0) {
@@ -193,7 +249,7 @@ object TokenValidator {
         val resultParagraphs = mutableListOf<String>()
 
         for (paragraph in paragraphs) {
-            val paragraphTokens = estimateTokenCount(paragraph)
+            val paragraphTokens = estimateTokenCount(paragraph, modelId)
             if (paragraphTokens <= remainingTokens) {
                 resultParagraphs.add(paragraph)
                 remainingTokens -= paragraphTokens
@@ -215,7 +271,7 @@ object TokenValidator {
             text.take(maxTokens * 4) + truncationIndicator // Aproximare brută
         }
 
-        val finalTokens = estimateTokenCount(result)
+        val finalTokens = estimateTokenCount(result, modelId)
         Timber.d("Truncated result: $finalTokens tokens (target: $maxTokens)")
 
         return result

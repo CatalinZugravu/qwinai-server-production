@@ -7,11 +7,13 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import com.cyberflux.qwinai.utils.HapticManager
 import android.widget.Toast
+import com.cyberflux.qwinai.credits.CreditManager
 import com.cyberflux.qwinai.model.ChatMessage
 import com.cyberflux.qwinai.network.ImageGenerationHttpClient
 import com.cyberflux.qwinai.network.RetrofitInstance
 import com.cyberflux.qwinai.utils.ImageGenerationUtils
 import com.cyberflux.qwinai.utils.ModelManager
+import com.cyberflux.qwinai.utils.UnifiedUsageManager
 import kotlinx.coroutines.*
 import org.json.JSONObject
 import timber.log.Timber
@@ -26,6 +28,7 @@ import java.net.SocketTimeoutException
 class ImageGenerationManager(private val context: Context) {
 
     private val mainScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private val unifiedUsageManager by lazy { UnifiedUsageManager.getInstance(context) }
 
     /**
      * Handle a conversation image generation request, switching from GPT-4 to DALL-E
@@ -41,45 +44,62 @@ class ImageGenerationManager(private val context: Context) {
         isSubscribed: Boolean,
         onDecrementCredits: () -> Unit
     ) {
-        // Create AI message for the image generation
-        val aiMessageId = UUID.randomUUID().toString()
-        val groupId = UUID.randomUUID().toString()
+        mainScope.launch {
+            try {
+                // Validate image generation limits with new unified system
+                val validationResult = unifiedUsageManager.validateRequest(
+                    modelId = ModelManager.DALLE_3_ID,
+                    inputPrompt = prompt,
+                    isSubscribed = isSubscribed
+                )
+                
+                if (!validationResult.isAllowed) {
+                    onGenerationError(validationResult.reason)
+                    return@launch
+                }
+                
+                // Create AI message for the image generation
+                val aiMessageId = UUID.randomUUID().toString()
+                val groupId = UUID.randomUUID().toString()
 
-        val loadingMessage = ChatMessage(
-            id = aiMessageId,
-            conversationId = conversationId,
-            message = JSONObject().apply {
-                put("caption", "Generating image with DALL-E 3: $prompt")
-                put("status", "generating")
-                put("stage", "Starting image generation...")
-                put("progress", 0)
-                put("prompt", prompt) // Store prompt for regeneration
-            }.toString(),
-            isUser = false,
-            timestamp = System.currentTimeMillis(),
-            isGenerating = true,
-            showButtons = false,
-            modelId = ModelManager.DALLE_3_ID,
-            aiModel = "DALL-E 3",
-            aiGroupId = groupId,
-            parentMessageId = userMessageId,
-            isGeneratedImage = true
-        )
+                val loadingMessage = ChatMessage(
+                    id = aiMessageId,
+                    conversationId = conversationId,
+                    message = JSONObject().apply {
+                        put("caption", "Generating image with DALL-E 3: $prompt")
+                        put("status", "generating")
+                        put("stage", "Starting image generation...")
+                        put("progress", 0)
+                        put("prompt", prompt) // Store prompt for regeneration
+                    }.toString(),
+                    isUser = false,
+                    timestamp = System.currentTimeMillis(),
+                    isGenerating = true,
+                    showButtons = false,
+                    modelId = ModelManager.DALLE_3_ID,
+                    aiModel = "DALL-E 3",
+                    aiGroupId = groupId,
+                    parentMessageId = userMessageId,
+                    isGeneratedImage = true
+                )
 
-        // Send to UI for display
-        onUpdateMessage(loadingMessage)
+                // Send to UI for display
+                onUpdateMessage(loadingMessage)
 
-        // Save to database
-        onSaveMessage(loadingMessage)
+                // Save to database
+                onSaveMessage(loadingMessage)
 
-        // Deduct credits if not a subscriber
-        if (!isSubscribed) {
-            // Image generation costs multiple credits
-            repeat(5) { onDecrementCredits() }
+                // Deduct credits or record usage with new unified system
+                unifiedUsageManager.recordImageGeneration(isSubscribed)
+
+                // Generate the image
+                generateImage(loadingMessage, prompt, onUpdateMessage, onSaveMessage, onGenerationComplete, onGenerationError, isSubscribed)
+                
+            } catch (e: Exception) {
+                Timber.e(e, "Error handling image generation request")
+                onGenerationError("Failed to start image generation: ${e.message}")
+            }
         }
-
-        // Generate the image
-        generateImage(loadingMessage, prompt, onUpdateMessage, onSaveMessage, onGenerationComplete, onGenerationError, isSubscribed)
     }
 
     /**
@@ -155,7 +175,7 @@ class ImageGenerationManager(private val context: Context) {
 
                     // Refund credits on timeout
                     if (!isSubscribed) {
-                        refundCredits()
+                        refundCredits("Generation timeout after 6 minutes")
                     }
                 }
 
@@ -179,7 +199,7 @@ class ImageGenerationManager(private val context: Context) {
 
                 // Refund credits on error
                 if (!isSubscribed) {
-                    refundCredits()
+                    refundCredits("Exception during image generation: ${e.message}")
                 }
             }
         }
@@ -393,23 +413,26 @@ class ImageGenerationManager(private val context: Context) {
     }
 
     /**
-     * Refund credits to the user
+     * Refund credits to the user using the proper CreditManager
      */
-    private fun refundCredits() {
+    private fun refundCredits(reason: String = "Image generation error") {
         try {
-            val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-            val currentCredits = prefs.getInt("free_messages_left", 10)
-            val newCredits = currentCredits + 5 // Refund the 5 credits
-
-            prefs.edit().putInt("free_messages_left", newCredits).apply()
-
-            Toast.makeText(context,
-                "Credits refunded due to generation error",
-                Toast.LENGTH_SHORT).show()
-
-            Timber.d("Refunded 5 credits, new total: $newCredits")
+            val creditManager = CreditManager.getInstance(context)
+            // Determine the credit cost based on the current model
+            val creditCost = ImageGenerationUtils.getCreditCost(ModelManager.DALLE_3_ID)
+            
+            if (creditManager.refundCredits(creditCost, CreditManager.CreditType.IMAGE_GENERATION, reason)) {
+                Timber.d("💰 Successfully refunded $creditCost image credits due to: $reason")
+                
+                // Show user feedback
+                Toast.makeText(context,
+                    "Credits refunded due to generation error",
+                    Toast.LENGTH_SHORT).show()
+            } else {
+                Timber.w("⚠️ Failed to refund image credits - user may be at maximum credits")
+            }
         } catch (e: Exception) {
-            Timber.e(e, "Error refunding credits")
+            Timber.e(e, "❌ Error refunding image credits: ${e.message}")
         }
     }
     private fun createTimeoutInterceptor(): Interceptor {

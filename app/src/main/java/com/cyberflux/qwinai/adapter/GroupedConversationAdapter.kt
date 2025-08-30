@@ -10,9 +10,11 @@ import androidx.recyclerview.widget.RecyclerView
 import com.cyberflux.qwinai.R
 import com.cyberflux.qwinai.model.Conversation
 import com.cyberflux.qwinai.model.ConversationGroup
+import com.cyberflux.qwinai.utils.ConversationAttachmentsManager
 import com.cyberflux.qwinai.utils.FileUtil
-import com.google.common.reflect.TypeToken
-import com.google.gson.Gson
+import com.cyberflux.qwinai.utils.JsonUtils
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -20,8 +22,11 @@ import java.util.Locale
 
 class GroupedConversationAdapter(
     private val onConversationClick: (Conversation) -> Unit,
-    private val onConversationLongClick: (View, Conversation) -> Unit
+    private val onConversationLongClick: (View, Conversation) -> Unit,
+    private val attachmentsManager: ConversationAttachmentsManager? = null
 ) : ListAdapter<GroupedConversationAdapter.Item, RecyclerView.ViewHolder>(ItemDiffCallback()) {
+
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main + kotlinx.coroutines.SupervisorJob())
 
     // Define view types
     companion object {
@@ -97,7 +102,9 @@ class GroupedConversationAdapter(
                         is ConversationViewHolder -> holder.bind(
                             item.conversation,
                             onConversationClick,
-                            onConversationLongClick
+                            onConversationLongClick,
+                            attachmentsManager,
+                            scope
                         )
                         is EmptyViewHolder -> holder.bind(item.conversation.name)
                     }
@@ -106,6 +113,17 @@ class GroupedConversationAdapter(
         } catch (e: Exception) {
             Timber.e(e, "Error binding view holder at position $position")
         }
+    }
+    
+    override fun onViewRecycled(holder: RecyclerView.ViewHolder) {
+        super.onViewRecycled(holder)
+        if (holder is ConversationViewHolder) {
+            holder.cancelAttachmentJob()
+        }
+    }
+    
+    fun cleanup() {
+        scope.cancel()
     }
 
     class HeaderViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
@@ -122,57 +140,102 @@ class GroupedConversationAdapter(
         private val titleTextView: TextView? = itemView.findViewById(R.id.conversationText)
         private val modelTextView: TextView? = itemView.findViewById(R.id.aiModelInfo)
         private val dateTimeTextView: TextView? = itemView.findViewById(R.id.conversationDateTime)
+        private val statusTextView: TextView? = itemView.findViewById(R.id.conversationStatus)
         private val savedIndicator: View? = itemView.findViewById(R.id.savedIndicator)
-        private val draftIndicator: TextView? = itemView.findViewById(R.id.draftIndicator) // Add this!
+        private val draftIndicator: TextView? = itemView.findViewById(R.id.draftIndicator)
+        private val attachmentsView: com.cyberflux.qwinai.views.ConversationAttachmentsView? = itemView.findViewById(R.id.attachmentsView)
+        
+        private var attachmentJob: kotlinx.coroutines.Job? = null
+        
+        fun cancelAttachmentJob() {
+            attachmentJob?.cancel()
+        }
+        
+        fun loadAttachments(conversationId: String, attachmentsManager: ConversationAttachmentsManager, scope: kotlinx.coroutines.CoroutineScope) {
+            cancelAttachmentJob()
+            attachmentJob = scope.launch {
+                try {
+                    val attachments = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        attachmentsManager.getConversationAttachments(conversationId)
+                    }
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        attachmentsView?.setAttachments(attachments)
+                    }
+                } catch (e: Exception) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        attachmentsView?.setAttachments(emptyList())
+                    }
+                }
+            }
+        }
 
         fun bind(
             conversation: Conversation,
             onConversationClick: (Conversation) -> Unit,
-            onConversationLongClick: (View, Conversation) -> Unit
+            onConversationLongClick: (View, Conversation) -> Unit,
+            attachmentsManager: ConversationAttachmentsManager?,
+            scope: kotlinx.coroutines.CoroutineScope
         ) {
-            // Set conversation title (this is the conversation name/title)
-            titleTextView?.text = conversation.name
+            // Set conversation title - always use the actual title, never modify it
+            titleTextView?.text = conversation.title
 
             // Set model info
             modelTextView?.text = conversation.aiModel
 
-            // Format date time
-            val dateFormat = SimpleDateFormat("MMM d, yyyy HH:mm", Locale.getDefault())
-            val dateStr = dateFormat.format(Date(conversation.lastModified))
+            // Format date time - this should ONLY show date and time, no draft info
+            val dateFormat = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
+            val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
+            val dateString = dateFormat.format(Date(conversation.timestamp))
+            val timeString = timeFormat.format(Date(conversation.timestamp))
+            dateTimeTextView?.text = "$dateString $timeString"
 
-            // IMPORTANT: Handle draft information
+            // Handle draft status and message status in the separate status field
             if (conversation.hasDraft) {
                 // Show draft indicator
                 draftIndicator?.visibility = View.VISIBLE
 
-                // Show draft preview in the date/time field
-                val draftPreview = when {
-                    conversation.draftText.isNotEmpty() -> {
-                        val previewText = conversation.draftText.take(20)
-                        "Draft: $previewText${if (conversation.draftText.length > 20) "..." else ""}"
-                    }
-                    conversation.draftFiles.isNotEmpty() -> {
+                // Build draft status text for the status field
+                val draftStatus = buildString {
+                    append("Draft")
+                    
+                    // Add attachment count if any
+                    if (conversation.draftFiles.isNotEmpty()) {
                         try {
-                            val type = object : TypeToken<List<FileUtil.FileUtil.SelectedFile>>() {}.type
-                            val files = Gson().fromJson<List<FileUtil.FileUtil.SelectedFile>>(conversation.draftFiles, type)
-                            "Draft with ${files.size} attachment(s)"
+                            val files = JsonUtils.fromJsonList(conversation.draftFiles, FileUtil.FileUtil.SelectedFile::class.java)
+                            val fileCount = files?.size ?: 0
+                            if (fileCount > 0) {
+                                append(" with $fileCount ")
+                                append(if (fileCount == 1) "attachment" else "attachments")
+                            }
                         } catch (e: Exception) {
-                            "Draft with attachments"
+                            append(" with attachments")
                         }
                     }
-                    else -> "Draft"
+                    
+                    // Add draft text preview if there's text
+                    if (conversation.draftText.isNotEmpty()) {
+                        if (conversation.draftFiles.isNotEmpty()) {
+                            // Show draft text after attachment info
+                            append(": ${conversation.draftText.take(50)}")
+                            if (conversation.draftText.length > 50) append("...")
+                        } else {
+                            // Just draft text, show more of it
+                            append(": ${conversation.draftText.take(80)}")
+                            if (conversation.draftText.length > 80) append("...")
+                        }
+                    }
                 }
 
-                dateTimeTextView?.text = "$dateStr - $draftPreview"
+                statusTextView?.text = draftStatus
             } else {
                 // Hide draft indicator for normal conversations
                 draftIndicator?.visibility = View.GONE
 
-                // Show normal last message
+                // Show last user message if available
                 if (conversation.lastMessage.isNotEmpty()) {
-                    dateTimeTextView?.text = "$dateStr - ${conversation.lastMessage}"
+                    statusTextView?.text = conversation.lastMessage
                 } else {
-                    dateTimeTextView?.text = dateStr
+                    statusTextView?.text = "No messages yet"
                 }
             }
 
@@ -191,6 +254,14 @@ class GroupedConversationAdapter(
             itemView.setOnLongClickListener {
                 onConversationLongClick(it, conversation)
                 true
+            }
+            
+            // Load attachments if manager is available
+            attachmentsManager?.let { manager ->
+                loadAttachments(conversation.id.toString(), manager, scope)
+            } ?: run {
+                // Hide attachments view if no manager
+                attachmentsView?.setAttachments(emptyList())
             }
         }
     }

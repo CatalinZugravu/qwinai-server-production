@@ -346,7 +346,7 @@ class ImageGenerationActivity : BaseThemedActivity() {
             }
 
             val notificationManager: NotificationManager =
-                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
         }
     }
@@ -882,6 +882,26 @@ class ImageGenerationActivity : BaseThemedActivity() {
                 isFree = false,
                 isImageGenerator = true,
                 maxInputTokens = 0
+            ),
+            AIModel(
+                id = ModelManager.QWEN_IMAGE_ID,
+                displayName = "Qwen Image",
+                maxTokens = 0,
+                temperature = 0.0,
+                apiName = "aimlapi",
+                isFree = false,
+                isImageGenerator = true,
+                maxInputTokens = 0
+            ),
+            AIModel(
+                id = ModelManager.IMAGEN_4_ULTRA_ID,
+                displayName = "Imagen 4.0 Ultra",
+                maxTokens = 0,
+                temperature = 0.0,
+                apiName = "aimlapi",
+                isFree = false,
+                isImageGenerator = true,
+                maxInputTokens = 0
             )
         )
 
@@ -915,6 +935,17 @@ class ImageGenerationActivity : BaseThemedActivity() {
                 maxTokens = 0,
                 temperature = 0.0,
                 apiName = "flux",
+                isFree = false,
+                isImageGenerator = true,
+                isImageToImage = true,
+                maxInputTokens = 0
+            ),
+            AIModel(
+                id = ModelManager.SEEDEDIT_3_I2I_ID,
+                displayName = "SeedEdit 3.0 I2I",
+                maxTokens = 0,
+                temperature = 0.0,
+                apiName = "aimlapi",
                 isFree = false,
                 isImageGenerator = true,
                 isImageToImage = true,
@@ -1012,6 +1043,9 @@ class ImageGenerationActivity : BaseThemedActivity() {
             ModelManager.FLUX_DEV_IMAGE_TO_IMAGE_ID -> R.drawable.ic_image_to_image
             ModelManager.FLUX_KONTEXT_MAX_IMAGE_TO_IMAGE_ID -> R.drawable.ic_image_to_image
             ModelManager.FLUX_KONTEXT_PRO_IMAGE_TO_IMAGE_ID -> R.drawable.ic_image_to_image
+            ModelManager.QWEN_IMAGE_ID -> R.drawable.ic_qwen
+            ModelManager.SEEDEDIT_3_I2I_ID -> R.drawable.ic_image_to_image
+            ModelManager.IMAGEN_4_ULTRA_ID -> R.drawable.ic_image_model_default
             else -> R.drawable.ic_image_model_default
         }
     }
@@ -1046,7 +1080,7 @@ class ImageGenerationActivity : BaseThemedActivity() {
                 binding.tvSizeLabel.visibility = View.VISIBLE
             }
 
-            ModelManager.SEEDREAM_3_ID -> {
+            ModelManager.SEEDREAM_3_ID, ModelManager.QWEN_IMAGE_ID -> {
                 val sizes = listOf("1024x1024", "1024x1792", "1792x1024", "512x512", "768x768")
                 val sizeOptions = sizes.map {
                     ImageGenerationOption(id = it, displayName = it)
@@ -1071,6 +1105,22 @@ class ImageGenerationActivity : BaseThemedActivity() {
                 binding.spinnerSize.adapter = ImageOptionSpinnerAdapter(this, aspectOptions)
                 binding.spinnerSize.setSelection(4) // Default to landscape_4_3
                 selectedAspectRatio = aspectRatios[4]
+                binding.tvSizeLabel.text = "Aspect Ratio"
+                binding.spinnerSize.visibility = View.VISIBLE
+                binding.tvSizeLabel.visibility = View.VISIBLE
+            }
+
+            ModelManager.IMAGEN_4_ULTRA_ID -> {
+                val aspectRatios = listOf("1:1", "9:16", "16:9", "3:4", "4:3")
+                val aspectOptions = aspectRatios.map {
+                    ImageGenerationOption(
+                        id = it,
+                        displayName = ImageGenerationUtils.getAspectRatioDisplayName(it)
+                    )
+                }
+                binding.spinnerSize.adapter = ImageOptionSpinnerAdapter(this, aspectOptions)
+                binding.spinnerSize.setSelection(0) // Default to 1:1
+                selectedAspectRatio = aspectRatios[0]
                 binding.tvSizeLabel.text = "Aspect Ratio"
                 binding.spinnerSize.visibility = View.VISIBLE
                 binding.tvSizeLabel.visibility = View.VISIBLE
@@ -1236,7 +1286,7 @@ class ImageGenerationActivity : BaseThemedActivity() {
                     if (adapter != null && position >= 0 && position < adapter.count) {
                         val option = adapter.getItem(position) as ImageGenerationOption
                         when (selectedModel) {
-                            ModelManager.DALLE_3_ID, ModelManager.SEEDREAM_3_ID -> selectedSize = option.id
+                            ModelManager.DALLE_3_ID, ModelManager.SEEDREAM_3_ID, ModelManager.QWEN_IMAGE_ID -> selectedSize = option.id
                             else -> selectedAspectRatio = option.id
                         }
                         adapter.setSelectedPosition(position)
@@ -1868,7 +1918,7 @@ class ImageGenerationActivity : BaseThemedActivity() {
                 initializeQualityForModel(selectedModel)
             }
 
-            val creditCost = try {
+            try {
                 ModelValidator.getImageGenerationCost(selectedModel, selectedQuality,
                     numImages // Remove .toString()
                 )
@@ -1894,7 +1944,7 @@ class ImageGenerationActivity : BaseThemedActivity() {
                 
                 // Show/hide ad button based on credit availability
                 val canWatchAds = creditManager.canEarnMoreCredits(CreditManager.CreditType.IMAGE_GENERATION)
-                val adReady = adManager.isRewardedReady()
+                adManager.isRewardedReady()
                 
                 // Always show the watch ad button if user can earn more credits
                 if (canWatchAds) {
@@ -1903,7 +1953,7 @@ class ImageGenerationActivity : BaseThemedActivity() {
                     
                     // Make button more prominent when user has no credits
                     if (currentCredits <= 0) {
-                        binding.btnWatchAdForCredits.text = "🎥 Watch Ad - Get 2 Credits!"
+                        binding.btnWatchAdForCredits.text = "🎥 Watch Ad - Get 1 Credit!"
                         binding.btnWatchAdForCredits.setBackgroundResource(R.drawable.premium_gradient_background)
                         // Add a subtle animation for attention
                         val animator = ValueAnimator.ofFloat(0.8f, 1.0f)
@@ -1970,7 +2020,7 @@ class ImageGenerationActivity : BaseThemedActivity() {
     }
     private fun showInsufficientCreditsDialog(creditCost: Int) {
         val currentCredits = creditManager.getImageCredits()
-        val creditsNeeded = creditCost - currentCredits
+        creditCost - currentCredits
         val canWatchAds = creditManager.canEarnMoreCredits(CreditManager.CreditType.IMAGE_GENERATION)
 
         val message = buildString {
@@ -1979,7 +2029,7 @@ class ImageGenerationActivity : BaseThemedActivity() {
             append("• Upgrade to Pro for unlimited generations\n")
             if (canWatchAds) {
                 val creditsToMax = creditManager.getCreditsToMax(CreditManager.CreditType.IMAGE_GENERATION)
-                append("• Watch ads to earn up to $creditsToMax more credits (2 credits per ad)")
+                append("• Watch ads to earn up to $creditsToMax more credits (1 credit per ad)")
             } else {
                 append("• You've reached today's maximum credits (${creditManager.getMaxCredits(CreditManager.CreditType.IMAGE_GENERATION)} total)")
             }
@@ -1989,7 +2039,7 @@ class ImageGenerationActivity : BaseThemedActivity() {
             .setTitle("Insufficient Credits")
             .setMessage(message)
             .setPositiveButton("Upgrade to Pro") { _, _ ->
-                startActivity(Intent(this, WelcomeActivity::class.java))
+                SubscriptionActivity.start(this)
             }
             .setNegativeButton("Cancel", null)
 
@@ -2017,18 +2067,12 @@ class ImageGenerationActivity : BaseThemedActivity() {
 
     private fun refundCredits(amount: Int) {
         try {
-            // For refunds, we can add credits back but respect the daily maximum
-            val currentCredits = creditManager.getImageCredits()
-            val maxCredits = creditManager.getMaxCredits()
-            val creditsToAdd = minOf(amount, maxCredits - currentCredits)
-            
-            if (creditsToAdd > 0) {
-                creditManager.addCreditsFromAd(CreditManager.CreditType.IMAGE_GENERATION, creditsToAdd)
-                Timber.d("Refunded $creditsToAdd image credits (requested: $amount)")
+            if (creditManager.refundCredits(amount, CreditManager.CreditType.IMAGE_GENERATION)) {
+                updateCreditsInfo()
+                Timber.d("Refunded $amount image credits")
             } else {
-                Timber.d("No credits refunded - already at maximum")
+                Timber.d("Credits refund failed - possibly already at maximum")
             }
-            updateCreditsInfo()
         } catch (e: Exception) {
             Timber.e(e, "Error refunding credits: ${e.message}")
         }
@@ -2091,7 +2135,10 @@ class ImageGenerationActivity : BaseThemedActivity() {
                 return
             }
             
-            Timber.d("Consumed $creditCost image credits")
+            // Update UI immediately after consuming credits
+            updateCreditsInfo()
+            updateGenerateButtonState()
+            Timber.d("Consumed $creditCost image credits - UI updated")
         }
 
         showLoadingState()
@@ -2323,6 +2370,18 @@ class ImageGenerationActivity : BaseThemedActivity() {
                                 enableProgressiveLoading = true
                             )
                         }
+                        ModelManager.SEEDEDIT_3_I2I_ID -> {
+                            ImageGenerationUtils.createSeedEdit3ImageToImageRequest(
+                                imageBase64 = sourceImageBase64,
+                                prompt = prompt,
+                                size = "adaptive",
+                                responseFormat = "url",
+                                seed = seed,
+                                guidanceScale = guidanceScale,
+                                watermark = enableWatermark,
+                                enableProgressiveLoading = true
+                            )
+                        }
                         else -> {
                             Timber.e("Unknown image-to-image model: $selectedModel")
                             JSONObject().apply {
@@ -2412,6 +2471,32 @@ class ImageGenerationActivity : BaseThemedActivity() {
                             style = selectedStyle,
                             colors = selectedColors,
                             numImages = numImages,
+                            enableProgressiveLoading = true
+                        )
+                    }
+                    ModelManager.QWEN_IMAGE_ID -> {
+                        ImageGenerationUtils.createQwenImageRequest(
+                            prompt = prompt,
+                            outputFormat = selectedOutputFormat,
+                            numImages = numImages,
+                            seed = seed,
+                            enableSafetyChecker = enableSafetyChecker,
+                            guidanceScale = guidanceScale,
+                            syncMode = false,
+                            negativePrompt = negativePrompt,
+                            enableProgressiveLoading = true
+                        )
+                    }
+                    ModelManager.IMAGEN_4_ULTRA_ID -> {
+                        ImageGenerationUtils.createImagen4UltraRequest(
+                            prompt = prompt,
+                            convertBase64ToUrl = true,
+                            numImages = numImages,
+                            seed = seed,
+                            enhancePrompt = true,
+                            aspectRatio = selectedAspectRatio,
+                            personGeneration = "allow_adult",
+                            safetySetting = "block_medium_and_above",
                             enableProgressiveLoading = true
                         )
                     }
@@ -3136,7 +3221,7 @@ class ImageGenerationActivity : BaseThemedActivity() {
     }
 
     private fun showDownloadSuccessAnimation() {
-        val downloadAnim = ValueAnimator.ofArgb(
+        ValueAnimator.ofArgb(
             ContextCompat.getColor(this, R.color.colorAccent),
             ContextCompat.getColor(this, R.color.colorPrimary)
         ).apply {
@@ -3153,7 +3238,7 @@ class ImageGenerationActivity : BaseThemedActivity() {
     }
 
     private fun showDownloadNotification(filename: String, imageUri: Uri? = null) {
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
 
         val notificationBuilder = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_download)
@@ -3322,14 +3407,18 @@ class ImageGenerationActivity : BaseThemedActivity() {
                 
                 // Save to repository
                 val modelDisplayName = ImageGenerationUtils.getModelDisplayName(selectedModel)
-                imageGalleryRepository.saveImage(
+                Timber.d("Saving image to gallery - Model: $modelDisplayName, Prompt: $prompt")
+                Timber.d("File path: ${imageFile.absolutePath}, File exists: ${imageFile.exists()}, File size: ${imageFile.length()}")
+                
+                val savedImage = imageGalleryRepository.saveImage(
                     filePath = imageFile.absolutePath,
                     aiModel = modelDisplayName,
                     prompt = prompt,
                     generationSettings = generationSettings
                 )
                 
-                Timber.d("Image saved to gallery: ${imageFile.absolutePath}")
+                Timber.d("Image saved to gallery with ID: ${savedImage.id}, File: ${imageFile.absolutePath}")
+                Timber.d("Repository now has ${imageGalleryRepository.getImageCount()} total images")
                 
             } catch (e: Exception) {
                 Timber.e(e, "Error saving image to gallery: ${e.message}")
@@ -3368,11 +3457,11 @@ class ImageGenerationActivity : BaseThemedActivity() {
         val creditsToMax = creditManager.getCreditsToMax(CreditManager.CreditType.IMAGE_GENERATION)
         
         if (!PrefsManager.isSubscribed(this) && canEarnCredits && creditsToMax > 0) {
-            menu.findItem(R.id.menu_watch_ad_image).title = "Watch ad for 2 credits"
+            menu.findItem(R.id.menu_watch_ad_image).title = "Watch ad for 1 credit"
             menu.findItem(R.id.menu_watch_ad_image).isEnabled = true
         } else {
             menu.findItem(R.id.menu_watch_ad_image).isEnabled = false
-            menu.findItem(R.id.menu_watch_ad_image).title = "Watch ad for 2 credits (limit reached)"
+            menu.findItem(R.id.menu_watch_ad_image).title = "Watch ad for 1 credit (limit reached)"
         }
         
         return true

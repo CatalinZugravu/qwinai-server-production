@@ -9,6 +9,7 @@ package com.cyberflux.qwinai.model
  * @property temperature The temperature parameter controlling randomness (0.0-1.0)
  * @property apiName The name of the API service to use ("aimlapi")
  * @property isFree Whether this model is available without spending credits
+ * @property customParameters Current AI parameters for this model
  */
 data class AIModel(
     val id: String,
@@ -21,7 +22,30 @@ data class AIModel(
     val maxInputTokens: Int = maxTokens / 2, // Default to half of context window if not specified
     val isOcrModel: Boolean = false,           // Added for OCR models
     val isImageToImage: Boolean = false, // New property
-)
+    val customParameters: AIParameters? = null // Current AI parameters for this model
+) {
+    /**
+     * Get the effective parameters for this model
+     * Uses custom parameters if set, otherwise defaults
+     */
+    fun getEffectiveParameters(): AIParameters {
+        return customParameters ?: AIParameters.getDefaultForModel(id)
+    }
+    
+    /**
+     * Create a copy with new parameters
+     */
+    fun withParameters(parameters: AIParameters): AIModel {
+        return copy(customParameters = parameters.adaptForModel(id))
+    }
+    
+    /**
+     * Check if this model has custom parameters set
+     */
+    fun hasCustomParameters(): Boolean {
+        return customParameters != null
+    }
+}
 
 data class ConversationGroup(
     val title: String,

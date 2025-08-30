@@ -30,6 +30,7 @@ object PrefsManager {
     private const val FREE_CONVERSATIONS_RESET_DATE = "free_conversations_reset_date"
     private const val FREE_CONVERSATIONS_COUNT = "free_conversations_count"
     private const val USER_NAME_KEY = "user_name"
+    private const val SUBSCRIPTION_TYPE_KEY = "subscription_type"
 
     // Settings keys
     private const val DEEP_SEARCH_ENABLED_KEY = "deep_search"
@@ -185,6 +186,59 @@ object PrefsManager {
         }
 
         Timber.d("Subscription status set: subscribed=$isSubscribed, days=$daysLeft, expiry=${Date(endTime)}")
+    }
+
+    /**
+     * Set subscription status with end time directly (for mock billing)
+     */
+    @SuppressLint("HardwareIds")
+    fun setSubscribed(context: Context, isSubscribed: Boolean, endTime: Long) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+        // Calculate days left from end time
+        val daysLeft = if (isSubscribed && endTime > System.currentTimeMillis()) {
+            ((endTime - System.currentTimeMillis()) / TimeUnit.DAYS.toMillis(1)).toInt()
+        } else 0
+
+        // Create a validation hash using device ID, status, and end time
+        val deviceId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+        val validationData = "$deviceId:$isSubscribed:$endTime"
+        val validationHash = validationData.hashCode().toString()
+
+        prefs.edit {
+            putBoolean(SUBSCRIPTION_STATUS_KEY, isSubscribed)
+            putInt(DAYS_LEFT_KEY, daysLeft)
+            putLong(SUBSCRIPTION_END_TIME_KEY, endTime)
+            putString(SUBSCRIPTION_VALIDATION_HASH, validationHash)
+
+            // Auto-disable ads for subscribers
+            if (isSubscribed) {
+                putBoolean(SHOULD_SHOW_ADS_KEY, false)
+            } else {
+                putBoolean(SHOULD_SHOW_ADS_KEY, true)
+            }
+        }
+
+        Timber.d("Subscription status set: subscribed=$isSubscribed, endTime=${Date(endTime)}, days=$daysLeft")
+    }
+
+    /**
+     * Set subscription type (weekly, monthly, etc.)
+     */
+    fun setSubscriptionType(context: Context, subscriptionType: String) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit {
+            putString(SUBSCRIPTION_TYPE_KEY, subscriptionType)
+        }
+        Timber.d("Subscription type set: $subscriptionType")
+    }
+
+    /**
+     * Get subscription type
+     */
+    fun getSubscriptionType(context: Context): String? {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(SUBSCRIPTION_TYPE_KEY, null)
     }
 
     /**

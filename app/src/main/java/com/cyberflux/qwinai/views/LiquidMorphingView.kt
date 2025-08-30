@@ -367,7 +367,7 @@ class LiquidMorphingView @JvmOverloads constructor(
             duration = 300
             interpolator = AccelerateDecelerateInterpolator()
             addUpdateListener {
-                val progress = it.animatedValue as Float
+                it.animatedValue as Float
                 // Add any state-specific transition effects here
             }
             start()
@@ -388,7 +388,7 @@ class LiquidMorphingView @JvmOverloads constructor(
     
     override fun onVisibilityChanged(changedView: View, visibility: Int) {
         super.onVisibilityChanged(changedView, visibility)
-        if (visibility == View.VISIBLE) {
+        if (visibility == VISIBLE) {
             if (!isAnimationRunning) {
                 startAnimation()
             }

@@ -22,7 +22,7 @@ buildscript {
     }
     dependencies {
         // FIXED: Use compatible AGP version with latest dependencies
-        classpath("com.android.tools.build:gradle:8.6.0")
+        classpath("com.android.tools.build:gradle:8.10.1")
         // Align Kotlin version with Compose
         classpath(libs.kotlin.gradle.plugin.v200)
         // Using direct declaration for consistency
@@ -31,10 +31,10 @@ buildscript {
 }
 
 plugins {
-    id("com.android.application") version "8.6.0" apply false
+    id("com.android.application") version "8.10.1" apply false
     id("org.jetbrains.kotlin.android") version "2.0.0" apply false
     id("com.google.dagger.hilt.android") version "2.51.1" apply false
-    id("com.google.devtools.ksp") version "2.0.0-1.0.21" apply false
+    alias(libs.plugins.ksp) apply false
 }
 
 // Removed allprojects block to avoid conflicts with settings.gradle.kts

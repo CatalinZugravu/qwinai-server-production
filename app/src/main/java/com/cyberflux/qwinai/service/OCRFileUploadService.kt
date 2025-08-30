@@ -20,6 +20,8 @@ import retrofit2.http.POST
 import timber.log.Timber
 import java.io.File
 import java.util.UUID
+import androidx.core.graphics.toColorInt
+import androidx.core.graphics.createBitmap
 
 /**
  * OCR options for processing documents
@@ -86,7 +88,7 @@ class OCRService(private val context: Context) {
                     parentMessageId = userMessageId,
                     isOcrDocument = false, // Use standard AI layout
                     initialIndicatorText = "Processing pdf file",
-                    initialIndicatorColor = android.graphics.Color.parseColor("#757575")
+                    initialIndicatorColor = "#757575".toColorInt()
                 )
 
                 // Send initial progress
@@ -99,12 +101,12 @@ class OCRService(private val context: Context) {
 
                 // Create collector for progress updates using standard AI format
                 MainScope().launch {
-                    tracker.progressFlow.collect { (progress, message, stage) ->
+                    tracker.progressFlow.collect { (_, _, _) ->
                         // Keep the same indicator text throughout processing
                         val updatedMessage = processingMessage.copy(
                             message = "",
                             initialIndicatorText = "Processing pdf file",
-                            initialIndicatorColor = android.graphics.Color.parseColor("#757575")
+                            initialIndicatorColor = "#757575".toColorInt()
                         )
                         progressCallback(updatedMessage)
                     }
@@ -176,10 +178,8 @@ class OCRService(private val context: Context) {
                 val errorMessage = ChatMessage(
                     id = UUID.randomUUID().toString(),
                     conversationId = conversationId,
-                    message = "❌ **OCR Processing Failed**\n\n" +
-                            "I encountered an error while processing your document:\n\n" +
-                            "**Error:** ${e.message}\n\n" +
-                            "Please try uploading your document again or check if the file is valid.",
+                    message = "❌ **Processing Error**\n\n" +
+                            "I encountered an error while processing your document. Please try uploading your document again or check if the file is valid.",
                     isUser = false,
                     timestamp = System.currentTimeMillis(),
                     isGenerating = false,
@@ -307,142 +307,6 @@ class OCRService(private val context: Context) {
     }
 
     /**
-     * Process PDF/Image for OCR using vision model (GPT-4o, Claude, etc.)
-     * More reliable than Google Document AI and doesn't require special permissions
-     */
-    private suspend fun processWithVisionModel(file: File, tracker: FileProgressTracker, ocrOptions: OCROptions): OCRResponse = withContext(Dispatchers.IO) {
-        try {
-            tracker.updateProgress(
-                70,
-                "Converting file to base64...",
-                FileProgressTracker.ProcessingStage.ENCODING
-            )
-
-            // Convert file to base64 data URL for vision model
-            val fileUri = Uri.fromFile(file)
-            val dataUrl = when {
-                file.name.endsWith(".pdf", ignoreCase = true) -> {
-                    // For PDF files, convert to image for vision model
-                    convertPdfToBase64DataUrl(context, fileUri, convertToImage = true)
-                }
-                file.name.matches(Regex(".*\\.(jpg|jpeg|png|gif|bmp|webp)$", RegexOption.IGNORE_CASE)) -> {
-                    // For images, use existing ImageUploadUtils
-                    ImageUploadUtils.uploadImage(context, fileUri)
-                }
-                else -> {
-                    throw Exception("Unsupported file format. Please use PDF or image files.")
-                }
-            }
-
-            if (dataUrl == null) {
-                throw Exception("Failed to convert file to base64")
-            }
-
-            tracker.updateProgress(
-                80,
-                "Analyzing document with GPT-4o...",
-                FileProgressTracker.ProcessingStage.FINALIZING
-            )
-
-            // Get chat API service for vision model
-            val chatService = RetrofitInstance.getApiService(
-                RetrofitInstance.ApiServiceType.AIMLAPI,
-                com.cyberflux.qwinai.network.AimlApiService::class.java
-            )
-
-            // Create OCR prompt with options
-            val prompt = buildString {
-                append("Please extract all text from this document image. ")
-                append("Provide the complete text content exactly as it appears, preserving formatting and structure. ")
-                append("If there are multiple columns or sections, maintain their organization. ")
-                
-                if (!ocrOptions.pages.isNullOrBlank()) {
-                    append("Focus on pages: ${ocrOptions.pages}. ")
-                }
-                
-                append("Do not add any commentary or summary - just return the extracted text.")
-            }
-
-            // Create vision request using standard chat API
-            val request = com.cyberflux.qwinai.network.AimlApiRequest(
-                model = "gpt-4o", // Best vision model for OCR
-                messages = listOf(
-                    com.cyberflux.qwinai.network.AimlApiRequest.Message(
-                        role = "user",
-                        content = listOf(
-                            com.cyberflux.qwinai.network.AimlApiRequest.ContentPart(
-                                type = "text",
-                                text = prompt
-                            ),
-                            com.cyberflux.qwinai.network.AimlApiRequest.ContentPart(
-                                type = "image_url",
-                                imageUrl = com.cyberflux.qwinai.network.AimlApiRequest.ImageUrl(url = dataUrl)
-                            )
-                        )
-                    )
-                ),
-                maxTokens = 4000,
-                temperature = 0.0, // Low temperature for accurate extraction
-                topA = null,
-                parallelToolCalls = null,
-                minP = null,
-                useWebSearch = false
-            )
-
-            Timber.d("Vision OCR Request: model=${request.model}")
-            Timber.d("Vision OCR Request dataUrl length: ${dataUrl.length}")
-
-            // Make the API call
-            val response = chatService.sendMessage(request).execute()
-
-            if (response.isSuccessful) {
-                tracker.updateProgress(
-                    95,
-                    "Processing OCR results...",
-                    FileProgressTracker.ProcessingStage.FINALIZING
-                )
-
-                val chatResponse = response.body() ?: throw Exception("Empty response from vision API")
-                
-                // Extract text from chat response
-                val extractedText = chatResponse.choices?.firstOrNull()?.message?.content ?: ""
-                
-                Timber.d("Vision OCR Response: text length=${extractedText.length}")
-                Timber.d("Vision OCR Response text preview: ${extractedText.take(100)}")
-
-                // Convert to OCR response format
-                return@withContext OCRResponse(
-                    pages = listOf(
-                        com.cyberflux.qwinai.network.OCRPage(
-                            index = 0,
-                            markdown = extractedText,
-                            images = emptyList(),
-                            dimensions = com.cyberflux.qwinai.network.OCRDimensions(
-                                dpi = 200,
-                                height = 0,
-                                width = 0
-                            )
-                        )
-                    ),
-                    model = "gpt-4o-vision",
-                    usage_info = com.cyberflux.qwinai.network.OCRUsageInfo(
-                        pages_processed = 1,
-                        doc_size_bytes = 0
-                    )
-                )
-            } else {
-                val errorBody = response.errorBody()?.string() ?: "Unknown error"
-                Timber.e("Vision OCR API error (${response.code()}): $errorBody")
-                throw Exception("Vision OCR API error (${response.code()}): $errorBody")
-            }
-
-        } catch (e: Exception) {
-            Timber.e(e, "Error processing file with vision model: ${e.message}")
-            throw e
-        }
-    }
-
-    /**
      * Convert PDF to base64 data URL - either as raw PDF or as image
      */
     private suspend fun convertPdfToBase64DataUrl(context: Context, pdfUri: Uri, convertToImage: Boolean = true): String? = withContext(Dispatchers.IO) {
@@ -456,10 +320,7 @@ class OCRService(private val context: Context) {
                 val page = pdfRenderer.openPage(0) // First page
                 
                 // Create bitmap from PDF page
-                val bitmap = android.graphics.Bitmap.createBitmap(
-                    page.width, page.height, 
-                    android.graphics.Bitmap.Config.ARGB_8888
-                )
+                val bitmap = createBitmap(page.width, page.height)
                 
                 page.render(bitmap, null, null, android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                 

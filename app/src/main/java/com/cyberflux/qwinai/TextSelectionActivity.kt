@@ -160,7 +160,7 @@ class TextSelectionActivity : BaseThemedActivity() {
         Timber.d("Set up view-only mode with title: $title")
 
         // Register clipboard change listener for feedback
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.addPrimaryClipChangedListener {
             runOnUiThread {
                 Toast.makeText(this, "Text copied to clipboard", Toast.LENGTH_SHORT).show()
@@ -236,7 +236,7 @@ class TextSelectionActivity : BaseThemedActivity() {
 
         Timber.d("Saving changes: original=${originalText.length} chars, new=${newText.length} chars, changed=${newText != originalText}, source=$source")
 
-        setResult(Activity.RESULT_OK, resultIntent)
+        setResult(RESULT_OK, resultIntent)
         finish()
     }
 
@@ -287,7 +287,7 @@ class TextSelectionActivity : BaseThemedActivity() {
             showUnsavedChangesDialog()
         } else {
             // Return with no changes
-            setResult(Activity.RESULT_CANCELED)
+            setResult(RESULT_CANCELED)
             finish()
         }
     }
@@ -301,7 +301,7 @@ class TextSelectionActivity : BaseThemedActivity() {
                 if (isEditMode) {
                     exitEditMode()
                 } else {
-                    setResult(Activity.RESULT_CANCELED)
+                    setResult(RESULT_CANCELED)
                     finish()
                 }
             }

@@ -1,35 +1,40 @@
 package com.cyberflux.qwinai.utils
 
-import android.content.Context
 import android.net.Uri
-import com.google.gson.TypeAdapter
-import com.google.gson.stream.JsonReader
-import com.google.gson.stream.JsonWriter
+import com.squareup.moshi.JsonAdapter
+import com.squareup.moshi.JsonReader
+import com.squareup.moshi.JsonWriter
 import timber.log.Timber
+import androidx.core.net.toUri
 
 /**
- * Enhanced TypeAdapter for Gson to handle Uri serialization and deserialization
+ * Enhanced JsonAdapter for Moshi to handle Uri serialization and deserialization
  * with support for persistent file storage
  */
-class UriTypeAdapter(private val context: Context) : TypeAdapter<Uri>() {
+class UriTypeAdapter() : JsonAdapter<Uri>() {
 
-    override fun write(out: JsonWriter, value: Uri?) {
+    override fun toJson(writer: JsonWriter, value: Uri?) {
         if (value == null) {
-            out.nullValue()
+            writer.nullValue()
         } else {
             // Just serialize the URI as a string
-            out.value(value.toString())
+            writer.value(value.toString())
         }
     }
 
-    override fun read(reader: JsonReader): Uri? {
+    override fun fromJson(reader: JsonReader): Uri? {
+        if (reader.peek() == JsonReader.Token.NULL) {
+            reader.nextNull<Unit>()
+            return null
+        }
+        
         val uriString = reader.nextString()
         return if (uriString.isNullOrEmpty()) {
             null
         } else {
             try {
                 // First try to parse as standard URI
-                Uri.parse(uriString)
+                uriString.toUri()
             } catch (e: Exception) {
                 Timber.e(e, "Error parsing URI: $uriString")
                 null

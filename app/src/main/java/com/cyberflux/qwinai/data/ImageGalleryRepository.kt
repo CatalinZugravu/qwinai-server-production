@@ -5,15 +5,13 @@ import android.content.SharedPreferences
 import android.graphics.BitmapFactory
 import com.cyberflux.qwinai.model.GeneratedImage
 import com.cyberflux.qwinai.model.GenerationSettings
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
+import com.cyberflux.qwinai.utils.JsonUtils
 import java.io.File
 import java.util.*
 
 class ImageGalleryRepository(private val context: Context) {
     
     private val prefs: SharedPreferences = context.getSharedPreferences("image_gallery", Context.MODE_PRIVATE)
-    private val gson = Gson()
     
     companion object {
         private const val PREF_IMAGES = "generated_images"
@@ -52,12 +50,33 @@ class ImageGalleryRepository(private val context: Context) {
     }
     
     fun getAllImages(): List<GeneratedImage> {
-        val json = prefs.getString(PREF_IMAGES, "[]") ?: "[]"
-        val type = object : TypeToken<List<GeneratedImage>>() {}.type
-        val images: List<GeneratedImage> = gson.fromJson(json, type) ?: emptyList()
-        
-        // Filter out images whose files no longer exist
-        return images.filter { File(it.filePath).exists() }
+        return try {
+            val json = prefs.getString(PREF_IMAGES, "[]") ?: "[]"
+            android.util.Log.d("ImageRepository", "Loading images from SharedPrefs, JSON length: ${json.length}")
+            
+            val images: List<GeneratedImage> = JsonUtils.jsonToGeneratedImages(json)
+            android.util.Log.d("ImageRepository", "Successfully loaded ${images.size} images from JSON")
+            
+            // Filter out images whose files no longer exist and log any removals
+            val existingImages = images.filter { image ->
+                val exists = File(image.filePath).exists()
+                if (!exists) {
+                    android.util.Log.d("ImageRepository", "Removing non-existent image: ${image.filePath}")
+                }
+                exists
+            }
+            
+            // If we filtered out any images, save the cleaned list
+            if (existingImages.size != images.size) {
+                android.util.Log.d("ImageRepository", "Cleaned database: ${images.size} -> ${existingImages.size} images")
+                saveImages(existingImages)
+            }
+            
+            existingImages
+        } catch (e: Exception) {
+            android.util.Log.e("ImageRepository", "Error reading images from database", e)
+            emptyList()
+        }
     }
     
     fun getImagesByModel(model: String): List<GeneratedImage> {
@@ -108,6 +127,32 @@ class ImageGalleryRepository(private val context: Context) {
         }
     }
     
+    fun updateImageInfo(imageId: String, newFileName: String, newFilePath: String): Boolean {
+        try {
+            val images = getAllImages().toMutableList()
+            android.util.Log.d("ImageRepository", "Found ${images.size} images in database")
+            
+            val index = images.indexOfFirst { it.id == imageId }
+            android.util.Log.d("ImageRepository", "Looking for image ID: $imageId, found at index: $index")
+            
+            if (index != -1) {
+                val oldImage = images[index]
+                android.util.Log.d("ImageRepository", "Old path: ${oldImage.filePath}")
+                android.util.Log.d("ImageRepository", "New path: $newFilePath")
+                
+                images[index] = images[index].copy(fileName = newFileName, filePath = newFilePath)
+                saveImages(images)
+                android.util.Log.d("ImageRepository", "Successfully updated image info")
+                return true
+            } else {
+                android.util.Log.e("ImageRepository", "Image not found in database")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ImageRepository", "Error updating image info", e)
+        }
+        return false
+    }
+    
     fun getUniqueModels(): List<String> {
         return getAllImages().map { it.aiModel }.distinct().sorted()
     }
@@ -117,7 +162,10 @@ class ImageGalleryRepository(private val context: Context) {
     fun getTotalFileSize(): Long = getAllImages().sumOf { it.fileSize }
     
     private fun saveImages(images: List<GeneratedImage>) {
-        val json = gson.toJson(images)
+        android.util.Log.d("ImageRepository", "Saving ${images.size} images to SharedPrefs")
+        val json = JsonUtils.generatedImagesToJson(images)
+        android.util.Log.d("ImageRepository", "Serialized JSON length: ${json.length}")
         prefs.edit().putString(PREF_IMAGES, json).apply()
+        android.util.Log.d("ImageRepository", "Successfully saved images to SharedPrefs")
     }
 }

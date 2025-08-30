@@ -65,26 +65,29 @@
             android:contentDescription="Reload" />
 
         <ImageButton
-            android:id="@+id/btnPrevious"
+            android:id="@+id/btnAiPrevious"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:src="@drawable/ic_previous"
-            android:contentDescription="Previous" />
+            android:contentDescription="Previous"
+            android:visibility="gone" />
 
         <ImageButton
-            android:id="@+id/btnNext"
+            android:id="@+id/btnAiNext"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:src="@drawable/ic_next"
-            android:contentDescription="Next" />
+            android:contentDescription="Next"
+            android:visibility="gone" />
 
         <TextView
-            android:id="@+id/tvNavigationIndicator"
+            android:id="@+id/tvAiNavigationIndicator"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="&lt;1/2&gt;"
+            android:text="1/2"
             android:textColor="@android:color/darker_gray"
-            android:textSize="12sp" />
+            android:textSize="12sp"
+            android:visibility="gone" />
     </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

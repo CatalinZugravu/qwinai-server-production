@@ -15,7 +15,9 @@ import androidx.work.WorkerParameters
 import com.cyberflux.qwinai.MainActivity
 import com.cyberflux.qwinai.NotificationConstants
 import com.cyberflux.qwinai.R
+import com.cyberflux.qwinai.credits.CreditManager
 import com.cyberflux.qwinai.utils.PrefsManager
+import timber.log.Timber
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -23,34 +25,22 @@ import java.util.Locale
 class CreditResetWorker(appContext: Context, workerParams: WorkerParameters) : Worker(appContext, workerParams) {
 
     override fun doWork(): Result {
-        // Get the app context
-        val appContext = applicationContext
-
-        // Get the prefs
-        val prefs = appContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-        val lastResetDate = prefs.getLong("last_reset_date", 0L)
-        val currentDate = System.currentTimeMillis()
-
-        // Check if we need to reset
-        val sdf = SimpleDateFormat("yyyyMMdd", Locale.getDefault())
-        val isSameDay = sdf.format(Date(lastResetDate)) == sdf.format(Date(currentDate))
-
-        if (!isSameDay) {
-            // Reset counters
-            prefs.edit {
-                putInt("free_messages_left", 10)  // CHANGED: from 5 to 10
-                putInt("ads_watched_today", 0)
-                putLong("last_reset_date", currentDate)
-            }
-
-            // Don't send notification here - CreditManager will handle unified notification
-            // Only send notification if user is not subscribed
-            // if (!PrefsManager.isSubscribed(appContext)) {
-            //     sendResetNotification(appContext)
-            // }
+        try {
+            // Get the CreditManager instance - this will automatically trigger 
+            // checkAndResetDaily() if needed, without forcing a reset
+            val creditManager = CreditManager.getInstance(applicationContext)
+            
+            // Simply check credits to trigger the natural daily reset check
+            // The CreditManager will handle the daily reset logic internally
+            val chatCredits = creditManager.getChatCredits()
+            val imageCredits = creditManager.getImageCredits()
+            
+            Timber.d("CreditResetWorker: Credits checked - Chat: $chatCredits, Image: $imageCredits")
+            return Result.success()
+        } catch (e: Exception) {
+            Timber.e(e, "Error in CreditResetWorker: ${e.message}")
+            return Result.failure()
         }
-
-        return Result.success()
     }
 
     private fun sendResetNotification(context: Context) {

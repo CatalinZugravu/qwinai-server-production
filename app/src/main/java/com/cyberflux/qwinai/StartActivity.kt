@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.animation.ValueAnimator
 import com.cyberflux.qwinai.utils.HapticManager
 import android.provider.MediaStore
 import android.view.View
@@ -40,6 +41,7 @@ import com.cyberflux.qwinai.utils.DirectThemeApplier
 import com.cyberflux.qwinai.utils.ModelManager
 import com.cyberflux.qwinai.utils.ModelValidator
 import com.cyberflux.qwinai.utils.PrefsManager
+import com.cyberflux.qwinai.utils.UIDesignManager
 import com.cyberflux.qwinai.workers.CreditResetWorker
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.snackbar.Snackbar
@@ -71,6 +73,13 @@ class StartActivity : BaseThemedActivity() {
     
     // Dialog reference to prevent window leaks
     private var rateAppDialog: AlertDialog? = null
+    
+    // Typewriter animation properties
+    private var typewriterHandler: Handler? = null
+    private var typewriterRunnable: Runnable? = null
+    private var cursorBlinkRunnable: Runnable? = null
+    private var isTypewriterRunning = false
+    private var isCursorVisible = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -84,6 +93,9 @@ class StartActivity : BaseThemedActivity() {
 
             // Apply theme gradient immediately for visual feedback
             DirectThemeApplier.applyGradientToActivity(this)
+
+            // CRITICAL: Check for forced updates IMMEDIATELY before any UI initialization
+            checkForForcedUpdatesImmediate()
 
             // Initialize critical UI components first
             initializeCriticalUIComponents()
@@ -161,6 +173,12 @@ class StartActivity : BaseThemedActivity() {
                 withContext(Dispatchers.Main) {
                     applyInputCardAnimation()
                 }
+                
+                // Start typewriter animation after input card appears
+                delay(800)
+                withContext(Dispatchers.Main) {
+                    startTypewriterAnimation()
+                }
 
                 // Handle post-startup tasks with delay
                 delay(500)
@@ -225,7 +243,7 @@ class StartActivity : BaseThemedActivity() {
     }
 
     private fun resetFreeMessagesIfNeeded() {
-        val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
         val lastResetDate = prefs.getLong("last_reset_date", 0L)
         val currentDate = System.currentTimeMillis()
 
@@ -290,10 +308,45 @@ class StartActivity : BaseThemedActivity() {
         }
     }
 
+    /**
+     * Check for forced updates immediately on app start
+     * This prevents users from using the app if a critical update is required
+     */
+    private fun checkForForcedUpdatesImmediate() {
+        try {
+            val updateManager = MyApp.getUpdateManager()
+            if (updateManager != null) {
+                // Check if we already have a pending forced update
+                if (updateManager.isForceUpdateRequired()) {
+                    Timber.w("🚨 Forced update required, blocking app start")
+                    // Launch blocking update activity immediately
+                    val intent = Intent(this, BlockingUpdateActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NO_HISTORY
+                    }
+                    startActivity(intent)
+                    finish()
+                    return
+                }
+                
+                // Check for updates with forced update logic (server-side check)
+                updateManager.checkForUpdates(this, force = true)
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error checking for forced updates: ${e.message}")
+            // Continue with app initialization even if update check fails
+        }
+    }
+
     private fun checkForAppUpdates() {
         try {
             // Get the update manager from MyApp
-            MyApp.getUpdateManager()?.checkForUpdates(this)
+            val updateManager = MyApp.getUpdateManager()
+            if (updateManager != null) {
+                // Only do regular update check if no forced update is pending
+                if (!updateManager.isForceUpdateRequired()) {
+                    updateManager.checkForUpdates(this)
+                }
+            }
         } catch (e: Exception) {
             Timber.e(e, "Error checking for updates: ${e.message}")
         }
@@ -372,63 +425,133 @@ class StartActivity : BaseThemedActivity() {
             // DISABLE SWIPING
             binding.viewPager.isUserInputEnabled = false
 
-            // Initial state setup - ensure home content is visible at start
+            // Initial state setup - input is now always visible as part of tab layout
             binding.inputCardLayout.visibility = View.VISIBLE
             binding.headerLayout.visibility = View.VISIBLE
 
-            // Add page change callback
+            // Add page change callback with smooth animations
             binding.viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
                 override fun onPageSelected(position: Int) {
                     super.onPageSelected(position)
 
-                    // Show/hide elements based on selected tab
-                    binding.inputCardLayout.visibility = if (position == 0) View.VISIBLE else View.GONE
-
-                    // Animate header visibility change
+                    // Animate header and input visibility change with improved transitions
                     if (position == 0) {
                         // Show header when switching to Home tab
                         binding.headerLayout.alpha = 0f
                         binding.headerLayout.visibility = View.VISIBLE
                         binding.headerLayout.animate()
                             .alpha(1f)
-                            .setDuration(200)
+                            .translationY(0f)
+                            .setDuration(300)
+                            .setInterpolator(AccelerateDecelerateInterpolator())
+                            .start()
+
+                        // Show input layout when switching to Home tab
+                        binding.inputCardLayout.alpha = 0f
+                        binding.inputCardLayout.visibility = View.VISIBLE
+                        binding.inputCardLayout.animate()
+                            .alpha(1f)
+                            .translationY(0f)
+                            .setDuration(300)
+                            .setInterpolator(AccelerateDecelerateInterpolator())
+                            .start()
+
+                        // Animate ViewPager with smooth slide effect
+                        binding.viewPager.animate()
+                            .alpha(1f)
+                            .translationX(0f)
+                            .setDuration(300)
+                            .setInterpolator(AccelerateDecelerateInterpolator())
                             .start()
 
                         // Animate ViewPager margin change
                         val params = binding.viewPager.layoutParams as CoordinatorLayout.LayoutParams
-                        val targetMargin = resources.getDimensionPixelSize(R.dimen.header_height)
+                        val targetTopMargin = resources.getDimensionPixelSize(R.dimen.header_height)
+                        val targetBottomMargin = resources.getDimensionPixelSize(R.dimen.bottom_container_height) // Full height for input + tabs
 
-                        // Only animate if current margin is different
-                        if (params.topMargin != targetMargin) {
-                            val currentMargin = params.topMargin
-                            val animator = android.animation.ValueAnimator.ofInt(currentMargin, targetMargin)
-                            animator.addUpdateListener { valueAnimator ->
+                        // Animate top margin
+                        if (params.topMargin != targetTopMargin) {
+                            val currentTopMargin = params.topMargin
+                            val topAnimator = ValueAnimator.ofInt(currentTopMargin, targetTopMargin)
+                            topAnimator.addUpdateListener { valueAnimator ->
                                 params.topMargin = valueAnimator.animatedValue as Int
                                 binding.viewPager.layoutParams = params
                             }
-                            animator.duration = 200
-                            animator.start()
+                            topAnimator.duration = 300
+                            topAnimator.interpolator = AccelerateDecelerateInterpolator()
+                            topAnimator.start()
+                        }
+                        
+                        // Animate bottom margin for input area
+                        if (params.bottomMargin != targetBottomMargin) {
+                            val currentBottomMargin = params.bottomMargin
+                            val bottomAnimator = ValueAnimator.ofInt(currentBottomMargin, targetBottomMargin)
+                            bottomAnimator.addUpdateListener { valueAnimator ->
+                                params.bottomMargin = valueAnimator.animatedValue as Int
+                                binding.viewPager.layoutParams = params
+                            }
+                            bottomAnimator.duration = 300
+                            bottomAnimator.interpolator = AccelerateDecelerateInterpolator()
+                            bottomAnimator.start()
                         }
                     } else {
-                        // Hide header when switching to History tab
+                        // Hide header when switching to History tab with slide up effect
                         binding.headerLayout.animate()
                             .alpha(0f)
-                            .setDuration(200)
+                            .translationY(-50f)
+                            .setDuration(300)
+                            .setInterpolator(AccelerateDecelerateInterpolator())
                             .withEndAction {
                                 binding.headerLayout.visibility = View.GONE
+                                binding.headerLayout.translationY = 0f
                             }
+                            .start()
+
+                        // Hide input layout when switching to History tab with slide down effect
+                        binding.inputCardLayout.animate()
+                            .alpha(0f)
+                            .translationY(50f)
+                            .setDuration(300)
+                            .setInterpolator(AccelerateDecelerateInterpolator())
+                            .withEndAction {
+                                binding.inputCardLayout.visibility = View.GONE
+                                binding.inputCardLayout.translationY = 0f
+                            }
+                            .start()
+
+                        // Animate ViewPager with slide effect
+                        binding.viewPager.animate()
+                            .alpha(1f)
+                            .translationX(0f)
+                            .setDuration(300)
+                            .setInterpolator(AccelerateDecelerateInterpolator())
                             .start()
 
                         // Animate ViewPager margin change
                         val params = binding.viewPager.layoutParams as CoordinatorLayout.LayoutParams
-                        val currentMargin = params.topMargin
-                        val animator = android.animation.ValueAnimator.ofInt(currentMargin, 0)
-                        animator.addUpdateListener { valueAnimator ->
+                        val targetBottomMargin = resources.getDimensionPixelSize(R.dimen.tab_height) // Only tab height, no input
+                        
+                        // Animate top margin to 0 (no header)
+                        val currentTopMargin = params.topMargin
+                        val topAnimator = ValueAnimator.ofInt(currentTopMargin, 0)
+                        topAnimator.addUpdateListener { valueAnimator ->
                             params.topMargin = valueAnimator.animatedValue as Int
                             binding.viewPager.layoutParams = params
                         }
-                        animator.duration = 200
-                        animator.start()
+                        topAnimator.duration = 300
+                        topAnimator.interpolator = AccelerateDecelerateInterpolator()
+                        topAnimator.start()
+                        
+                        // Animate bottom margin to smaller size (no input area)
+                        val currentBottomMargin = params.bottomMargin
+                        val bottomAnimator = ValueAnimator.ofInt(currentBottomMargin, targetBottomMargin)
+                        bottomAnimator.addUpdateListener { valueAnimator ->
+                            params.bottomMargin = valueAnimator.animatedValue as Int
+                            binding.viewPager.layoutParams = params
+                        }
+                        bottomAnimator.duration = 300
+                        bottomAnimator.interpolator = AccelerateDecelerateInterpolator()
+                        bottomAnimator.start()
                     }
                 }
             })
@@ -473,14 +596,48 @@ class StartActivity : BaseThemedActivity() {
 
     private fun animateTabSelection(tab: TabLayout.Tab) {
         val view = tab.view
-        view.scaleX = 0.9f
-        view.scaleY = 0.9f
+        
+        // Create a bounce effect with rotation
         view.animate()
-            .scaleX(1f)
-            .scaleY(1f)
-            .setDuration(150)
+            .scaleX(0.85f)
+            .scaleY(0.85f)
+            .rotation(5f)
+            .setDuration(100)
             .setInterpolator(AccelerateDecelerateInterpolator())
+            .withEndAction {
+                view.animate()
+                    .scaleX(1.1f)
+                    .scaleY(1.1f)
+                    .rotation(-2f)
+                    .setDuration(150)
+                    .setInterpolator(AccelerateDecelerateInterpolator())
+                    .withEndAction {
+                        view.animate()
+                            .scaleX(1f)
+                            .scaleY(1f)
+                            .rotation(0f)
+                            .setDuration(100)
+                            .setInterpolator(AccelerateDecelerateInterpolator())
+                            .start()
+                    }
+                    .start()
+            }
             .start()
+
+        // Add a subtle color pulse effect to the icon
+        tab.icon?.let { icon ->
+            val iconView = view.findViewById<android.widget.ImageView>(com.google.android.material.R.id.icon)
+            iconView?.animate()
+                ?.alpha(0.6f)
+                ?.setDuration(75)
+                ?.withEndAction {
+                    iconView.animate()
+                        .alpha(1f)
+                        .setDuration(75)
+                        .start()
+                }
+                ?.start()
+        }
 
         provideHapticFeedback()
     }
@@ -521,6 +678,9 @@ class StartActivity : BaseThemedActivity() {
 
         // Make the entire input card clickable
         binding.inputCardLayout.setOnClickListener {
+            // Stop typewriter animation and enable input
+            stopTypewriterAnimation()
+            
             // Haptic feedback for better interaction
             provideHapticFeedback()
 
@@ -539,15 +699,27 @@ class StartActivity : BaseThemedActivity() {
                 .start()
 
             // Get text from input field (if any)
-            val text = binding.etInputText.text.toString().trim()
+            val text = binding.etInputText.text.toString().trim().replace("_", "")
 
             // Open MainActivity with or without text
             val intent = Intent(this, MainActivity::class.java)
-            if (text.isNotEmpty()) {
+            if (text.isNotEmpty() && text != "Ask your question") {
                 intent.putExtra("INITIAL_PROMPT", text)
                 binding.etInputText.text?.clear()
             }
             startActivity(intent)
+        }
+        
+        // Stop animation when user taps on EditText
+        binding.etInputText.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                stopTypewriterAnimation()
+            }
+        }
+        
+        // Stop animation when user starts typing
+        binding.etInputText.setOnClickListener {
+            stopTypewriterAnimation()
         }
 
         // Keep existing submit button functionality
@@ -574,25 +746,265 @@ class StartActivity : BaseThemedActivity() {
     // }
 
     private fun applyInputCardAnimation() {
-        // Bounce animation for input card
+        // Animate the entire bottom container with slide up effect
+        binding.bottomContainer.alpha = 0f
+        binding.bottomContainer.translationY = 200f
+        binding.bottomContainer.animate()
+            .alpha(1f)
+            .translationY(0f)
+            .setDuration(600)
+            .setInterpolator(AccelerateDecelerateInterpolator())
+            .setStartDelay(400)
+            .start()
+
+        // Staggered animation for input card
         binding.inputCardLayout.alpha = 0f
         binding.inputCardLayout.scaleX = 0.8f
         binding.inputCardLayout.scaleY = 0.8f
+        binding.inputCardLayout.translationY = 50f
         binding.inputCardLayout.animate()
             .alpha(1f)
             .scaleX(1f)
             .scaleY(1f)
+            .translationY(0f)
             .setDuration(500)
             .setInterpolator(AccelerateDecelerateInterpolator())
             .setStartDelay(700)
             .start()
 
-        // Fade in tabs
+        // Animate tabs with slide and fade effect
         binding.tabLayout.alpha = 0f
+        binding.tabLayout.translationY = 30f
         binding.tabLayout.animate()
             .alpha(1f)
+            .translationY(0f)
             .setDuration(400)
-            .setStartDelay(800)
+            .setInterpolator(AccelerateDecelerateInterpolator())
+            .setStartDelay(900)
+            .start()
+    }
+
+    private fun startTypewriterAnimation() {
+        if (isTypewriterRunning) return
+        
+        isTypewriterRunning = true
+        typewriterHandler = Handler(Looper.getMainLooper())
+        
+        // Clear existing text and disable user input temporarily
+        binding.etInputText.setText("")
+        binding.etInputText.isEnabled = false
+        
+        // Add initial fade-in effect for the input field
+        binding.etInputText.alpha = 0f
+        binding.etInputText.animate()
+            .alpha(1f)
+            .setDuration(300)
+            .withEndAction {
+                startTypewriterCycle()
+            }
+            .start()
+    }
+    
+    private fun startTypewriterCycle() {
+        if (!isTypewriterRunning) return
+        
+        // Start with initial cursor blinking
+        startInitialCursorBlink {
+            // Then start typing
+            startTypingAnimation {
+                // Then final cursor blinking
+                startFinalCursorBlink {
+                    // Wait and restart the cycle
+                    typewriterHandler?.postDelayed({
+                        if (isTypewriterRunning) {
+                            startTypewriterCycle()
+                        }
+                    }, 1500) // Pause between cycles
+                }
+            }
+        }
+    }
+    
+    private fun startInitialCursorBlink(onComplete: () -> Unit) {
+        var blinkCount = 0
+        val totalBlinks = 3
+        isCursorVisible = false
+        
+        cursorBlinkRunnable = object : Runnable {
+            override fun run() {
+                if (!isTypewriterRunning) return
+                
+                if (blinkCount < totalBlinks) {
+                    isCursorVisible = !isCursorVisible
+                    
+                    if (isCursorVisible) {
+                        binding.etInputText.setText("_")
+                        // Add subtle pulse effect for cursor
+                        binding.etInputText.animate()
+                            .scaleX(1.05f)
+                            .scaleY(1.05f)
+                            .setDuration(100)
+                            .withEndAction {
+                                binding.etInputText.animate()
+                                    .scaleX(1f)
+                                    .scaleY(1f)
+                                    .setDuration(100)
+                                    .start()
+                            }
+                            .start()
+                    } else {
+                        binding.etInputText.setText("")
+                        blinkCount++
+                    }
+                    
+                    typewriterHandler?.postDelayed(this, 500) // Smooth blink timing
+                } else {
+                    // Ensure cursor is visible before starting typing
+                    binding.etInputText.setText("")
+                    onComplete()
+                }
+            }
+        }
+        
+        typewriterHandler?.post(cursorBlinkRunnable!!)
+    }
+    
+    private fun startTypingAnimation(onComplete: () -> Unit) {
+        val text = "Ask your question"
+        var currentIndex = 0
+        
+        typewriterRunnable = object : Runnable {
+            override fun run() {
+                if (!isTypewriterRunning) return
+                
+                if (currentIndex <= text.length) {
+                    val currentText = text.substring(0, currentIndex)
+                    
+                    // Add cursor with smooth animation
+                    binding.etInputText.setText(currentText + "_")
+                    
+                    // Add subtle character appearance effect
+                    if (currentIndex > 0) {
+                        binding.etInputText.animate()
+                            .scaleX(1.02f)
+                            .scaleY(1.02f)
+                            .setDuration(50)
+                            .withEndAction {
+                                binding.etInputText.animate()
+                                    .scaleX(1f)
+                                    .scaleY(1f)
+                                    .setDuration(50)
+                                    .start()
+                            }
+                            .start()
+                    }
+                    
+                    currentIndex++
+                    
+                    if (currentIndex <= text.length) {
+                        // Variable typing speed for more natural feel
+                        val delay = when {
+                            currentText.endsWith(" ") -> 200L // Longer pause after spaces
+                            currentText.length < 3 -> 150L // Slower start
+                            else -> (80..120).random().toLong() // Natural variation
+                        }
+                        
+                        typewriterHandler?.postDelayed(this, delay)
+                    } else {
+                        onComplete()
+                    }
+                }
+            }
+        }
+        
+        typewriterHandler?.post(typewriterRunnable!!)
+    }
+    
+    private fun startFinalCursorBlink(onComplete: () -> Unit) {
+        var blinkCount = 0
+        val totalBlinks = 3
+        val currentText = "Ask your question"
+        
+        cursorBlinkRunnable = object : Runnable {
+            override fun run() {
+                if (!isTypewriterRunning) return
+                
+                if (blinkCount < totalBlinks) {
+                    isCursorVisible = !isCursorVisible
+                    
+                    if (isCursorVisible) {
+                        binding.etInputText.setText(currentText + "_")
+                        // Add gentle glow effect for final cursor blinks
+                        binding.etInputText.animate()
+                            .alpha(0.8f)
+                            .setDuration(150)
+                            .withEndAction {
+                                binding.etInputText.animate()
+                                    .alpha(1f)
+                                    .setDuration(150)
+                                    .start()
+                            }
+                            .start()
+                    } else {
+                        binding.etInputText.setText(currentText)
+                        blinkCount++
+                    }
+                    
+                    typewriterHandler?.postDelayed(this, 400) // Slightly faster final blinks
+                } else {
+                    // Smooth fade out before clearing text
+                    binding.etInputText.animate()
+                        .alpha(0.3f)
+                        .setDuration(300)
+                        .withEndAction {
+                            binding.etInputText.setText("")
+                            binding.etInputText.animate()
+                                .alpha(1f)
+                                .setDuration(200)
+                                .withEndAction {
+                                    onComplete()
+                                }
+                                .start()
+                        }
+                        .start()
+                }
+            }
+        }
+        
+        typewriterHandler?.post(cursorBlinkRunnable!!)
+    }
+    
+    private fun stopTypewriterAnimation() {
+        isTypewriterRunning = false
+        
+        // Remove all callbacks
+        typewriterHandler?.let { handler ->
+            typewriterRunnable?.let { handler.removeCallbacks(it) }
+            cursorBlinkRunnable?.let { handler.removeCallbacks(it) }
+        }
+        
+        typewriterHandler = null
+        typewriterRunnable = null
+        cursorBlinkRunnable = null
+        
+        // Restore original state with smooth transition
+        binding.etInputText.animate()
+            .alpha(0.3f)
+            .scaleX(0.98f)
+            .scaleY(0.98f)
+            .setDuration(150)
+            .withEndAction {
+                binding.etInputText.setText("")
+                binding.etInputText.animate()
+                    .alpha(1f)
+                    .scaleX(1f)
+                    .scaleY(1f)
+                    .setDuration(200)
+                    .withEndAction {
+                        binding.etInputText.isEnabled = true
+                    }
+                    .start()
+            }
             .start()
     }
 
@@ -680,6 +1092,52 @@ class StartActivity : BaseThemedActivity() {
                 startActivity(intent)
                 overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
             }
+
+            "file_upload" -> {
+                val intent = Intent(this, MainActivity::class.java).apply {
+                    action = "com.cyberflux.qwinai.ACTION_FILE_UPLOAD"
+                    putExtra("FORCE_MODEL", ModelManager.CLAUDE_3_7_SONNET_ID)
+                    putExtra("FEATURE_MODE", "file_upload")
+                    putExtra("AUTO_OPEN_FILE_PICKER", true)
+                    flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+                }
+                startActivity(intent)
+                overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+            }
+
+            "private_chat" -> {
+                val intent = Intent(this, MainActivity::class.java).apply {
+                    action = "com.cyberflux.qwinai.ACTION_PRIVATE_MODE"
+                    putExtra("PRIVATE_MODE", true)
+                    flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+                }
+                startActivity(intent)
+                overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+            }
+
+            "voice_chat" -> {
+                try {
+                    val intent = Intent(this, AudioAiActivity::class.java)
+                    startActivity(intent)
+                    overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+                    Timber.d("Opened AudioAiActivity for voice chat")
+                } catch (e: Exception) {
+                    Timber.e(e, "Error opening AudioAiActivity: ${e.message}")
+                    Toast.makeText(this, "Error opening voice chat: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            "image_gallery" -> {
+                try {
+                    val intent = Intent(this, ImageGalleryActivity::class.java)
+                    startActivity(intent)
+                    overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+                    Timber.d("Opened ImageGalleryActivity")
+                } catch (e: Exception) {
+                    Timber.e(e, "Error opening ImageGalleryActivity: ${e.message}")
+                    Toast.makeText(this, "Error opening image gallery: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 
@@ -700,8 +1158,8 @@ class StartActivity : BaseThemedActivity() {
         )
 
         // Use the day of year to select a prompt
-        val calendar = java.util.Calendar.getInstance()
-        val dayOfYear = calendar.get(java.util.Calendar.DAY_OF_YEAR)
+        val calendar = Calendar.getInstance()
+        val dayOfYear = calendar.get(Calendar.DAY_OF_YEAR)
         return prompts[dayOfYear % prompts.size]
     }
 
@@ -854,10 +1312,8 @@ class StartActivity : BaseThemedActivity() {
     }
 
     fun navigateToWelcomeActivity() {
-        Intent(this, WelcomeActivity::class.java).apply {
-            startActivity(this)
-            overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
-        }
+        SubscriptionActivity.start(this)
+        overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
     }
 
     private fun showVoiceInputDialog() {
@@ -955,8 +1411,27 @@ class StartActivity : BaseThemedActivity() {
         }
     }
 
+    override fun onPause() {
+        super.onPause()
+        // Pause typewriter animation to save resources
+        stopTypewriterAnimation()
+    }
+    
+    override fun onResume() {
+        super.onResume()
+        // Restart typewriter animation if input field is empty
+        if (binding.etInputText.text.toString().isEmpty() && !isTypewriterRunning) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                startTypewriterAnimation()
+            }, 500)
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        
+        // Clean up typewriter animation
+        stopTypewriterAnimation()
         
         // Clean up dialog to prevent window leaks
         try {

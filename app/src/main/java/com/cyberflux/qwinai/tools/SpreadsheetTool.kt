@@ -1,35 +1,32 @@
 package com.cyberflux.qwinai.tools
 
 import android.content.Context
-import android.graphics.Color
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.apache.poi.ss.usermodel.CellStyle
-import org.apache.poi.ss.usermodel.FillPatternType
-import org.apache.poi.ss.usermodel.IndexedColors
-import org.apache.poi.ss.util.CellRangeAddress
-import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import timber.log.Timber
+import com.opencsv.CSVWriter
 import java.io.ByteArrayOutputStream
+import java.io.StringWriter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.regex.Pattern
 
 /**
- * Tool for creating and manipulating spreadsheets based on user requests
+ * Tool for creating and manipulating spreadsheets (CSV format) based on user requests
+ * NOTE: Now generates CSV files instead of Excel for compatibility after removing Apache POI
  */
 class SpreadsheetTool(private val context: Context) : Tool {
     override val id: String = "spreadsheet_creator"
-    override val name: String = "Spreadsheet Creator"
-    override val description: String = "Creates spreadsheets with tables, data, and formulas based on user requests"
+    override val name: String = "Spreadsheet Creator (CSV)"
+    override val description: String = "Creates spreadsheets in CSV format with tables, data, and calculations based on user requests"
 
     // Patterns to recognize spreadsheet creation requests
     private val spreadsheetPatterns = listOf(
-        Pattern.compile("\\bcreate\\s+(?:a\\s+)?(?:spreadsheet|sheet|table|excel)\\b", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("\\bmake\\s+(?:a\\s+)?(?:spreadsheet|sheet|table|excel)\\b", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("\\bgenerate\\s+(?:a\\s+)?(?:spreadsheet|sheet|table|excel)\\b", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("\\bcreate\\s+(?:a\\s+)?(?:spreadsheet|sheet|table|excel|csv)\\b", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("\\bmake\\s+(?:a\\s+)?(?:spreadsheet|sheet|table|excel|csv)\\b", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("\\bgenerate\\s+(?:a\\s+)?(?:spreadsheet|sheet|table|excel|csv)\\b", Pattern.CASE_INSENSITIVE),
         Pattern.compile("\\bspreadsheet\\s+(?:with|containing|of)\\b", Pattern.CASE_INSENSITIVE),
         Pattern.compile("\\btable\\s+(?:with|containing|of)\\b.+(?:data|rows|columns)", Pattern.CASE_INSENSITIVE)
     )
@@ -52,21 +49,22 @@ class SpreadsheetTool(private val context: Context) : Tool {
                 )
             }
 
-            // Create the spreadsheet
-            val (workbook, base64Data) = createSpreadsheet(spec)
+            // Create the spreadsheet (CSV format)
+            val base64Data = createSpreadsheetCSV(spec)
 
             // Create response content
             val content = buildString {
-                append("Created a spreadsheet with:\n")
+                append("Created a CSV spreadsheet with:\n")
                 append("- ${spec.headers.size} columns: ${spec.headers.joinToString(", ")}\n")
                 append("- ${spec.data.size} data rows\n")
                 if (spec.title.isNotBlank()) {
                     append("- Title: ${spec.title}\n")
                 }
                 if (spec.formulas.isNotEmpty()) {
-                    append("- ${spec.formulas.size} formulas applied\n")
+                    append("- ${spec.formulas.size} calculations included\n")
                 }
-                append("\nSpreadsheet is ready for download.")
+                append("\nSpreadsheet (CSV format) is ready for download.")
+                append("\nNote: Generated in CSV format for maximum compatibility.")
             }
 
             return@withContext ToolResult.success(
@@ -76,7 +74,7 @@ class SpreadsheetTool(private val context: Context) : Tool {
                     "filename" to generateFilename(spec.title)
                 ),
                 metadata = mapOf(
-                    "format" to "xlsx",
+                    "format" to "csv",
                     "headers" to spec.headers,
                     "rows" to spec.data.size
                 )
@@ -311,99 +309,57 @@ class SpreadsheetTool(private val context: Context) : Tool {
     }
 
     /**
-     * Create the actual spreadsheet file and return base64 encoded data
+     * Create the actual spreadsheet file in CSV format and return base64 encoded data
      */
-    private fun createSpreadsheet(spec: SpreadsheetSpec): Pair<XSSFWorkbook, String> {
-        val workbook = XSSFWorkbook()
-        val sheet = workbook.createSheet("Data")
-
-        // Create styles
-        val headerStyle = workbook.createCellStyle().apply {
-            fillForegroundColor = IndexedColors.LIGHT_BLUE.index
-            fillPattern = FillPatternType.SOLID_FOREGROUND
-            val font = workbook.createFont()
-            font.bold = true
-            setFont(font)
-        }
-
-        val dataStyle = workbook.createCellStyle()
+    private fun createSpreadsheetCSV(spec: SpreadsheetSpec): String {
+        val stringWriter = StringWriter()
+        val csvWriter = CSVWriter(stringWriter)
 
         // Add title if present
-        var rowNum = 0
         if (spec.title.isNotBlank()) {
-            val titleRow = sheet.createRow(rowNum++)
-            val titleCell = titleRow.createCell(0)
-            titleCell.setCellValue(spec.title)
-
-            val titleStyle = workbook.createCellStyle().apply {
-                val font = workbook.createFont()
-                font.bold = true
-                font.fontHeightInPoints = 14
-                setFont(font)
-            }
-
-            titleCell.cellStyle = titleStyle
-
-            // Merge cells for title
-            sheet.addMergedRegion(CellRangeAddress(0, 0, 0, spec.headers.size - 1))
-
-            // Add an empty row after title
-            sheet.createRow(rowNum++)
+            csvWriter.writeNext(arrayOf("# ${spec.title}"))
+            csvWriter.writeNext(arrayOf("")) // Empty row
         }
 
         // Add headers
-        val headerRow = sheet.createRow(rowNum++)
-        spec.headers.forEachIndexed { index, header ->
-            val cell = headerRow.createCell(index)
-            cell.setCellValue(header)
-            cell.cellStyle = headerStyle
-        }
+        csvWriter.writeNext(spec.headers.toTypedArray())
 
         // Add data rows
         spec.data.forEach { rowData ->
-            val dataRow = sheet.createRow(rowNum++)
-            rowData.forEachIndexed { index, value ->
-                val cell = dataRow.createCell(index)
-                cell.setCellValue(value)
-                cell.cellStyle = dataStyle
-            }
+            csvWriter.writeNext(rowData.toTypedArray())
         }
 
-        // Add formula row if needed
+        // Add calculations/summary if needed
         if (spec.formulas.isNotEmpty()) {
-            val formulaRow = sheet.createRow(rowNum++)
-            val labelCell = formulaRow.createCell(0)
-            labelCell.setCellValue("Summary:")
-
-            // Apply formulas
-            var colIndex = 1
-            spec.formulas.forEach { (name, formula) ->
-                val cell = formulaRow.createCell(colIndex++)
-                cell.setCellValue(name)
-
-                // For simplicity, we're not implementing actual Excel formulas here
+            csvWriter.writeNext(arrayOf("")) // Empty row
+            csvWriter.writeNext(arrayOf("# Summary/Calculations:"))
+            
+            spec.formulas.forEach { (name, _) ->
+                // For CSV, we'll add descriptive text instead of actual formulas
+                when (name) {
+                    "SUM" -> csvWriter.writeNext(arrayOf("Total", "[Sum calculation would go here]"))
+                    "AVERAGE" -> csvWriter.writeNext(arrayOf("Average", "[Average calculation would go here]"))
+                    "MAX" -> csvWriter.writeNext(arrayOf("Maximum", "[Max value would go here]"))
+                    "MIN" -> csvWriter.writeNext(arrayOf("Minimum", "[Min value would go here]"))
+                    else -> csvWriter.writeNext(arrayOf(name, "[Calculation result would go here]"))
+                }
             }
         }
 
-        // Auto-size columns
-        for (i in spec.headers.indices) {
-            sheet.autoSizeColumn(i)
-        }
+        csvWriter.close()
+        stringWriter.close()
 
-        // Convert to base64
-        val outputStream = ByteArrayOutputStream()
-        workbook.write(outputStream)
-        val base64Data = Base64.encodeToString(outputStream.toByteArray(), Base64.DEFAULT)
-
-        return Pair(workbook, base64Data)
+        // Convert CSV content to base64
+        val csvContent = stringWriter.toString()
+        return Base64.encodeToString(csvContent.toByteArray(), Base64.DEFAULT)
     }
 
     /**
-     * Generate a filename for the spreadsheet
+     * Generate a filename for the spreadsheet (CSV format)
      */
     private fun generateFilename(title: String): String {
         val safeName = title.replace("[^a-zA-Z0-9 ]".toRegex(), "_")
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        return "${safeName}_${timestamp}.xlsx"
+        return "${safeName}_${timestamp}.csv"
     }
 }

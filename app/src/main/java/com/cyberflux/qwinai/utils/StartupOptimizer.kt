@@ -1,18 +1,19 @@
 package com.cyberflux.qwinai.utils
 
-import android.app.Activity
 import android.content.Context
-import android.content.SharedPreferences
-import androidx.lifecycle.lifecycleScope
 import com.cyberflux.qwinai.billing.BillingManager
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
 import com.cyberflux.qwinai.model.ChatMessage
 import com.cyberflux.qwinai.model.ResponseLength
-import com.cyberflux.qwinai.model.ResponseTone
 import com.cyberflux.qwinai.model.ResponsePreferences
+import com.cyberflux.qwinai.model.ResponseTone
 import com.cyberflux.qwinai.service.OCRService
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -42,13 +43,13 @@ object StartupOptimizer {
             
             val length = try {
                 ResponseLength.valueOf(lengthStr ?: ResponseLength.DEFAULT.name)
-            } catch (e: IllegalArgumentException) {
+            } catch (_: IllegalArgumentException) {
                 ResponseLength.DEFAULT
             }
             
             val tone = try {
                 ResponseTone.valueOf(toneStr ?: ResponseTone.DEFAULT.name)
-            } catch (e: IllegalArgumentException) {
+            } catch (_: IllegalArgumentException) {
                 ResponseTone.DEFAULT
             }
             
@@ -73,10 +74,26 @@ object StartupOptimizer {
             
             val history = if (!historyJson.isNullOrEmpty()) {
                 try {
-                    val gson = Gson()
-                    val type = object : TypeToken<MutableMap<String, MutableList<ChatMessage>>>() {}.type
-                    val parsed: MutableMap<String, MutableList<ChatMessage>> = gson.fromJson(historyJson, type)
-                    parsed
+                    // For complex nested types, we'll use a simpler approach
+                    // Parse as a generic map and then reconstruct
+                    val tempMap = JsonUtils.fromJson(historyJson, Map::class.java) as? Map<String, List<Map<String, Any>>>
+                    val result = mutableMapOf<String, MutableList<ChatMessage>>()
+                    tempMap?.forEach { (key, messageList) ->
+                        val chatMessages = messageList.mapNotNull { msgMap ->
+                            try {
+                                ChatMessage(
+                                    conversationId = msgMap["conversationId"] as? String ?: "default",
+                                    message = msgMap["message"] as? String ?: msgMap["content"] as? String ?: "",
+                                    isUser = msgMap["isUser"] as? Boolean == true,
+                                    timestamp = msgMap["timestamp"] as? Long ?: System.currentTimeMillis()
+                                )
+                            } catch (_: Exception) {
+                                null
+                            }
+                        }.toMutableList()
+                        result[key] = chatMessages
+                    }
+                    result
                 } catch (e: Exception) {
                     Timber.e(e, "Error parsing AI message history JSON")
                     mutableMapOf()
@@ -154,21 +171,7 @@ object StartupOptimizer {
             }
         }
     }
-    
-    /**
-     * PERFORMANCE: Get cached response preferences or load them if not available
-     */
-    suspend fun getCachedResponsePreferences(context: Context): ResponsePreferences {
-        return cachedResponsePreferences ?: loadResponsePreferencesAsync(context)
-    }
-    
-    /**
-     * PERFORMANCE: Get cached AI message history or load it if not available
-     */
-    suspend fun getCachedAiMessageHistory(context: Context): MutableMap<String, MutableList<ChatMessage>> {
-        return cachedAiMessageHistory ?: loadAiMessageHistoryAsync(context)
-    }
-    
+
     /**
      * Clear cached data when needed (e.g., when data is updated)
      */

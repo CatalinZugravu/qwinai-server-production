@@ -1,0 +1,25 @@
+╭──────────────────────────────────────────────────────────────╮
+│ ✻ Welcome to Claude Code!                                    │
+│                                                              │
+│   /help for help, /status for your current setup             │
+│                                                              │
+│   cwd: C:\Users\Catalin\AndroidStudioProjects\DeepSeekChat4  │
+╰──────────────────────────────────────────────────────────────╯
+● Compact summary (ctrl+r to expand)
+  ⎿  Referenced file 
+     app\src\main\java\com\cyberflux\qwinai\utils\UltraMarkdownPlugins.kt
+  ⎿  Referenced file 
+     app\src\main\java\com\cyberflux\qwinai\utils\UltraMarkdownSystems.kt
+  ⎿  Referenced file 
+     app\src\main\java\com\cyberflux\qwinai\utils\UltraMarkdownProcessor.kt
+  ⎿ Read 
+    app\src\main\java\com\cyberflux\qwinai\utils\EnhancedMarkdownPlugins.kt 
+    (480 lines)
+  ⎿  Read COMPREHENSIVE_MARKDOWN_ANALYSIS_2025.md (425 lines)
+  ⎿  Todo list read (12 items)
+  ⎿  5-hour limit reached ∙ resets 1am
+     /upgrade to increase your usage limit.
+
+> /export 
+  ⎿  Conversation copied to clipboard
+

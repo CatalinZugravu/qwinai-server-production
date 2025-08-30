@@ -5,6 +5,8 @@
     <dimen name="dialog_elevation">8dp</dimen>
     <dimen name="model_grid_spacing">8dp</dimen>
     <dimen name="header_height">60dp</dimen>
+    <dimen name="tab_height">56dp</dimen>
+    <dimen name="bottom_container_height">140dp</dimen>
     <dimen name="chip_icon_size">24dp</dimen>
     <dimen name="standard_corner_radius">8dp</dimen>
     <dimen name="card_stroke_width">1dp</dimen>
@@ -31,5 +33,10 @@
     <dimen name="chat_image_margin">8dp</dimen>
     <dimen name="document_thumbnail_width">110dp</dimen>
     <dimen name="document_thumbnail_margin">8dp</dimen>
+    
+    <!-- Attachment item dimensions -->
+    <dimen name="attachment_item_height">56dp</dimen>
+    <dimen name="attachment_file_width">80dp</dimen>
+    
     <!-- New dimensions for file items -->
 </resources>

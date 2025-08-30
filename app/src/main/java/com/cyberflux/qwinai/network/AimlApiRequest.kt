@@ -1,7 +1,6 @@
 package com.cyberflux.qwinai.network
 
-import com.google.gson.JsonObject
-import com.google.gson.annotations.SerializedName
+import com.squareup.moshi.Json
 
 /**
  * Complete API request class supporting all AI model parameters
@@ -15,126 +14,132 @@ data class AimlApiRequest(
     val thinking: ClaudeThinking? = null, // ✅ NEW: Claude thinking parameter
 
     // Generation parameters
-    @SerializedName("max_tokens")
+    @Json(name = "max_tokens")
     val maxTokens: Int? = null,
     val temperature: Double? = null,
-    @SerializedName("top_p")
+    @Json(name = "top_p")
     val topP: Double? = null,
-    @SerializedName("top_k")
+    @Json(name = "top_k")
     val topK: Int? = null,
 
     // Alternative generation names
-    @SerializedName("max_completion_tokens")
+    @Json(name = "max_completion_tokens")
     val maxCompletionTokens: Int? = null,
-    @SerializedName("max_output_tokens")
+    @Json(name = "max_output_tokens")
     val maxOutputTokens: Int? = null,
 
     // Streaming
     var stream: Boolean? = null,
-    @SerializedName("stream_options")
+    @Json(name = "stream_options")
     val streamOptions: StreamOptions? = null,
 
     // Stop sequences
     val stop: Any? = null,  // Can be String or List<String>
-    @SerializedName("stop_sequences")
+    @Json(name = "stop_sequences")
     val stopSequences: List<String>? = null,
 
     // Sampling parameters
-    @SerializedName("frequency_penalty")
+    @Json(name = "frequency_penalty")
     val frequencyPenalty: Double? = null,
-    @SerializedName("presence_penalty")
+    @Json(name = "presence_penalty")
     val presencePenalty: Double? = null,
-    @SerializedName("repetition_penalty")
+    @Json(name = "repetition_penalty")
     val repetitionPenalty: Double? = null,
-    @SerializedName("length_penalty")
+    @Json(name = "length_penalty")
     val lengthPenalty: Double? = null,
 
     // Advanced sampling
-    @SerializedName("logit_bias")
+    @Json(name = "logit_bias")
     val logitBias: Map<String, Double>? = null,
     val logprobs: Boolean? = null,
-    @SerializedName("top_logprobs")
+    @Json(name = "top_logprobs")
     val topLogprobs: Int? = null,
 
     // Seeding and determinism
     val seed: Long? = null,
-    @SerializedName("random_seed")
+    @Json(name = "random_seed")
     val randomSeed: Long? = null,
 
     // Function/Tool calling
     val tools: List<Tool>? = null,
-    @SerializedName("tool_choice")
+    @Json(name = "tool_choice")
     val toolChoice: Any? = null,  // Can be String or Object
     val functions: List<Function>? = null,
-    @SerializedName("function_call")
+    @Json(name = "function_call")
     val functionCall: Any? = null,
 
     // Web search
-    @SerializedName("web_search")
+    @Json(name = "web_search")
     val webSearch: Boolean? = null,
-    @SerializedName("web_search_options")
+    @Json(name = "web_search_options")
     val webSearchOptions: WebSearchOptions? = null,
-    @SerializedName("search_enabled")
+    @Json(name = "search_enabled")
     val searchEnabled: Boolean? = null,
+    @Json(name = "search_mode")
+    val searchMode: String? = null,
 
     // Reasoning/thinking for non-Claude models
     val reasoning: Reasoning? = null,
-    @SerializedName("reasoning_effort")
+    @Json(name = "reasoning_effort")
     val reasoningEffort: String? = null,
-    @SerializedName("chain_of_thought")
+    @Json(name = "chain_of_thought")
     val chainOfThought: Boolean? = null,
-    @SerializedName("include_reasoning_in_response")
+    @Json(name = "include_reasoning_in_response")
     val includeReasoningInResponse: Boolean? = null,
-    @SerializedName("stream_reasoning")
+    @Json(name = "stream_reasoning")
     val streamReasoning: Boolean? = null,
+    
+    // ZhiPu GLM thinking parameter
+    @Json(name = "thinking")
+    val zhipuThinking: ZhipuThinking? = null,
 
     // Audio
     val audio: AudioOptions? = null,
-    @SerializedName("voice_settings")
+    @Json(name = "voice_settings")
     val voiceSettings: VoiceSettings? = null,
-    @SerializedName("tts_settings")
+    @Json(name = "tts_settings")
     val ttsSettings: TTSSettings? = null,
 
     // Image generation
-    @SerializedName("image_generation")
+    @Json(name = "image_generation")
     val imageGeneration: ImageGenerationOptions? = null,
-    @SerializedName("image_settings")
+    @Json(name = "image_settings")
     val imageSettings: ImageSettings? = null,
 
     // Multimodal
     val modalities: List<String>? = null,
-    @SerializedName("response_format")
+    @Json(name = "response_format")
     val responseFormat: ResponseFormat? = null,
 
     // Safety and content filtering
-    @SerializedName("safety_settings")
+    @Json(name = "safety_settings")
     val safetySettings: List<SafetySetting>? = null,
-    @SerializedName("content_filter")
+    @Json(name = "content_filter")
     val contentFilter: Boolean? = null,
 
     // Context and memory
-    @SerializedName("context_length")
+    @Json(name = "context_length")
     val contextLength: Int? = null,
-    @SerializedName("memory_alpha")
+    @Json(name = "memory_alpha")
     val memoryAlpha: Double? = null,
 
     // Performance options
-    @SerializedName("use_cache")
+    @Json(name = "use_cache")
     val useCache: Boolean? = null,
-    @SerializedName("cache_control")
+    @Json(name = "cache_control")
     val cacheControl: CacheControl? = null,
     val timeout: Int? = null,
 
     // Provider specific
-    @SerializedName("anthropic_version")
+    @Json(name = "anthropic_version")
     val anthropicVersion: String? = null,
-    @SerializedName("openai_organization")
+    @Json(name = "openai_organization")
     val openaiOrganization: String? = null,
-    @SerializedName("user_id")
+    @Json(name = "user_id")
     val userId: String? = null,
 
     // Transform options
-    @SerializedName("transform_options")
+    @Json(name = "transform_options")
     val transformOptions: Map<String, Any>? = null,
 
     // Metadata
@@ -144,17 +149,17 @@ data class AimlApiRequest(
     // Legacy/alternative parameters
     val prompt: String? = null,  // For completion-style APIs
     val input: String? = null,   // Alternative input format
-    @SerializedName("system_message")
+    @Json(name = "system_message")
     val systemMessage: String? = null,
 
     // Experimental features
-    @SerializedName("experimental_features")
+    @Json(name = "experimental_features")
     val experimentalFeatures: Map<String, Any>? = null,
 
     // Rate limiting
-    @SerializedName("priority")
+    @Json(name = "priority")
     val priority: String? = null,
-    @SerializedName("rate_limit_group")
+    @Json(name = "rate_limit_group")
     val rateLimitGroup: String? = null,
     val topA: Double?,
     val parallelToolCalls: Boolean?,
@@ -168,16 +173,16 @@ data class AimlApiRequest(
         val name: String? = null,
 
         // Alternative content fields
-        @SerializedName("text_content")
+        @Json(name = "text_content")
         val textContent: String? = null,
         val text: String? = null,
 
         // Function calling
-        @SerializedName("tool_calls")
+        @Json(name = "tool_calls")
         val toolCalls: List<ToolCall>? = null,
-        @SerializedName("function_call")
+        @Json(name = "function_call")
         val functionCall: FunctionCall? = null,
-        @SerializedName("tool_call_id")
+        @Json(name = "tool_call_id")
         val toolCallId: String? = null,
 
         // Audio
@@ -191,12 +196,16 @@ data class AimlApiRequest(
     data class ContentPart(
         val type: String,
         val text: String? = null,
-        @SerializedName("image_url")
+        @Json(name = "image_url")
         val imageUrl: ImageUrl? = null,
         val image: String? = null,  // Base64 or URL
         val audio: AudioContent? = null,
         val data: String? = null,
         val url: String? = null,
+
+        // File support for GPT-4o
+        @Json(name = "file")
+        val file: FileContent? = null,
 
         // Additional metadata
         val metadata: Map<String, Any>? = null
@@ -212,8 +221,14 @@ data class AimlApiRequest(
         val data: String,  // Base64 encoded
         val format: String,
         val duration: Double? = null,
-        @SerializedName("sample_rate")
+        @Json(name = "sample_rate")
         val sampleRate: Int? = null
+    )
+
+    data class FileContent(
+        @Json(name = "file_data")
+        val fileData: String,  // Base64 encoded file content
+        val filename: String   // File name for reference
     )
 
     data class Tool(
@@ -230,7 +245,7 @@ data class AimlApiRequest(
     data class ToolFunction(
         val name: String,
         val description: String,
-        val parameters: JsonObject,
+        val parameters: Map<String, Any>,
 
         // Function metadata
         val version: String? = null,
@@ -240,7 +255,7 @@ data class AimlApiRequest(
     // ✅ NEW: Claude-specific thinking configuration
     data class ClaudeThinking(
         val type: String = "enabled",
-        @SerializedName("budget_tokens")
+        @Json(name = "budget_tokens")
         val budgetTokens: Int
     ) {
         companion object {
@@ -258,7 +273,7 @@ data class AimlApiRequest(
     data class Function(
         val name: String,
         val description: String,
-        val parameters: JsonObject,
+        val parameters: Map<String, Any>,
 
         // Legacy function fields
         val required: List<String>? = null
@@ -279,39 +294,57 @@ data class AimlApiRequest(
     )
 
     data class StreamOptions(
-        @SerializedName("include_usage")
+        @Json(name = "include_usage")
         val includeUsage: Boolean? = null,
-        @SerializedName("include_reasoning")
+        @Json(name = "include_reasoning")
         val includeReasoning: Boolean? = null,
-        @SerializedName("include_metadata")
+        @Json(name = "include_metadata")
         val includeMetadata: Boolean? = null
     )
 
     data class WebSearchOptions(
-        @SerializedName("search_context_size")
+        @Json(name = "search_context_size")
         val searchContextSize: String? = null,
-        @SerializedName("max_results")
+        @Json(name = "max_results")
         val maxResults: Int? = null,
-        @SerializedName("user_location")
+        @Json(name = "user_location")
         val userLocation: UserLocation? = null,
 
         // Time parameters
         val freshness: String? = null,
-        @SerializedName("force_fresh")
+        @Json(name = "force_fresh")
         val forceFresh: Boolean? = null,
-        @SerializedName("max_freshness")
+        @Json(name = "max_freshness")
         val maxFreshness: String? = null,
-        @SerializedName("time_range")
+        @Json(name = "time_range")
         val timeRange: String? = null,
 
         // Advanced options
         val domains: List<String>? = null,
-        @SerializedName("exclude_domains")
+        @Json(name = "exclude_domains")
         val excludeDomains: List<String>? = null,
         val language: String? = null,
         val region: String? = null,
-        @SerializedName("safe_search")
-        val safeSearch: String? = null
+        @Json(name = "safe_search")
+        val safeSearch: String? = null,
+
+        // Perplexity-specific parameters
+        @Json(name = "return_images")
+        val returnImages: Boolean? = null,
+        @Json(name = "return_related_questions")
+        val returnRelatedQuestions: Boolean? = null,
+        @Json(name = "search_recency_filter")
+        val searchRecencyFilter: String? = null,
+        @Json(name = "search_after_date_filter")
+        val searchAfterDateFilter: String? = null,
+        @Json(name = "search_before_date_filter")
+        val searchBeforeDateFilter: String? = null,
+        @Json(name = "last_updated_after_filter")
+        val lastUpdatedAfterFilter: String? = null,
+        @Json(name = "last_updated_before_filter")
+        val lastUpdatedBeforeFilter: String? = null,
+        @Json(name = "search_domain_filter")
+        val searchDomainFilter: List<String>? = null
     )
 
     data class UserLocation(
@@ -328,7 +361,7 @@ data class AimlApiRequest(
 
     data class Reasoning(
         val effort: String? = null,
-        @SerializedName("max_tokens")
+        @Json(name = "max_tokens")
         val maxTokens: Int? = null,
         val enabled: Boolean? = null,
         val visible: Boolean? = null,
@@ -336,7 +369,7 @@ data class AimlApiRequest(
         // Advanced reasoning
         val depth: String? = null,
         val strategy: String? = null,
-        @SerializedName("chain_length")
+        @Json(name = "chain_length")
         val chainLength: Int? = null
     )
 
@@ -347,7 +380,7 @@ data class AimlApiRequest(
         // Audio quality
         val quality: String? = null,
         val speed: Double? = null,
-        @SerializedName("sample_rate")
+        @Json(name = "sample_rate")
         val sampleRate: Int? = null,
 
         // Voice settings
@@ -369,7 +402,7 @@ data class AimlApiRequest(
         val voice: String,
         val format: String,
         val quality: String? = null,
-        @SerializedName("sample_rate")
+        @Json(name = "sample_rate")
         val sampleRate: Int? = null
     )
 
@@ -396,9 +429,9 @@ data class AimlApiRequest(
 
     data class ResponseFormat(
         val type: String,
-        @SerializedName("json_schema")
-        val jsonSchema: JsonObject? = null,
-        val schema: JsonObject? = null
+        @Json(name = "json_schema")
+        val jsonSchema: Map<String, Any>? = null,
+        val schema: Map<String, Any>? = null
     )
 
     data class SafetySetting(
@@ -409,8 +442,25 @@ data class AimlApiRequest(
 
     data class CacheControl(
         val type: String,
-        @SerializedName("max_age")
+        @Json(name = "max_age")
         val maxAge: Int? = null,
         val ephemeral: Boolean? = null
     )
+
+    /**
+     * ZhiPu GLM-specific thinking configuration
+     */
+    data class ZhipuThinking(
+        val type: String = "enabled"
+    ) {
+        companion object {
+            fun enabled(): ZhipuThinking {
+                return ZhipuThinking(type = "enabled")
+            }
+
+            fun disabled(): ZhipuThinking {
+                return ZhipuThinking(type = "disabled")
+            }
+        }
+    }
 }

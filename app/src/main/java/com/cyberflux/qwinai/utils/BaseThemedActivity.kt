@@ -37,38 +37,9 @@ open class BaseThemedActivity : AppCompatActivity() {
      */
     private fun applyThemeBeforeCreate() {
         try {
-            // Get saved theme style
-            val themeStyle = ThemeManager.getSavedThemeStyle(this)
-            val themeMode = ThemeManager.getSavedThemeMode(this)
-            Log.d(TAG, "Applying theme: style=$themeStyle, mode=$themeMode")
-
-            // Get the theme resource ID and apply it
-            val themeResId = when (themeStyle) {
-                // Elegant Themes
-                ThemeManager.THEME_SLATE -> R.style.Theme_Slate
-                ThemeManager.THEME_OLIVE -> R.style.Theme_Olive
-                ThemeManager.THEME_BURGUNDY -> R.style.Theme_Burgundy
-                ThemeManager.THEME_COPPER -> R.style.Theme_Copper
-                ThemeManager.THEME_CARBON -> R.style.Theme_Carbon
-                ThemeManager.THEME_TEAL -> R.style.Theme_Teal
-                ThemeManager.THEME_SERENITY -> R.style.Theme_Serenity
-
-                // Vibrant Themes
-                ThemeManager.THEME_NEON -> R.style.Theme_Neon
-                ThemeManager.THEME_AURORA -> R.style.Theme_Aurora
-                ThemeManager.THEME_ROYAL -> R.style.Theme_Royal
-                ThemeManager.THEME_TROPICAL -> R.style.Theme_Tropical
-                ThemeManager.THEME_MONOCHROME -> R.style.Theme_Monochrome
-                ThemeManager.THEME_COSMIC -> R.style.Theme_Cosmic
-                ThemeManager.THEME_VIVID -> R.style.Theme_Vivid
-
-                // Default Theme
-                else -> R.style.AppTheme
-            }
-
-            // Apply the theme
-            setTheme(themeResId)
-            Log.d(TAG, "Successfully applied theme resource: $themeResId")
+            // Material Design 3 uses a single AppTheme that adapts to light/dark mode
+            setTheme(R.style.AppTheme)
+            Log.d(TAG, "Successfully applied Material Design 3 AppTheme")
             
         } catch (e: Exception) {
             Log.e(TAG, "Error applying theme, falling back to default", e)
@@ -79,11 +50,11 @@ open class BaseThemedActivity : AppCompatActivity() {
         try {
             if (PrefsManager.isHapticFeedbackEnabled(this)) {
                 val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+                    val vibratorManager = getSystemService(VIBRATOR_MANAGER_SERVICE) as VibratorManager
                     vibratorManager.defaultVibrator
                 } else {
                     @Suppress("DEPRECATION")
-                    getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                    getSystemService(VIBRATOR_SERVICE) as Vibrator
                 }
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -111,7 +82,7 @@ open class BaseThemedActivity : AppCompatActivity() {
         }
 
         val filter = IntentFilter(ThemeManager.ACTION_THEME_CHANGED)
-        registerReceiver(themeChangeReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        registerReceiver(themeChangeReceiver, filter, RECEIVER_NOT_EXPORTED)
     }
 
     override fun onDestroy() {

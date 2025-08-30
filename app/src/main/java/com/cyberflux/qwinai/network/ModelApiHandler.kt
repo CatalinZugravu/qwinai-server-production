@@ -7,20 +7,18 @@ import com.cyberflux.qwinai.utils.LocationService
 import com.cyberflux.qwinai.utils.ModelConfigManager
 import com.cyberflux.qwinai.utils.ModelManager
 import com.cyberflux.qwinai.utils.ModelValidator
-import com.google.gson.GsonBuilder
-import com.google.gson.JsonArray
-import com.google.gson.JsonObject
+import com.cyberflux.qwinai.utils.PerplexityPreferences
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import timber.log.Timber
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 object ModelApiHandler {
+
 
     /**
      * Creates request for AI models with proper parameter handling
@@ -41,36 +39,10 @@ object ModelApiHandler {
         val config = ModelConfigManager.getConfig(modelId)
             ?: throw IllegalArgumentException("Unknown model: $modelId")
 
-        // Auto-detect web search need
-        val (autoDetectedNeedsWebSearch, timeParams) = if (
-            messageText != null &&
-            !isWebSearch &&
-            config.supportsFunctionCalling
-        ) {
-            WebSearchUtils.analyzeMessage(messageText)
-        } else {
-            Pair(false, mapOf<String, String>())
-        }
-
-        // IMPROVED: Check for explicit web search requests
-        val containsExplicitSearchRequest = messageText?.let { msg ->
-            val lowerMsg = msg.lowercase()
-            lowerMsg.contains("search the internet") ||
-                    lowerMsg.contains("search the web") ||
-                    lowerMsg.contains("web search") ||
-                    lowerMsg.contains("google") ||
-                    lowerMsg.contains("look up") ||
-                    lowerMsg.contains("find information") ||
-                    lowerMsg.contains("search for") ||
-                    (lowerMsg.contains("search") && (lowerMsg.contains("online") || lowerMsg.contains("for")))
-        } ?: false
-
-        // Combine all detection methods for maximum coverage
-        val useWebSearch = (isWebSearch || autoDetectedNeedsWebSearch || containsExplicitSearchRequest) &&
-                config.supportsFunctionCalling
-
-        // Log decision
-        Timber.d("Web search decision: enabled=$useWebSearch (explicit=$isWebSearch, autoDetected=$autoDetectedNeedsWebSearch, explicitRequest=$containsExplicitSearchRequest)")
+        // Note: Perplexity models have built-in search, others get web search tools
+        val isPerplexityModel = modelId.contains("perplexity", ignoreCase = true)
+        
+        Timber.d("Web search tools: enabled=${!isPerplexityModel && config.supportsFunctionCalling}, explicit=$isWebSearch")
 
         // Location handling
         val userLocation = try {
@@ -80,56 +52,68 @@ object ModelApiHandler {
             LocationService.getSystemDefaultLocation()
         }
 
-        // System message handling
-        val systemMessage = when {
-            !config.supportsSystemMessages -> null
-            config.requiresClaudeThinking -> null // Claude handles system differently
-            config.supportsFunctionCalling -> createWebSearchSystemMessage(userLocation)
-            else -> createBasicSystemMessage(userLocation)
-        }
-
-        // Build final messages
-        val finalMessages = when {
-            config.requiresClaudeThinking -> messages
-            systemMessage != null && config.supportsSystemMessages ->
-                listOf(systemMessage) + messages
-            systemMessage != null ->
-                transformMessagesForCompatibility(systemMessage, messages)
-            else -> messages
-        }
-
-// Always include tools for models that support function calling - let model decide when to use them
-        val webSearchTools = if (config.supportsFunctionCalling) {
+        // Smart tool inclusion - only add tools when likely needed to reduce token usage  
+        val webSearchTools = if (config.supportsFunctionCalling && !isPerplexityModel) {
             val tools = mutableListOf<AimlApiRequest.Tool>()
 
-            // Always add web search tool
-            tools.add(createWebSearchTool())
-
-            // Add other tools for models that support them
-            if (ModelValidator.supportsMultipleTools(modelId)) {
-                tools.add(createCalculatorTool())
-                tools.add(createWeatherTool())
-                tools.add(createTranslationTool())
-                tools.add(createWikipediaTool())
-                tools.add(createSpreadsheetTool())
+            // Only add web search tool if web search is explicitly requested or message indicates need for current info
+            if (isWebSearch || messageText?.let { text ->
+                text.contains("current", ignoreCase = true) ||
+                text.contains("latest", ignoreCase = true) ||
+                text.contains("recent", ignoreCase = true) ||
+                text.contains("news", ignoreCase = true) ||
+                text.contains("today", ignoreCase = true) ||
+                text.contains("now", ignoreCase = true)
+            } == true) {
+                tools.add(createWebSearchTool())
             }
 
-            tools
+            // Selectively add other tools based on message content to reduce token usage
+            messageText?.let { text ->
+                val lowerText = text.lowercase()
+                if (ModelValidator.supportsMultipleTools(modelId)) {
+                    if (lowerText.contains("calculate") || lowerText.contains("math") || lowerText.contains("equation")) {
+                        tools.add(createCalculatorTool())
+                    }
+                    if (lowerText.contains("weather") || lowerText.contains("temperature") || lowerText.contains("forecast")) {
+                        tools.add(createWeatherTool())
+                    }
+                    if (lowerText.contains("translate") || lowerText.contains("language")) {
+                        tools.add(createTranslationTool())
+                    }
+                    if (lowerText.contains("wikipedia") || lowerText.contains("definition") || lowerText.contains("who is") || lowerText.contains("what is")) {
+                        tools.add(createWikipediaTool())
+                    }
+                    if (lowerText.contains("spreadsheet") || lowerText.contains("table") || lowerText.contains("csv") || lowerText.contains("excel")) {
+                        tools.add(createSpreadsheetTool())
+                    }
+                }
+            }
+
+            tools.takeIf { it.isNotEmpty() }
         } else {
             null
         }
         // Build request with common parameters
         AimlApiRequest(
             model = modelId,
-            messages = finalMessages,
+            messages = messages,
             thinking = if (config.requiresClaudeThinking && config.supportsReasoning && isReasoningEnabled) {
-                // IMPORTANT: Use safe thinking budget - ensure we don't exceed Claude's limits
+                // CLAUDE: Button-controlled thinking - user can enable/disable
                 val safeMaxTokens = minOf(config.defaultMaxTokens, 100000)
                 val thinkingBudget = minOf((safeMaxTokens * 0.6).toInt(), 60000) // Cap at 60k thinking tokens
-                Timber.d("Claude thinking ENABLED - reasoning enabled: $isReasoningEnabled, budget: $thinkingBudget, safeMaxTokens: $safeMaxTokens")
+                Timber.d("Claude thinking ENABLED by button - reasoning enabled: $isReasoningEnabled, budget: $thinkingBudget")
                 AimlApiRequest.ClaudeThinking.create(thinkingBudget)
             } else {
-                Timber.d("Claude thinking DISABLED - reasoning enabled: $isReasoningEnabled, requiresClaudeThinking: ${config.requiresClaudeThinking}, supportsReasoning: ${config.supportsReasoning}")
+                Timber.d("Claude thinking DISABLED - reasoning button: $isReasoningEnabled")
+                null
+            },
+            zhipuThinking = if (modelId == "zhipu/glm-4.5" && config.supportsReasoning && isReasoningEnabled) {
+                // ZHIPU: Button-controlled thinking - user can enable/disable
+                Timber.d("🧠 ZhiPu thinking ENABLED by button - modelId: $modelId, supportsReasoning: ${config.supportsReasoning}, reasoningEnabled: $isReasoningEnabled")
+                AimlApiRequest.ZhipuThinking.enabled()
+            } else {
+                Timber.d("🧠 ZhiPu thinking DISABLED - modelId: $modelId, supportsReasoning: ${config.supportsReasoning}, reasoningEnabled: $isReasoningEnabled")
                 null
             },
             maxTokens = if (!config.requiresMaxCompletionTokens) config.defaultMaxTokens else null,
@@ -145,23 +129,16 @@ object ModelApiHandler {
             presencePenalty = if (config.supportsPresencePenalty) 0.0 else null,
             repetitionPenalty = if (config.supportsRepetitionPenalty) 1.0 else null,
             logprobs = if (config.supportsLogprobs) false else null,
-            topLogprobs = if (config.supportsTopLogprobs) null else null,
+            topLogprobs = if (config.supportsLogprobs && config.supportsTopLogprobs) 1 else null,
             seed = if (config.supportsSeed) System.currentTimeMillis() else null,
             tools = webSearchTools,
             toolChoice = if (config.supportsFunctionCalling && config.supportsToolChoice) "auto" else null,
-            webSearchOptions = if (config.supportsFunctionCalling) {
-                val searchContentSize = getOptimalSearchContentSize(modelId, timeParams)
-                AimlApiRequest.WebSearchOptions(
-                    searchContextSize = searchContentSize,
-                    userLocation = userLocation,
-                    maxResults = getOptimalSearchResults(modelId),
-                    freshness = timeParams["freshness"] ?: "recent"
-                )
-            } else null,
+            webSearchOptions = null, // Removed - let AI decide when/how to search
             reasoningEffort = if (config.reasoningParameter == "reasoning_effort" && config.supportsReasoning) {
                 // Use the provided reasoning level from UI
                 reasoningLevel
             } else null,
+            // NOTE: chainOfThought removed - was for Qwen which doesn't provide separate thinking content
             audio = if (audioEnabled && config.supportsAudio) {
                 AimlApiRequest.AudioOptions(format = audioFormat, voice = voiceType)
             } else null,
@@ -170,20 +147,16 @@ object ModelApiHandler {
             } else null,
             responseFormat = if (config.supportsResponseFormat) null else null,
             topA = if (config.supportsTopA) null else null,
-            parallelToolCalls = if (config.supportsParallelToolCalls && useWebSearch) true else null,
+            parallelToolCalls = if (config.supportsParallelToolCalls && config.supportsFunctionCalling) true else null,
             minP = if (config.supportsMinP) null else null,
-            useWebSearch = false
+            useWebSearch = isWebSearch
         )
     }
     fun createRequestBody(
         apiRequest: AimlApiRequest,
         modelId: String,
-        useWebSearch: Boolean,
-        messageText: String? = null,
         context: Context? = null,
-        audioEnabled: Boolean = false,
-        audioFormat: String = "mp3",
-        voiceType: String = "alloy"
+        audioEnabled: Boolean = false
     ): RequestBody {
         val config = ModelConfigManager.getConfig(modelId)
             ?: throw IllegalArgumentException("Unknown model: $modelId")
@@ -192,33 +165,25 @@ object ModelApiHandler {
 
         // Build request map with only supported parameters
         val requestMap = buildSupportedParametersMap(apiRequest, config, audioEnabled)
+        
+        // NOTE: Qwen thinking parameters removed - Qwen doesn't provide separate thinking content
+        // Qwen includes reasoning in regular response content, can't be separated into thinking layout
 
         // Apply model-specific customizations
         try {
             when (modelId) {
                 // === OPENAI MODELS ===
-                ModelManager.O1_ID -> handleO1Model(requestMap, config)
-                ModelManager.O3_MINI_ID -> handleO3MiniModel(requestMap, config)
-                ModelManager.GPT_4O_ID,
-                ModelManager.CHATGPT_4O_LATEST_ID -> handleGPT4OModel(requestMap, config, audioEnabled)
-                ModelManager.GPT_4O_2024_05_13_ID -> handleGPT4O20240513Model(requestMap, config, audioEnabled)
-                ModelManager.GPT_4O_2024_08_06_ID -> handleGPT4O20240806Model(requestMap, config, audioEnabled)
-                ModelManager.GPT_4o_MINI_ID -> handleGPT4OMiniModel(requestMap, config)
-                ModelManager.GPT_4_1_MINI_ID -> handleGPT41MiniModel(requestMap, config, audioEnabled)
+                ModelManager.GPT_4O_ID -> handleGPT4OModel(requestMap, config)
                 ModelManager.GPT_4_TURBO_ID -> handleGPT4TurboModel(requestMap, config)
-                ModelManager.GPT_4_TURBO_2024_04_09_ID -> handleGPT4Turbo20240409Model(requestMap, config)
 
                 // === ANTHROPIC MODELS ===
                 ModelManager.CLAUDE_3_7_SONNET_ID -> handleClaudeModel(requestMap, apiRequest, config)
 
                 // === META MODELS ===
-                ModelManager.LLAMA_3_2_3B_INSTRUCT_TURBO_ID -> handleLlama32Model(requestMap, config)
                 ModelManager.LLAMA_4_MAVERICK_ID -> handleLlama4Model(requestMap, config)
 
                 // === GOOGLE MODELS ===
-                ModelManager.GEMMA_3B_INSTRUCT_ID,
-                ModelManager.GEMMA_27B_INSTRUCT_ID,
-                ModelManager.GEMMA_4B_INSTRUCT_ID -> handleGemmaModel(requestMap, config)
+                ModelManager.GEMMA_27B_INSTRUCT_ID -> handleGemmaModel(requestMap, config)
 
                 // === COHERE MODELS ===
                 ModelManager.COHERE_COMMAND_R_PLUS_ID -> handleCohereModel(requestMap, config)
@@ -228,14 +193,18 @@ object ModelApiHandler {
 
                 // === QWEN MODELS ===
                 ModelManager.QWEN_3_235B_ID -> handleQwen3Model(requestMap, config)
-                ModelManager.QWEN_2_5_72B_ID -> handleQwen25Model(requestMap, config)
 
                 // === XAI MODELS ===
                 ModelManager.GROK_3_BETA_ID -> handleGrokModel(requestMap, config)
 
                 // === MISTRAL MODELS ===
-                ModelManager.MIXTRAL_8X7B_ID -> handleMixtralModel(requestMap, config)
                 ModelManager.MISTRAL_OCR_ID -> handleMistralOCRModel(requestMap, config)
+
+                // === PERPLEXITY MODELS ===
+                ModelManager.PERPLEXITY_SONAR_PRO_ID -> handlePerplexityModel(requestMap, config, context)
+
+                // === ZHIPU MODELS ===
+                ModelManager.ZHIPU_GLM_4_5_ID -> handleZhipuModel(requestMap, config)
 
                 else -> {
                     Timber.w("Using default handling for unknown model: $modelId")
@@ -247,9 +216,23 @@ object ModelApiHandler {
             // Continue with basic request map
         }
 
-        val gson = GsonBuilder().disableHtmlEscaping().create()
-        val jsonString = gson.toJson(requestMap)
-        Timber.d("Final request body for $modelId: ${jsonString.take(500)}...")
+        // Convert requestMap to JSON manually to avoid Moshi serialization issues
+        val jsonString = convertMapToJson(requestMap)
+        
+        // Enhanced logging for thinking models
+        if (modelId.contains("zhipu", ignoreCase = true) || modelId.contains("qwen", ignoreCase = true)) {
+            Timber.d("🧠 THINKING MODEL Request for $modelId:")
+            Timber.d("🧠 Full JSON: ${jsonString.take(1000)}...")
+            // Extract thinking-related parameters for clear visibility
+            val thinkingParams = requestMap.filterKeys { key ->
+                key.contains("thinking", ignoreCase = true) || 
+                key.contains("reasoning", ignoreCase = true) ||
+                key.contains("chain_of_thought", ignoreCase = true)
+            }
+            Timber.d("🧠 Thinking parameters: $thinkingParams")
+        } else {
+            Timber.d("Final request body for $modelId: ${jsonString.take(500)}...")
+        }
 
         return jsonString.toRequestBody("application/json".toMediaTypeOrNull())
     }
@@ -368,9 +351,19 @@ object ModelApiHandler {
                     Timber.d("Adding reasoning_effort to request: $it")
                     requestMap["reasoning_effort"] = it 
                 }
-                "thinking" -> apiRequest.thinking?.let { 
-                    Timber.d("Adding thinking to request: $it")
-                    requestMap["thinking"] = it 
+                "thinking" -> {
+                    // Handle Claude thinking
+                    apiRequest.thinking?.let { 
+                        Timber.d("Adding Claude thinking to request: $it")
+                        requestMap["thinking"] = it 
+                    }
+                    // Handle ZhiPu thinking - send as object 
+                    apiRequest.zhipuThinking?.let { zhipuThinking ->
+                        Timber.d("🧠 Adding ZhiPu thinking to request: $zhipuThinking")
+                        // ZhiPu API expects thinking parameter as object {"type": "enabled"}
+                        requestMap["thinking"] = mapOf("type" to zhipuThinking.type)
+                    }
+                    
                 }
             }
         }
@@ -398,9 +391,12 @@ object ModelApiHandler {
 
         // === LOGPROBS ===
         if (config.supportsLogprobs) {
-            apiRequest.logprobs?.let { requestMap["logprobs"] = it }
-            if (config.supportsTopLogprobs) {
-                apiRequest.topLogprobs?.let { requestMap["top_logprobs"] = it }
+            apiRequest.logprobs?.let { logprobs ->
+                requestMap["logprobs"] = logprobs
+                // Only add top_logprobs if logprobs is actually enabled (true)
+                if (logprobs == true && config.supportsTopLogprobs) {
+                    apiRequest.topLogprobs?.let { requestMap["top_logprobs"] = it }
+                }
             }
         }
 
@@ -438,38 +434,8 @@ object ModelApiHandler {
         return requestMap
     }
 
-    // === MODEL-SPECIFIC HANDLERS (all using config values) ===
 
-    private fun handleO1Model(requestMap: MutableMap<String, Any?>, config: ModelConfig) {
-        // O1 specific: no streaming support, use max_completion_tokens
-        requestMap.remove("stream")
-        requestMap.remove("stream_options")
-
-        // Ensure reasoning effort is set for O1
-        if (config.supportsReasoning && !requestMap.containsKey("reasoning_effort")) {
-            requestMap["reasoning_effort"] = "medium"
-        }
-
-        // Use max token limit for O1 (typically larger)
-        if (config.requiresMaxCompletionTokens) {
-            requestMap["max_completion_tokens"] = config.maxOutputTokens
-        }
-    }
-
-    private fun handleO3MiniModel(requestMap: MutableMap<String, Any?>, config: ModelConfig) {
-        // O3-mini supports streaming
-        requestMap["stream"] = config.supportsStreaming
-        if (config.supportsStreamOptions) {
-            requestMap["stream_options"] = mapOf("include_usage" to config.streamIncludeUsage)
-        }
-
-        // Ensure reasoning effort for O3
-        if (config.supportsReasoning && !requestMap.containsKey("reasoning_effort")) {
-            requestMap["reasoning_effort"] = "medium"
-        }
-    }
-
-    private fun handleGPT4OModel(requestMap: MutableMap<String, Any?>, config: ModelConfig, audioEnabled: Boolean) {
+    private fun handleGPT4OModel(requestMap: MutableMap<String, Any?>, config: ModelConfig) {
         // GPT-4o optimizations using config values
         requestMap["max_tokens"] = requestMap["max_tokens"] ?: config.defaultMaxTokens
         requestMap["temperature"] = requestMap["temperature"] ?: config.defaultTemperature
@@ -486,84 +452,8 @@ object ModelApiHandler {
         }
     }
 
-    private fun handleGPT4O20240513Model(requestMap: MutableMap<String, Any?>, config: ModelConfig, audioEnabled: Boolean) {
-        // Version-specific optimizations
-        requestMap["max_tokens"] = requestMap["max_tokens"] ?: config.defaultMaxTokens
-        requestMap["temperature"] = requestMap["temperature"] ?: config.defaultTemperature
-        requestMap["stream"] = config.supportsStreaming
 
-        if (config.supportsStreamOptions) {
-            requestMap["stream_options"] = mapOf("include_usage" to config.streamIncludeUsage)
-        }
 
-        // Default response format for this version
-        if (config.supportsResponseFormat && !requestMap.containsKey("response_format")) {
-            requestMap["response_format"] = mapOf("type" to "text")
-        }
-
-        // Add n parameter directly for OpenAI models
-        requestMap["n"] = 1
-    }
-
-    private fun handleGPT4O20240806Model(requestMap: MutableMap<String, Any?>, config: ModelConfig, audioEnabled: Boolean) {
-        // Latest GPT-4o version with enhanced features
-        requestMap["max_tokens"] = requestMap["max_tokens"] ?: config.defaultMaxTokens
-        requestMap["temperature"] = requestMap["temperature"] ?: config.defaultTemperature
-        requestMap["stream"] = config.supportsStreaming
-
-        if (config.supportsStreamOptions) {
-            requestMap["stream_options"] = mapOf("include_usage" to config.streamIncludeUsage)
-        }
-
-        // Enhanced tool support
-        if (requestMap.containsKey("tools") && (requestMap["tools"] as? List<*>)?.isNotEmpty() == true) {
-            if (config.supportsToolChoice) {
-                requestMap["tool_choice"] = requestMap["tool_choice"] ?: "auto"
-            }
-            if (config.supportsParallelToolCalls) {
-                requestMap["parallel_tool_calls"] = true
-            }
-        }
-
-        // Auto-generate seed if not provided
-        if (config.supportsSeed && !requestMap.containsKey("seed")) {
-            requestMap["seed"] = System.currentTimeMillis()
-        }
-
-        if (config.supportsN) {
-            requestMap["n"] = 1
-        }
-    }
-
-    private fun handleGPT4OMiniModel(requestMap: MutableMap<String, Any?>, config: ModelConfig) {
-        // GPT-4o-mini optimizations
-        requestMap["max_tokens"] = requestMap["max_tokens"] ?: config.defaultMaxTokens
-        requestMap["temperature"] = requestMap["temperature"] ?: config.defaultTemperature
-        requestMap["stream"] = config.supportsStreaming
-
-        if (config.supportsStreamOptions) {
-            requestMap["stream_options"] = mapOf("include_usage" to config.streamIncludeUsage)
-        }
-
-        if (config.supportsN) {
-            requestMap["n"] = 1
-        }
-    }
-
-    private fun handleGPT41MiniModel(requestMap: MutableMap<String, Any?>, config: ModelConfig, audioEnabled: Boolean) {
-        // GPT-4.1-mini with audio support
-        requestMap["max_tokens"] = requestMap["max_tokens"] ?: config.defaultMaxTokens
-        requestMap["temperature"] = requestMap["temperature"] ?: config.defaultTemperature
-        requestMap["stream"] = config.supportsStreaming
-
-        if (config.supportsStreamOptions) {
-            requestMap["stream_options"] = mapOf("include_usage" to config.streamIncludeUsage)
-        }
-
-        if (config.supportsN) {
-            requestMap["n"] = 1
-        }
-    }
 
     private fun handleGPT4TurboModel(requestMap: MutableMap<String, Any?>, config: ModelConfig) {
         // GPT-4-turbo settings
@@ -580,27 +470,6 @@ object ModelApiHandler {
         }
     }
 
-    private fun handleGPT4Turbo20240409Model(requestMap: MutableMap<String, Any?>, config: ModelConfig) {
-        // Version-specific GPT-4 Turbo
-        requestMap["max_tokens"] = requestMap["max_tokens"] ?: config.defaultMaxTokens
-        requestMap["temperature"] = requestMap["temperature"] ?: config.defaultTemperature
-        requestMap["stream"] = config.supportsStreaming
-
-        if (config.supportsStreamOptions) {
-            requestMap["stream_options"] = mapOf("include_usage" to config.streamIncludeUsage)
-        }
-
-        // Tool support
-        if (requestMap.containsKey("tools") && (requestMap["tools"] as? List<*>)?.isNotEmpty() == true) {
-            if (config.supportsToolChoice) {
-                requestMap["tool_choice"] = requestMap["tool_choice"] ?: "auto"
-            }
-        }
-
-        if (config.supportsN) {
-            requestMap["n"] = 1
-        }
-    }
 
     private fun handleClaudeModel(requestMap: MutableMap<String, Any?>, apiRequest: AimlApiRequest, config: ModelConfig) {
         // Claude-specific handling
@@ -649,24 +518,6 @@ object ModelApiHandler {
         }
     }
 
-    private fun handleLlama32Model(requestMap: MutableMap<String, Any?>, config: ModelConfig) {
-        // Llama 3.2 optimizations using config values
-        requestMap["max_tokens"] = requestMap["max_tokens"] ?: config.defaultMaxTokens
-        requestMap["temperature"] = requestMap["temperature"] ?: config.defaultTemperature
-        requestMap["stream"] = config.supportsStreaming
-
-        if (config.supportsStreamOptions) {
-            requestMap["stream_options"] = mapOf("include_usage" to config.streamIncludeUsage)
-        }
-
-        // Llama-specific parameters with config-based checks
-        if (config.supportsTopK && !requestMap.containsKey("top_k")) {
-            requestMap["top_k"] = 40
-        }
-        if (config.supportsRepetitionPenalty && !requestMap.containsKey("repetition_penalty")) {
-            requestMap["repetition_penalty"] = 1.0
-        }
-    }
 
     private fun handleLlama4Model(requestMap: MutableMap<String, Any?>, config: ModelConfig) {
         // Llama 4 settings using config
@@ -721,7 +572,7 @@ object ModelApiHandler {
             requestMap["top_k"] = 0
         }
         if (config.supportsMinP && !requestMap.containsKey("min_p")) {
-            requestMap["min_p"] = 0.0
+            requestMap["min_p"] = 0.001
         }
         if (config.supportsTopA && !requestMap.containsKey("top_a")) {
             requestMap["top_a"] = 0.0
@@ -760,25 +611,6 @@ object ModelApiHandler {
         }
     }
 
-    private fun handleQwen25Model(requestMap: MutableMap<String, Any?>, config: ModelConfig) {
-        // Qwen 2.5 72B using config
-        requestMap["max_tokens"] = requestMap["max_tokens"] ?: config.defaultMaxTokens
-        requestMap["temperature"] = requestMap["temperature"] ?: config.defaultTemperature
-        requestMap["stream"] = config.supportsStreaming
-
-        if (config.supportsStreamOptions) {
-            requestMap["stream_options"] = mapOf("include_usage" to config.streamIncludeUsage)
-        }
-
-        if (requestMap.containsKey("tools")) {
-            if (config.supportsToolChoice) {
-                requestMap["tool_choice"] = "auto"
-            }
-            if (config.supportsParallelToolCalls) {
-                requestMap["parallel_tool_calls"] = true
-            }
-        }
-    }
 
     private fun handleGrokModel(requestMap: MutableMap<String, Any?>, config: ModelConfig) {
         // xAI Grok settings using config values
@@ -797,22 +629,6 @@ object ModelApiHandler {
         }
     }
 
-    private fun handleMixtralModel(requestMap: MutableMap<String, Any?>, config: ModelConfig) {
-        // Mistral Mixtral using config
-        requestMap["max_tokens"] = requestMap["max_tokens"] ?: config.defaultMaxTokens
-        requestMap["temperature"] = requestMap["temperature"] ?: config.defaultTemperature
-        requestMap["stream"] = config.supportsStreaming
-
-        // VALIDATION: Remove empty tools (prevents API errors)
-        // This is data validation, not capability filtering
-        if (requestMap.containsKey("tools")) {
-            val tools = requestMap["tools"] as? List<*>
-            if (tools.isNullOrEmpty()) {
-                requestMap.remove("tools")      // Empty tools array is meaningless
-                requestMap.remove("tool_choice") // Can't choose from empty tools
-            }
-        }
-    }
 
     private fun handleMistralOCRModel(requestMap: MutableMap<String, Any?>, config: ModelConfig) {
         // Mistral OCR using config
@@ -821,49 +637,144 @@ object ModelApiHandler {
         requestMap["stream"] = config.supportsStreaming
     }
 
+    private fun handlePerplexityModel(requestMap: MutableMap<String, Any?>, config: ModelConfig, context: Context?) {
+        // Perplexity Sonar Pro with built-in web search
+        requestMap["max_tokens"] = requestMap["max_tokens"] ?: config.defaultMaxTokens
+        requestMap["temperature"] = requestMap["temperature"] ?: config.defaultTemperature
+        requestMap["stream"] = config.supportsStreaming
+
+        // Remove function calling tools - Perplexity uses built-in web search
+        requestMap.remove("tools")
+        requestMap.remove("tool_choice")
+
+        // Configure Perplexity-specific web search options
+        val webSearchOptions = mutableMapOf<String, Any>()
+        
+        // Get user preferences
+        val searchMode = if (context != null) {
+            PerplexityPreferences.getSearchMode(context)
+        } else {
+            PerplexityPreferences.SEARCH_MODE_WEB
+        }
+        
+        val contextSize = if (context != null) {
+            PerplexityPreferences.getContextSize(context)
+        } else {
+            PerplexityPreferences.CONTEXT_SIZE_MEDIUM
+        }
+        
+        // Set context size based on user preference
+        webSearchOptions["search_context_size"] = contextSize
+        webSearchOptions["return_images"] = true
+        webSearchOptions["return_related_questions"] = true
+        
+        // Location for better search results
+        if (context != null) {
+            try {
+                val userLocation = LocationService.getSystemDefaultLocation()
+                val locationMap = mapOf(
+                    "approximate" to mapOf(
+                        "city" to userLocation.approximate.city,
+                        "country" to userLocation.approximate.country,
+                        "region" to userLocation.approximate.region,
+                        "timezone" to userLocation.approximate.timezone
+                    ),
+                    "type" to "approximate"
+                )
+                webSearchOptions["user_location"] = locationMap
+            } catch (e: Exception) {
+                Timber.w("Could not get location for Perplexity search: ${e.message}")
+            }
+        }
+
+        requestMap["web_search_options"] = webSearchOptions
+        requestMap["search_mode"] = searchMode
+        
+        Timber.d("Perplexity request configured: search_mode=$searchMode, context_size=$contextSize")
+    }
+
+    /**
+     * Configure ZhiPu GLM-4.5 with built-in web search and thinking support
+     */
+    private fun handleZhipuModel(requestMap: MutableMap<String, Any?>, config: ModelConfig) {
+        Timber.d("Configuring ZhiPu GLM-4.5 model")
+        
+        // Set ZhiPu-specific parameters
+        requestMap["max_completion_tokens"] = requestMap["max_completion_tokens"] ?: config.defaultMaxTokens
+        requestMap["max_tokens"] = requestMap["max_tokens"] ?: config.defaultMaxTokens
+        requestMap["temperature"] = requestMap["temperature"] ?: config.defaultTemperature
+        requestMap["stream"] = config.supportsStreaming
+        
+        // Configure ZhiPu's built-in web search tool
+        val zhipuTools = mutableListOf<Map<String, Any>>()
+        
+        // Add ZhiPu's web search tool
+        val webSearchTool = mapOf(
+            "type" to "web_search",
+            "web_search" to mapOf(
+                "search_engine" to "search_pro_jina",
+                "enable" to true,
+                "search_query" to "",
+                "count" to 5,
+                "search_result" to true,
+                "require_search" to false
+            )
+        )
+        zhipuTools.add(webSearchTool)
+        
+        // Also add function tools for other capabilities
+        requestMap["tools"]?.let { existingTools ->
+            if (existingTools is List<*>) {
+                // Convert function tools to ZhiPu format
+                existingTools.filterIsInstance<AimlApiRequest.Tool>().forEach { tool ->
+                    if (tool.type == "function") {
+                        val zhipuFunctionTool = mapOf(
+                            "type" to "function",
+                            "function" to mapOf(
+                                "name" to tool.function.name,
+                                "description" to tool.function.description,
+                                "parameters" to tool.function.parameters
+                            )
+                        )
+                        zhipuTools.add(zhipuFunctionTool)
+                    }
+                }
+            }
+        }
+        
+        requestMap["tools"] = zhipuTools
+        requestMap["tool_choice"] = "auto"
+        requestMap["parallel_tool_calls"] = true
+        
+        // Configure stream options
+        if (config.supportsStreamOptions) {
+            requestMap["stream_options"] = mapOf("include_usage" to true)
+        }
+        
+        Timber.d("ZhiPu GLM-4.5 configured with ${zhipuTools.size} tools")
+    }
+
     // === HELPER METHODS (unchanged) ===
 
-    private fun getOptimalSearchContentSize(modelId: String, timeParams: Map<String, String>): String {
-        val isRecentSearch = timeParams["freshness"] in listOf("hour", "day", "recent")
 
-        return when {
-            isRecentSearch -> "high"
-            modelId.contains("gpt-4", ignoreCase = true) -> "high"
-            modelId.contains("o1", ignoreCase = true) -> "medium"
-            modelId.contains("claude", ignoreCase = true) -> "high"
-            modelId.contains("llama", ignoreCase = true) -> "medium"
-            else -> "medium"
-        }
-    }
-
-    private fun getOptimalSearchResults(modelId: String): Int {
-        return when {
-            modelId.contains("gpt-4", ignoreCase = true) -> 5
-            modelId.contains("o1", ignoreCase = true) -> 3
-            modelId.contains("grok", ignoreCase = true) -> 5
-            else -> 4
-        }
-    }
 
     private fun createWebSearchTool(): AimlApiRequest.Tool {
-        val parameters = JsonObject().apply {
-            addProperty("type", "object")
-            add("properties", JsonObject().apply {
-                add("query", JsonObject().apply {
-                    addProperty("type", "string")
-                    addProperty("description", "The search query to find current information on the web")
-                })
-            })
-            add("required", JsonArray().apply { add("query") })
-        }
+        val parameters = mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "query" to mapOf(
+                    "type" to "string",
+                    "description" to "The search query to find current information on the web"
+                )
+            ),
+            "required" to listOf("query")
+        )
 
         return AimlApiRequest.Tool(
             type = "function",
             function = AimlApiRequest.ToolFunction(
                 name = "web_search",
-                description = """Search the web for current information. After receiving search results, 
-                synthesize them into a natural, conversational response. Do not show raw search results. 
-                Use inline citations [1], [2], etc. when referencing specific sources.""",
+                description = "Search the web for current information.",
                 parameters = parameters
             )
         )
@@ -871,26 +782,21 @@ object ModelApiHandler {
      * Create the calculator tool for mathematical operations
      */
     private fun createCalculatorTool(): AimlApiRequest.Tool {
-        val parameters = JsonObject().apply {
-            addProperty("type", "object")
-            add("properties", JsonObject().apply {
-                add("expression", JsonObject().apply {
-                    addProperty("type", "string")
-                    addProperty("description", "The mathematical expression to calculate, like '2+2', '5*10/2', 'sqrt(16)', etc.")
-                })
-                add("mode", JsonObject().apply {
-                    addProperty("type", "string")
-                    // Create a proper JSON array for enum values
-                    add("enum", JsonArray().apply {
-                        add("basic")
-                        add("scientific")
-                        add("conversion")
-                    })
-                    addProperty("description", "The calculation mode: 'basic' for simple operations, 'scientific' for advanced functions, 'conversion' for unit conversions")
-                })
-            })
-            add("required", JsonArray().apply { add("expression") })
-        }
+        val parameters = mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "expression" to mapOf(
+                    "type" to "string",
+                    "description" to "The mathematical expression to calculate, like '2+2', '5*10/2', 'sqrt(16)', etc."
+                ),
+                "mode" to mapOf(
+                    "type" to "string",
+                    "enum" to listOf("basic", "scientific", "conversion"),
+                    "description" to "The calculation mode: 'basic' for simple operations, 'scientific' for advanced functions, 'conversion' for unit conversions"
+                )
+            ),
+            "required" to listOf("expression")
+        )
 
         return AimlApiRequest.Tool(
             type = "function",
@@ -906,35 +812,29 @@ object ModelApiHandler {
      * Create the spreadsheet tool for creating structured data
      */
     private fun createSpreadsheetTool(): AimlApiRequest.Tool {
-        val parameters = JsonObject().apply {
-            addProperty("type", "object")
-            add("properties", JsonObject().apply {
-                add("title", JsonObject().apply {
-                    addProperty("type", "string")
-                    addProperty("description", "The title of the spreadsheet")
-                })
-                add("headers", JsonObject().apply {
-                    addProperty("type", "string")
-                    addProperty("description", "Comma-separated list of column headers")
-                })
-                add("data", JsonObject().apply {
-                    addProperty("type", "string")
-                    addProperty("description", "Structured data for the spreadsheet; can be sample/random data if not specified")
-                })
-                add("format", JsonObject().apply {
-                    addProperty("type", "string")
-                    // Proper JSON array
-                    add("enum", JsonArray().apply {
-                        add("table")
-                        add("budget")
-                        add("schedule")
-                        add("inventory")
-                    })
-                    addProperty("description", "The type of spreadsheet to create")
-                })
-            })
-            add("required", JsonArray().apply { add("title") })
-        }
+        val parameters = mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "title" to mapOf(
+                    "type" to "string",
+                    "description" to "The title of the spreadsheet"
+                ),
+                "headers" to mapOf(
+                    "type" to "string",
+                    "description" to "Comma-separated list of column headers"
+                ),
+                "data" to mapOf(
+                    "type" to "string",
+                    "description" to "Structured data for the spreadsheet; can be sample/random data if not specified"
+                ),
+                "format" to mapOf(
+                    "type" to "string",
+                    "enum" to listOf("table", "budget", "schedule", "inventory"),
+                    "description" to "The type of spreadsheet to create"
+                )
+            ),
+            "required" to listOf("title")
+        )
 
         return AimlApiRequest.Tool(
             type = "function",
@@ -950,29 +850,25 @@ object ModelApiHandler {
      * Create the weather tool for weather information
      */
     private fun createWeatherTool(): AimlApiRequest.Tool {
-        val parameters = JsonObject().apply {
-            addProperty("type", "object")
-            add("properties", JsonObject().apply {
-                add("location", JsonObject().apply {
-                    addProperty("type", "string")
-                    addProperty("description", "The city, region, or location to get weather information for")
-                })
-                add("forecast", JsonObject().apply {
-                    addProperty("type", "boolean")
-                    addProperty("description", "Set to true to get forecast for upcoming days, false for current weather only")
-                })
-                add("units", JsonObject().apply {
-                    addProperty("type", "string")
-                    // Proper JSON array
-                    add("enum", JsonArray().apply {
-                        add("metric")
-                        add("imperial")
-                    })
-                    addProperty("description", "Temperature units: 'metric' for Celsius, 'imperial' for Fahrenheit")
-                })
-            })
-            add("required", JsonArray().apply { add("location") })
-        }
+        val parameters = mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "location" to mapOf(
+                    "type" to "string",
+                    "description" to "The city, region, or location to get weather information for"
+                ),
+                "forecast" to mapOf(
+                    "type" to "boolean",
+                    "description" to "Set to true to get forecast for upcoming days, false for current weather only"
+                ),
+                "units" to mapOf(
+                    "type" to "string",
+                    "enum" to listOf("metric", "imperial"),
+                    "description" to "Temperature units: 'metric' for Celsius, 'imperial' for Fahrenheit"
+                )
+            ),
+            "required" to listOf("location")
+        )
 
         return AimlApiRequest.Tool(
             type = "function",
@@ -987,27 +883,24 @@ object ModelApiHandler {
      * Create the translator tool for language translation
      */
     private fun createTranslationTool(): AimlApiRequest.Tool {
-        val parameters = JsonObject().apply {
-            addProperty("type", "object")
-            add("properties", JsonObject().apply {
-                add("text", JsonObject().apply {
-                    addProperty("type", "string")
-                    addProperty("description", "The text to translate")
-                })
-                add("sourceLanguage", JsonObject().apply {
-                    addProperty("type", "string")
-                    addProperty("description", "Source language code (e.g., 'en', 'fr', 'es') or 'auto' for automatic detection")
-                })
-                add("targetLanguage", JsonObject().apply {
-                    addProperty("type", "string")
-                    addProperty("description", "Target language code (e.g., 'en', 'fr', 'es')")
-                })
-            })
-            add("required", JsonArray().apply {
-                add("text")
-                add("targetLanguage")
-            })
-        }
+        val parameters = mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "text" to mapOf(
+                    "type" to "string",
+                    "description" to "The text to translate"
+                ),
+                "sourceLanguage" to mapOf(
+                    "type" to "string",
+                    "description" to "Source language code (e.g., 'en', 'fr', 'es') or 'auto' for automatic detection"
+                ),
+                "targetLanguage" to mapOf(
+                    "type" to "string",
+                    "description" to "Target language code (e.g., 'en', 'fr', 'es')"
+                )
+            ),
+            "required" to listOf("text", "targetLanguage")
+        )
 
         return AimlApiRequest.Tool(
             type = "function",
@@ -1023,30 +916,25 @@ object ModelApiHandler {
      * Create the Wikipedia tool for knowledge retrieval
      */
     private fun createWikipediaTool(): AimlApiRequest.Tool {
-        val parameters = JsonObject().apply {
-            addProperty("type", "object")
-            add("properties", JsonObject().apply {
-                add("query", JsonObject().apply {
-                    addProperty("type", "string")
-                    addProperty("description", "The topic, concept, person, place, or entity to search for information about")
-                })
-                add("language", JsonObject().apply {
-                    addProperty("type", "string")
-                    addProperty("description", "Language code for Wikipedia (default is 'en' for English)")
-                })
-                add("summaryLength", JsonObject().apply {
-                    addProperty("type", "string")
-                    // Proper JSON array
-                    add("enum", JsonArray().apply {
-                        add("short")
-                        add("medium")
-                        add("full")
-                    })
-                    addProperty("description", "Length of the summary to retrieve")
-                })
-            })
-            add("required", JsonArray().apply { add("query") })
-        }
+        val parameters = mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "query" to mapOf(
+                    "type" to "string",
+                    "description" to "The topic, concept, person, place, or entity to search for information about"
+                ),
+                "language" to mapOf(
+                    "type" to "string",
+                    "description" to "Language code for Wikipedia (default is 'en' for English)"
+                ),
+                "summaryLength" to mapOf(
+                    "type" to "string",
+                    "enum" to listOf("short", "medium", "full"),
+                    "description" to "Length of the summary to retrieve"
+                )
+            ),
+            "required" to listOf("query")
+        )
 
         return AimlApiRequest.Tool(
             type = "function",
@@ -1058,88 +946,251 @@ object ModelApiHandler {
         )
     }
 
-    private fun createBasicSystemMessage(
-        userLocation: AimlApiRequest.UserLocation? = null
-    ): AimlApiRequest.Message {
-        val currentDate = SimpleDateFormat("MMMM d, yyyy", Locale.US).format(Date())
-        val locationContext = if (userLocation != null) {
-            "The user is in ${userLocation.approximate.city}, ${userLocation.approximate.region}, ${userLocation.approximate.country}."
-        } else ""
 
-        val systemPrompt = """You are a helpful AI assistant.
-Today is $currentDate.
-$locationContext
-Provide detailed and accurate responses to the user's questions."""
-
-        return AimlApiRequest.Message("system", systemPrompt.trim())
-    }
-
-    // In ModelApiHandler.kt - Update createWebSearchSystemMessage
-    private fun createWebSearchSystemMessage(
-        userLocation: AimlApiRequest.UserLocation? = null
-    ): AimlApiRequest.Message {
-        val currentDate = SimpleDateFormat("MMMM d, yyyy", Locale.US).format(Date())
-
-        val locationContext = if (userLocation != null) {
-            """The user is located in ${userLocation.approximate.city}, ${userLocation.approximate.region}, ${userLocation.approximate.country}.
-User's timezone is ${userLocation.approximate.timezone}."""
-        } else {
-            "Location information is unavailable."
-        }
-
-        val systemPrompt = """You are a helpful AI assistant with real-time web search capabilities.
-$locationContext
-Today is $currentDate.
-
-IMPORTANT WEB SEARCH INSTRUCTIONS:
-- When you call the web_search tool, you will receive search results directly in the conversation
-- Use these results to provide current, accurate information
-- ALWAYS cite sources using [1], [2], [3] etc. inline when referencing search results
-- Synthesize the information naturally - don't just list the results
-- If web search is triggered but you don't see results, continue based on your knowledge
-
-Example: If searching for news, after receiving results, say something like:
-"Based on the latest news, here's what's happening: [specific information from search] [1]. Additionally, [more info] [2]."
-
-Never say you cannot access real-time information if web search has been performed."""
-
-        return AimlApiRequest.Message("system", systemPrompt)
-    }
-
-
-
-
-    private fun transformMessagesForCompatibility(
-        systemMessage: AimlApiRequest.Message,
-        messages: List<AimlApiRequest.Message>
-    ): List<AimlApiRequest.Message> {
-        val transformedMessages = mutableListOf<AimlApiRequest.Message>()
-        var systemAdded = false
-
-        for (message in messages) {
-            when (message.role) {
-                "user" -> {
-                    if (!systemAdded) {
-                        transformedMessages.add(AimlApiRequest.Message(
-                            role = "user",
-                            content = "SYSTEM INSTRUCTIONS: ${systemMessage.content}\n\nUSER QUERY: ${message.content}"
-                        ))
-                        systemAdded = true
-                    } else {
-                        transformedMessages.add(message)
-                    }
+    /**
+     * Helper function to recursively convert Maps to JSONObjects
+     */
+    private fun convertMapToJsonObject(map: Map<String, Any?>): JSONObject {
+        val jsonObj = JSONObject()
+        for ((key, value) in map) {
+            when (value) {
+                is String -> jsonObj.put(key, value)
+                is Number -> jsonObj.put(key, value)
+                is Boolean -> jsonObj.put(key, value)
+                is Map<*, *> -> {
+                    @Suppress("UNCHECKED_CAST")
+                    val nestedMap = value as Map<String, Any?>
+                    jsonObj.put(key, convertMapToJsonObject(nestedMap))
                 }
-                else -> transformedMessages.add(message)
+                is List<*> -> {
+                    val jsonArray = JSONArray()
+                    for (item in value) {
+                        when (item) {
+                            is Map<*, *> -> {
+                                @Suppress("UNCHECKED_CAST")
+                                val itemMap = item as Map<String, Any?>
+                                jsonArray.put(convertMapToJsonObject(itemMap))
+                            }
+                            else -> jsonArray.put(item)
+                        }
+                    }
+                    jsonObj.put(key, jsonArray)
+                }
+                null -> {
+                    // Skip null values
+                }
+                else -> jsonObj.put(key, value)
             }
         }
+        return jsonObj
+    }
 
-        if (!systemAdded) {
-            transformedMessages.add(0, AimlApiRequest.Message(
-                role = "user",
-                content = "SYSTEM INSTRUCTIONS: ${systemMessage.content}"
-            ))
+    /**
+     * Convert request map to JSON manually to avoid Moshi serialization issues
+     * This ensures proper JSON format without requiring KotlinJsonAdapterFactory
+     */
+    private fun convertMapToJson(requestMap: Map<String, Any?>): String {
+        val json = JSONObject()
+        
+        for ((key, value) in requestMap) {
+            when (value) {
+                is String -> json.put(key, value)
+                is Number -> json.put(key, value)
+                is Boolean -> json.put(key, value)
+                is List<*> -> {
+                    if (key == "messages") {
+                        // Handle messages array specially
+                        val messagesArray = JSONArray()
+                        @Suppress("UNCHECKED_CAST")
+                        val messages = value as List<AimlApiRequest.Message>
+                        for (message in messages) {
+                            val messageObj = JSONObject()
+                            messageObj.put("role", message.role)
+                            messageObj.put("content", message.content)
+                            messagesArray.put(messageObj)
+                        }
+                        json.put(key, messagesArray)
+                    } else if (key == "tools") {
+                        // Handle tools array specially - support Tool objects, Claude-format Maps, and ZhiPu tools
+                        val toolsArray = JSONArray()
+                        @Suppress("UNCHECKED_CAST")
+                        val toolsList = value as List<*>
+                        
+                        for (toolItem in toolsList) {
+                            when (toolItem) {
+                                is AimlApiRequest.Tool -> {
+                                    // Handle OpenAI-style Tool objects
+                                    val toolObj = JSONObject()
+                                    toolObj.put("type", toolItem.type)
+                                    val functionObj = JSONObject()
+                                    functionObj.put("name", toolItem.function.name)
+                                    functionObj.put("description", toolItem.function.description)
+                                    
+                                    val parametersJson = when (val params = toolItem.function.parameters) {
+                                        is String -> {
+                                            try {
+                                                JSONObject(params as String)
+                                            } catch (e: Exception) {
+                                                Timber.w("Invalid JSON string for parameters: $params")
+                                                JSONObject()
+                                            }
+                                        }
+                                        is Map<*, *> -> {
+                                            try {
+                                                @Suppress("UNCHECKED_CAST")
+                                                val stringMap = params as Map<String, Any?>
+                                                convertMapToJsonObject(stringMap)
+                                            } catch (e: Exception) {
+                                                Timber.w("Failed to convert Map to JSONObject: $params")
+                                                JSONObject()
+                                            }
+                                        }
+                                        else -> {
+                                            try {
+                                                JSONObject(params.toString() as String)
+                                            } catch (e: Exception) {
+                                                Timber.w("Failed to parse parameters: $params")
+                                                JSONObject()
+                                            }
+                                        }
+                                    }
+                                    functionObj.put("parameters", parametersJson)
+                                    toolObj.put("function", functionObj)
+                                    toolsArray.put(toolObj)
+                                }
+                                is Map<*, *> -> {
+                                    // Handle Map-based tools (Claude format, ZhiPu format, etc.)
+                                    @Suppress("UNCHECKED_CAST")
+                                    val toolMap = toolItem as Map<String, Any?>
+                                    
+                                    if (toolMap.containsKey("name") && toolMap.containsKey("input_schema")) {
+                                        // Claude format: { "name": "...", "description": "...", "input_schema": {...} }
+                                        val claudeToolObj = JSONObject()
+                                        claudeToolObj.put("name", toolMap["name"])
+                                        if (toolMap.containsKey("description")) {
+                                            claudeToolObj.put("description", toolMap["description"])
+                                        }
+                                        
+                                        val inputSchema = toolMap["input_schema"]
+                                        when (inputSchema) {
+                                            is Map<*, *> -> {
+                                                @Suppress("UNCHECKED_CAST")
+                                                val schemaMap = inputSchema as Map<String, Any?>
+                                                claudeToolObj.put("input_schema", convertMapToJsonObject(schemaMap))
+                                            }
+                                            is String -> {
+                                                try {
+                                                    claudeToolObj.put("input_schema", JSONObject(inputSchema as String))
+                                                } catch (e: Exception) {
+                                                    Timber.e(e, "Failed to parse input_schema JSON: $inputSchema")
+                                                    claudeToolObj.put("input_schema", JSONObject())
+                                                }
+                                            }
+                                            else -> {
+                                                claudeToolObj.put("input_schema", JSONObject())
+                                            }
+                                        }
+                                        toolsArray.put(claudeToolObj)
+                                    } else if (toolMap["type"] == "web_search") {
+                                        // ZhiPu web search tool format
+                                        val toolObj = JSONObject()
+                                        toolObj.put("type", "web_search")
+                                        val webSearchData = toolMap["web_search"]
+                                        if (webSearchData is Map<*, *>) {
+                                            @Suppress("UNCHECKED_CAST")
+                                            val webSearchMap = webSearchData as Map<String, Any?>
+                                            val webSearchObj = convertMapToJsonObject(webSearchMap)
+                                            toolObj.put("web_search", webSearchObj)
+                                        }
+                                        toolsArray.put(toolObj)
+                                    } else {
+                                        // Handle other Map-based function tools
+                                        val toolObj = JSONObject()
+                                        toolObj.put("type", toolMap["type"] ?: "function")
+                                        
+                                        val functionData = toolMap["function"]
+                                        if (functionData is Map<*, *>) {
+                                            @Suppress("UNCHECKED_CAST")
+                                            val functionMap = functionData as Map<String, Any?>
+                                            val functionObj = JSONObject()
+                                            functionObj.put("name", functionMap["name"])
+                                            functionObj.put("description", functionMap["description"])
+                                            
+                                            val parameters = functionMap["parameters"]
+                                            if (parameters != null) {
+                                                when (parameters) {
+                                                    is Map<*, *> -> {
+                                                        @Suppress("UNCHECKED_CAST")
+                                                        val paramsMap = parameters as Map<String, Any?>
+                                                        functionObj.put("parameters", convertMapToJsonObject(paramsMap))
+                                                    }
+                                                    is String -> {
+                                                        try {
+                                                            functionObj.put("parameters", JSONObject(parameters as String))
+                                                        } catch (e: Exception) {
+                                                            Timber.e(e, "Failed to parse parameters JSON: $parameters")
+                                                            functionObj.put("parameters", JSONObject())
+                                                        }
+                                                    }
+                                                    else -> {
+                                                        functionObj.put("parameters", JSONObject())
+                                                    }
+                                                }
+                                            }
+                                            toolObj.put("function", functionObj)
+                                        }
+                                        toolsArray.put(toolObj)
+                                    }
+                                }
+                                else -> {
+                                    // Fallback: try to convert to JSON directly
+                                    Timber.w("Unknown tool type: ${toolItem?.javaClass?.simpleName}, attempting direct conversion")
+                                    val toolObj = JSONObject()
+                                    toolObj.put("raw", toolItem.toString())
+                                    toolsArray.put(toolObj)
+                                }
+                            }
+                        }
+                        json.put(key, toolsArray)
+                    } else {
+                        // Handle other arrays as JSONArray
+                        val array = JSONArray()
+                        for (item in value) {
+                            array.put(item)
+                        }
+                        json.put(key, array)
+                    }
+                }
+                is Map<*, *> -> {
+                    // Handle nested maps using recursive helper function
+                    @Suppress("UNCHECKED_CAST")
+                    val map = value as Map<String, Any?>
+                    val nestedObj = convertMapToJsonObject(map)
+                    json.put(key, nestedObj)
+                }
+                null -> {
+                    // Skip null values
+                }
+                is AimlApiRequest.ZhipuThinking -> {
+                    // Handle ZhiPu thinking object
+                    val thinkingObj = JSONObject()
+                    thinkingObj.put("type", value.type)
+                    json.put(key, thinkingObj)
+                }
+                is AimlApiRequest.ClaudeThinking -> {
+                    // Handle Claude thinking object
+                    val thinkingObj = JSONObject()
+                    thinkingObj.put("type", value.type as String)
+                    thinkingObj.put("budget_tokens", value.budgetTokens as Int)
+                    json.put(key, thinkingObj)
+                }
+                else -> {
+                    // For any other type, convert to string
+                    json.put(key, value.toString())
+                }
+            }
         }
-
-        return transformedMessages
+        
+        return json.toString()
     }
 }

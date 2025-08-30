@@ -1,10 +1,8 @@
 package com.cyberflux.qwinai.service
 
-import android.net.Uri
 import com.cyberflux.qwinai.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -12,10 +10,10 @@ import org.json.JSONObject
 import timber.log.Timber
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import androidx.core.net.toUri
 
 /**
  * Unified WebSearchService that handles web search detection and execution
@@ -129,8 +127,8 @@ object WebSearchService {
                 result.copy(
                     displayLink = result.displayLink.ifEmpty {
                         try {
-                            Uri.parse(result.url).host ?: result.url
-                        } catch (e: Exception) {
+                            result.url.toUri().host ?: result.url
+                        } catch (_: Exception) {
                             result.url
                         }
                     }
@@ -228,20 +226,15 @@ object WebSearchService {
         val sb = StringBuilder()
         val currentDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
 
-        sb.append("Web search results for: \"$query\"\n")
-        sb.append("Date: $currentDate\n")
-        sb.append("Results: ${results.size}\n\n")
+        sb.append("Current search results for: \"$query\" (${currentDate})\n\n")
 
         results.forEachIndexed { index, result ->
-            sb.append("[${index + 1}] ${result.title}\n")
+            sb.append("${index + 1}. ${result.title}\n")
             sb.append("${result.snippet}\n")
-            sb.append("(Source: ${result.displayLink} - ${result.url})\n\n")
+            sb.append("Source: ${result.displayLink}\n\n")
         }
-
-        // Add instruction for AI to synthesize naturally
-        sb.append("\nPlease synthesize these search results into a natural, conversational response. ")
-        sb.append("Use inline citations [1], [2], etc. when referencing specific sources. ")
-        sb.append("Do not show the raw search results above in your response.")
+        
+        sb.append("IMPORTANT: Do not add a 'References' section at the end of your response. Sources are already handled by the UI.")
 
         return sb.toString()
     }
@@ -256,16 +249,5 @@ object WebSearchService {
             else -> null
         }
     }
-    
-    /**
-     * Clear the search cache (call this when needed to refresh results)
-     */
-    fun clearSearchCache() {
-        kotlinx.coroutines.runBlocking {
-            searchLock.withLock {
-                ongoingSearches.clear()
-                Timber.d("Web search cache cleared")
-            }
-        }
-    }
+
 }

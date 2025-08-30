@@ -3,8 +3,8 @@ plugins {
     kotlin("android")
     id("org.jetbrains.kotlin.plugin.compose") version "2.0.0"
     id("kotlin-parcelize")
-    id("com.google.devtools.ksp") version "2.0.0-1.0.21" // Updated KSP version
-    // id("com.huawei.agconnect") // For HMS - temporarily disabled
+    id("com.google.devtools.ksp") version "2.0.0-1.0.24"
+    id("dagger.hilt.android.plugin")
 }
 
 android {
@@ -18,11 +18,14 @@ android {
         versionCode = 18
         versionName = "18"
         vectorDrawables.useSupportLibrary = true
-        multiDexEnabled = true // Enable multidex support
+        multiDexEnabled = true
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        
-        // PERFORMANCE: Optimize vector drawables
+
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
+
         vectorDrawables {
             useSupportLibrary = true
             generatedDensities()
@@ -38,7 +41,6 @@ android {
 
     signingConfigs {
         create("release") {
-            // Move credentials to gradle.properties for better security
             storeFile = file(System.getenv("KEY_PATH") ?: project.property("KEY_PATH").toString())
             storePassword = System.getenv("STORE_PWD") ?: project.property("STORE_PWD").toString()
             keyAlias = System.getenv("KEY_ALIAS") ?: project.property("KEY_ALIAS").toString()
@@ -51,8 +53,8 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
-            isShrinkResources = true // PERFORMANCE: Enable resource shrinking
-            
+            isShrinkResources = true
+
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -64,39 +66,41 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
-            
-            // PERFORMANCE: Disable debugging and crash reporting overhead
+
             isDebuggable = false
-            isMinifyEnabled = true
-            
-            // PERFORMANCE: Optimize for speed
+
             ndk {
                 debugSymbolLevel = "NONE"
+                abiFilters += listOf("arm64-v8a")
             }
         }
         debug {
             isMinifyEnabled = false
-            // PERFORMANCE: Remove debug suffix to avoid Huawei AGConnect issues
-            // applicationIdSuffix = ".debug"
+            ndk {
+                abiFilters += listOf("arm64-v8a")
+            }
         }
     }
 
     buildFeatures {
         viewBinding = true
+        dataBinding = false  // Explicitly disable DataBinding to prevent task configuration issues
         compose = true
-        buildConfig = true
+        buildConfig = true  // Explicitly enable for this module since we have API keys
+        aidl = false
+        renderScript = false
+        resValues = false
+        shaders = false
     }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-        // PERFORMANCE: Enable incremental compilation
         isCoreLibraryDesugaringEnabled = false
     }
 
     kotlinOptions {
         jvmTarget = "17"
-        // PERFORMANCE: Enable Kotlin compiler optimizations
         freeCompilerArgs += listOf(
             "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
             "-opt-in=kotlin.RequiresOptIn",
@@ -105,13 +109,9 @@ android {
     }
 
     composeOptions {
-        // Updated for better performance
         kotlinCompilerExtensionVersion = "1.5.14"
     }
 
-    // PDFBox assets configuration removed due to compatibility issues
-
-    // Enhanced packaging configuration for size optimization
     packaging {
         resources {
             excludes += listOf(
@@ -132,24 +132,25 @@ android {
                 "META-INF/services/**",
                 "kotlin/**.kotlin_builtins",
                 "**/*.properties",
-                "DebugProbesKt.bin"
+                "DebugProbesKt.bin",
+                "**/log4j2.xml",
+                "**/log4j.xml",
+                "**/log4j.properties",
+                "**/log4j2.properties",
+                "**/commons-logging.properties"
             )
 
-            // Handle duplicate class files
             pickFirsts += listOf(
                 "kotlin/collections/**",
                 "kotlin/coroutines/**",
                 "kotlin/internal/**",
                 "kotlin/jvm/**",
-                "kotlin/text/**",
-                "io/noties/prism4j/**",
-                "**/prism4j/**",
-                "**/Prism_*.class"
+                "kotlin/text/**"
             )
         }
     }
 
-    // PERFORMANCE: Enhanced bundle configuration for faster installs
+
     bundle {
         language {
             enableSplit = true
@@ -160,10 +161,9 @@ android {
         abi {
             enableSplit = true
         }
-        
-        // PERFORMANCE: Enable on-demand features for faster startup
+
         storeArchive {
-            enable = false // Disable for faster builds
+            enable = false
         }
     }
 
@@ -171,224 +171,216 @@ android {
         checkReleaseBuilds = false
     }
 
-    // Force consistent dependency versions
     configurations.all {
         resolutionStrategy {
             // Force specific versions for core libraries
             force("androidx.core:core-ktx:1.13.0")
             force("org.jetbrains.kotlin:kotlin-stdlib:2.0.0")
-            force("com.google.code.gson:gson:2.10.1")
+            force("com.squareup.moshi:moshi:1.15.1")
             force("androidx.multidex:multidex:2.0.1")
 
-            // HMS conflict resolution
-            force("com.huawei.hms:base:6.13.0.302")
-            force("com.huawei.hms:iap:6.10.0.300")
-            force("com.huawei.agconnect:agconnect-core:1.5.2.300")
+            // Minimal dependencies for text processing only
+            force("commons-io:commons-io:2.15.1")
+            force("commons-codec:commons-codec:1.16.0")
+            force("com.opencsv:opencsv:5.9")
 
-            // Document processing libraries - PDFBox removed due to compatibility issues
-            force("org.apache.poi:poi:5.2.3")
-            force("org.apache.poi:poi-ooxml:5.2.3")
-            force("org.apache.poi:poi-scratchpad:5.2.3")
-            force("org.apache.poi:poi-ooxml-full:5.2.3")
-            force("org.apache.xmlbeans:xmlbeans:5.1.1")
-            force("org.apache.commons:commons-compress:1.24.0")
-            force("commons-io:commons-io:2.14.0")
-            force("org.apache.logging.log4j:log4j-api:2.20.0")
-            force("commons-codec:commons-codec:1.15")
-            force("commons-logging:commons-logging:1.2")
-            force("com.opencsv:opencsv:5.8")
-
-            // Resolve annotation conflicts
-            force("org.jetbrains:annotations:23.0.0")
+            // Exclude conflicting modules
             exclude(group = "org.jetbrains", module = "annotations-java5")
-
-            // Exclude the conflicting poi-ooxml-lite
-            exclude(group = "org.apache.poi", module = "poi-ooxml-lite")
 
             // Coroutines
             force("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
             force("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-            
-            // CommonMark - force version compatibility with Markwon 4.6.2
-            force("com.atlassian.commonmark:commonmark:0.13.0")
-            force("com.atlassian.commonmark:commonmark-ext-gfm-tables:0.13.0")
-            exclude(group = "org.commonmark", module = "commonmark")
-            exclude(group = "org.commonmark", module = "commonmark-ext-gfm-tables")
-            
-            // Prism4j - disabled Nekogram version due to compatibility issues
-            // Using CodeSyntaxHighlighter regex-based approach instead
-            exclude(group = "io.noties", module = "prism4j")
-            exclude(group = "io.noties", module = "prism4j-languages")
-            exclude(group = "io.noties", module = "annotations")
-            exclude(group = "app.nekogram.prism4j", module = "prism4j")
-            exclude(group = "app.nekogram.prism4j", module = "prism4j-languages")
-            exclude(group = "app.nekogram.prism4j", module = "annotations")
-            exclude(group = "app.nekogram.prism4j", module = "prism4j-bundler")
         }
     }
 }
 
-// PDFBox configuration removed due to compatibility issues
-
 dependencies {
+    // ====================
+    // DEPENDENCY INJECTION - HILT
+    // ====================
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+    implementation(libs.androidx.hilt.work)
+    ksp(libs.androidx.hilt.compiler)
+    implementation(libs.androidx.hilt.navigation.compose)
+
+    // ====================
+    // MODERN ANDROID ARCHITECTURE
+    // ====================
+    
+    // Navigation Component
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.navigation.ui.ktx)
+    
+    // Adaptive Layouts & Material Design 3
+    implementation(libs.androidx.material3.window.size.class1)
+    implementation(libs.androidx.window)
+    implementation(libs.androidx.window.core)
+    
+    // StateFlow & Flow
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.process)
+    
+    // Biometrics & Security
+    implementation(libs.androidx.biometric)
+    implementation(libs.androidx.security.crypto.ktx)
+    
+    // Performance Monitoring
+    implementation(libs.androidx.tracing)
+    implementation(libs.androidx.benchmark.common)
+    
+    // Advanced UI Components
+    implementation(libs.androidx.animation.graphics)
+    implementation(libs.androidx.swiperefreshlayout)
+    
+    // Widget Support
+    implementation(libs.androidx.glance.appwidget)
+    implementation(libs.androidx.glance.material3)
+
+    // ====================
+    // CORE ANDROID LIBRARIES
+    // ====================
+    
     // AndroidX Core
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.constraintlayout)
+    implementation(libs.androidx.recyclerview)
+    implementation(libs.androidx.fragment.ktx)
+    implementation(libs.androidx.multidex)
+    implementation(libs.material)
     
     // Security
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
-    implementation(libs.androidx.recyclerview)
-    implementation(libs.material)
-    implementation(libs.androidx.multidex)
+    implementation(libs.androidx.security.crypto)
 
-    // Architecture Components
+    // ====================
+    // ARCHITECTURE COMPONENTS
+    // ====================
+    
+    // Lifecycle & ViewModels
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
-    implementation(libs.androidx.lifecycle.livedata.ktx)
-    implementation(libs.androidx.fragment.ktx)
+    
+    // Background Work
     implementation(libs.androidx.work.runtime)
-    implementation(libs.androidx.datastore.core.android)
-
+    
     // Room Database
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
-    implementation(libs.app.update.ktx)
-    implementation(libs.androidx.media3.datasource)
-    implementation(libs.androidx.room.external.antlr)
-    implementation(libs.androidx.core.animation)
-    implementation(libs.androidx.adapters)
-    implementation(libs.play.services.appsearch)
-    // ML Kit dependencies removed - Unused functionality
-    // implementation(libs.play.services.mlkit.text.recognition.common)
-    // implementation(libs.image.labeling.default.common)
-    // implementation(libs.play.services.mlkit.text.recognition)
     ksp(libs.androidx.room.compiler)
-
-    // Coroutines - unified version
+    
+    // Coroutines
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android.v173)
 
-    // UI Libraries
+    // ====================
+    // UI & GRAPHICS
+    // ====================
+    
+    // Animations & UI Components
     implementation(libs.lottie)
-    implementation(libs.shimmer)
     implementation(libs.photoview)
+    implementation(libs.flexbox)
+    implementation(libs.app.update.ktx)
     
-    // Markwon - Comprehensive Markdown Processing with AI Features
-    implementation("io.noties.markwon:core:4.6.2")
-    implementation("io.noties.markwon:ext-strikethrough:4.6.2")
-    implementation("io.noties.markwon:ext-tables:4.6.2")
-    implementation("io.noties.markwon:ext-tasklist:4.6.2")
-    implementation("io.noties.markwon:html:4.6.2")
-    implementation("io.noties.markwon:image:4.6.2")
-    implementation("io.noties.markwon:image-glide:4.6.2")
-    implementation("io.noties.markwon:linkify:4.6.2")
-    implementation("io.noties.markwon:syntax-highlight:4.6.2") {
-        exclude(group = "io.noties", module = "prism4j")
-        exclude(group = "io.noties", module = "prism4j-languages")
-    }
-    
-    // NEW: Advanced Markwon Features for AI Chat
-    implementation("io.noties.markwon:ext-latex:4.6.2")          // LaTeX/Math formulas
-    implementation("io.noties.markwon:recycler:4.6.2")           // Performance for long content
-    implementation("io.noties.markwon:simple-ext:4.6.2")         // Custom extensions
-    
-    // Use Markwon's built-in CommonMark dependencies - no extra needed
-    
-    // Prism4j for syntax highlighting - using regex-based CodeSyntaxHighlighter instead
-    // Nekogram dependencies removed due to compatibility issues
-    // implementation("app.nekogram.prism4j:prism4j:2.1.0")
-    // implementation("app.nekogram.prism4j:prism4j-languages:2.1.0")
-
-    // Image Loading - Single Glide implementation
+    // Image Loading
     implementation(libs.glide) {
         exclude(group = "com.android.support")
     }
     ksp(libs.glide.compiler)
 
-    // Huawei HMS Core and Update SDK - Conditional loading
-    implementation(libs.agconnect.core)
-    implementation(libs.base)
-    implementation(libs.hms.update)
-    implementation(libs.iap)
-
-    // Billing
-    implementation(libs.billing.ktx)
-
-    // AndroidX Compose - Optimized
+    // ====================
+    // JETPACK COMPOSE
+    // ====================
+    
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.ui)
     implementation(libs.androidx.foundation)
     implementation(libs.material3)
     implementation(libs.androidx.runtime)
-
+    
     // Compose Debugging
     debugImplementation(libs.ui.tooling)
     implementation(libs.ui.tooling.preview)
 
-    // Networking - Single implementation versions
+    // ====================
+    // MARKDOWN PROCESSING
+    // ====================
+    
+    // Markwon Core & Extensions
+    implementation(libs.core)
+    implementation(libs.ext.strikethrough)
+    implementation(libs.ext.tables)
+    implementation(libs.ext.tasklist)
+    implementation(libs.html)
+    implementation(libs.image)
+    implementation(libs.image.glide)
+    implementation(libs.linkify)
+    implementation(libs.recycler)
+    implementation(libs.simple.ext)
+    
+    // NEW: Advanced Markwon Features
+    implementation(libs.syntax.highlight)  // Professional syntax highlighting
+    implementation(libs.ext.latex)         // LaTeX math formulas
+    implementation(libs.inline.parser)     // CRITICAL: Required for JLatexMathPlugin
+    implementation(libs.editor)            // Markdown editor support
+    implementation(libs.recycler.table)    // Advanced table layouts
+
+
+    // ====================
+    // DOCUMENT PROCESSING - SIMPLIFIED
+    // ====================
+    
+    // CSV Processing
+    implementation("com.opencsv:opencsv:5.9") {
+        exclude(group = "commons-collections")
+        exclude(group = "org.apache.commons", module = "commons-lang3")
+    }
+    
+    // Character Encoding Detection
+    implementation(libs.juniversalchardet)
+
+    // ====================
+    // NETWORKING
+    // ====================
+    
     implementation(libs.retrofit.v290)
-    implementation(libs.converter.gson.v290)
+    implementation(libs.converter.moshi)
     implementation(libs.okhttp)
     implementation(libs.logging.interceptor.v4100)
     implementation(libs.retrofit2.kotlin.coroutines.adapter)
+    implementation(libs.moshi)
+    implementation(libs.moshi.kotlin)
+    ksp(libs.moshi.codegen)
 
-    // Preferences & UI
-    implementation(libs.androidx.preference)
-    implementation(libs.circleimageview)
-
+    // ====================
+    // BILLING & MONETIZATION
+    // ====================
+    
+    // Google Play Billing
+    implementation(libs.billing.ktx)
+    
+    // Huawei HMS Core
+    implementation(libs.agconnect.core)
+    implementation(libs.base)
+    implementation(libs.hms.update)
+    implementation(libs.iap)
+    
+    // Ad Networks - OPTIMIZED: Keep only Google Ads (saves ~20 MB)
     implementation(libs.play.services.ads.v2260)
 
-    // AppLovin SDK
-    implementation(libs.applovin.sdk.v1210)
-
-    // IronSource SDK
-    implementation(libs.mediationsdk.v760)
-
-    // Utilities
+    // ====================
+    // UTILITIES & TOOLS
+    // ====================
+    
     implementation(libs.timber)
-    implementation(libs.gson)
     implementation(libs.mathparser.org.mxparser)
 
-    // Document Processing Libraries - Temporary for build fix
-    implementation(libs.commons.logging)
-
-    // Apache POI for Office documents - Temporarily restored for build
-    implementation("org.apache.poi:poi:5.2.3") {
-        exclude(group = "commons-codec", module = "commons-codec")
-    }
-    implementation("org.apache.poi:poi-ooxml:5.2.3") {
-        exclude(group = "org.apache.poi", module = "poi-ooxml-lite")
-        exclude(group = "org.apache.xmlbeans", module = "xmlbeans")
-        exclude(group = "org.apache.commons", module = "commons-compress")
-    }
-    implementation(libs.poi.scratchpad)
-    implementation(libs.poi.ooxml.full)
-
-    // POI dependencies
-    implementation(libs.xmlbeans)
-    implementation(libs.commons.compress)
-    implementation(libs.commons.io)
-    implementation(libs.commons.codec)
-    implementation(libs.log4j.api)
-
-    // OpenCSV for CSV processing - Lightweight
-    implementation("com.opencsv:opencsv:5.8") {
-        exclude(group = "commons-collections", module = "commons-collections")
-        exclude(group = "org.apache.commons", module = "commons-lang3")
-    }
-
-    // AndroidX Media3 for video support
-    implementation("androidx.media3:media3-exoplayer:1.2.1")
-    implementation("androidx.media3:media3-ui:1.2.1")
-    implementation("androidx.media3:media3-common:1.2.1")
-
-    // AndroidX additional dependencies
-    implementation(libs.androidx.documentfile)
-    implementation(libs.flexbox)
-
-    // Testing
+    // ====================
+    // TESTING
+    // ====================
+    
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

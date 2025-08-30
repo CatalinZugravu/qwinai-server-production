@@ -35,7 +35,7 @@
         app:tabIndicatorColor="@color/accent_color"
         app:tabIndicatorHeight="4dp"
         app:tabSelectedTextColor="@color/accent_color"
-        app:tabTextColor="#757575"
+        app:tabTextColor="@color/text_secondary"
         app:tabRippleColor="@color/ripple_color"
         app:tabIconTint="@color/tab_icon_selector"
         app:tabInlineLabel="true"
@@ -46,7 +46,7 @@
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:background="#E0E0E0" />
+        android:background="@color/divider" />
 
     <!-- Custom Page Indicator -->
     <LinearLayout
@@ -56,7 +56,7 @@
         android:orientation="horizontal"
         android:gravity="center"
         android:paddingVertical="8dp"
-        android:background="@android:color/white" />
+        android:background="?attr/colorSurface" />
 
     <androidx.viewpager2.widget.ViewPager2
         android:id="@+id/viewPager"

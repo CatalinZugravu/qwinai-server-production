@@ -1,10 +1,12 @@
 package com.cyberflux.qwinai.service
 
 import android.content.Context
-import android.graphics.Color
+import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.util.Base64
 import androidx.annotation.RequiresApi
+import androidx.core.graphics.toColorInt
 import com.cyberflux.qwinai.ConversationsViewModel
 import com.cyberflux.qwinai.MainActivity
 import com.cyberflux.qwinai.adapter.ChatAdapter
@@ -19,16 +21,18 @@ import com.cyberflux.qwinai.network.ModelApiHandler
 import com.cyberflux.qwinai.network.RetrofitInstance
 import com.cyberflux.qwinai.network.StreamingHandler
 import com.cyberflux.qwinai.tools.ToolServiceHelper
-import com.cyberflux.qwinai.utils.ConversationTokenManager
-import com.cyberflux.qwinai.utils.DocumentContentExtractor
+import com.cyberflux.qwinai.utils.SimplifiedTokenManager
+import com.cyberflux.qwinai.utils.SimplifiedDocumentExtractor
+import com.cyberflux.qwinai.utils.SimpleSafeDocumentExtractor
 import com.cyberflux.qwinai.utils.FileUtil
+import com.cyberflux.qwinai.utils.JsonUtils
 import com.cyberflux.qwinai.utils.ModelConfigManager
 import com.cyberflux.qwinai.utils.ModelManager
 import com.cyberflux.qwinai.utils.ModelValidator
 import com.cyberflux.qwinai.utils.PrefsManager
 import com.cyberflux.qwinai.utils.TokenValidator
-import com.google.gson.Gson
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -37,7 +41,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.ResponseBody
 import org.json.JSONArray
 import org.json.JSONObject
@@ -55,7 +61,7 @@ class AiChatService(
     private val coroutineScope: CoroutineScope,
     private val callbacks: Callbacks,
     private val messageManager: MessageManager,
-    private val conversationTokenManager: ConversationTokenManager,
+    private val tokenManager: SimplifiedTokenManager,
     var isStreamingActive: Boolean = false,
     private var userName: String = "user",
 
@@ -114,16 +120,17 @@ class AiChatService(
 
     // Service-specific properties
     private var currentApiJob: Job? = null
+    private var streamingJob: Job? = null
 
-    // Create a private service scope for internal operations
-    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    // Create a private service scope for internal operations with proper cancellation handling
+    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob() + CoroutineName("AiChatService"))
+    private val backgroundScope = CoroutineScope(Dispatchers.IO + SupervisorJob() + CoroutineName("AiChatService-BG"))
     private val toolManager by lazy { ToolServiceHelper.getToolManager(context) }
 
     /**
      * Main method to send a message with smart web search auto-detection
      */
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     fun sendMessage(
         message: String,
         hasFiles: Boolean,
@@ -131,7 +138,8 @@ class AiChatService(
         userMessageId: String,
         createOrGetConversation: (String) -> String,
         isReasoningEnabled: Boolean = false,
-        reasoningLevel: String = "low"
+        reasoningLevel: String = "low",
+        selectedFiles: List<FileUtil.FileUtil.SelectedFile>? = null
     ) {
         val currentModel = ModelManager.selectedModel
 
@@ -165,7 +173,8 @@ class AiChatService(
                         userMessageId,
                         effectiveWebSearchEnabled,
                         isReasoningEnabled,
-                        reasoningLevel
+                        reasoningLevel,
+                        selectedFiles
                     )
                 }
             } else if (message.isNotBlank()) {
@@ -173,7 +182,6 @@ class AiChatService(
                     handleTextOnlyMessageAsync(
                         conversationIdString,
                         message,
-                        effectiveWebSearchEnabled,
                         userMessageId,
                         isReasoningEnabled,
                         reasoningLevel
@@ -193,11 +201,10 @@ class AiChatService(
     /**
      * Handle text-only messages with smart web search analysis
      */
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private suspend fun handleTextOnlyMessageAsync(
         conversationId: String,
         message: String,
-        forceWebSearch: Boolean = false,
         userMessageId: String,
         isReasoningEnabled: Boolean = false,
         reasoningLevel: String = "low"
@@ -268,7 +275,7 @@ class AiChatService(
             // SMART INDICATOR TEXT based on what will happen
             val (indicatorText, indicatorColor, isWebSearchActive) = when {
                 useWebSearch -> {
-                    Triple("Web search available", Color.parseColor("#2563EB"), true)
+                    Triple("Web search available", "#2563EB".toColorInt(), true)
                 }
                 else -> {
                     // Determine if a specific tool is being used
@@ -277,7 +284,7 @@ class AiChatService(
                         val (text, color) = getToolStatusText(toolId)
                         Triple(text, color, false)
                     } else {
-                        Triple("Generating response", Color.parseColor("#757575"), false)
+                        Triple("Generating response", "#757575".toColorInt(), false)
                     }
                 }
             }
@@ -288,7 +295,7 @@ class AiChatService(
                 id = aiMessageId,
                 conversationId = conversationId,
                 message = "",
-                isUser = false,
+                isUser = false, // CRITICAL: AI messages must NEVER be user messages
                 timestamp = System.currentTimeMillis(),
                 isGenerating = !isWebSearchActive,
                 showButtons = false,
@@ -298,7 +305,9 @@ class AiChatService(
                 isWebSearchActive = isWebSearchActive,
                 isForceSearch = useWebSearch,
                 initialIndicatorText = indicatorText,
-                initialIndicatorColor = indicatorColor
+                initialIndicatorColor = indicatorColor,
+                isImage = false, // AI responses are never images
+                isDocument = false // AI responses are never documents
             )
 
             withContext(Dispatchers.Main) {
@@ -330,14 +339,26 @@ class AiChatService(
         } catch (e: Exception) {
             Timber.e(e, "Error in enhanced handleTextOnlyMessageAsync: ${e.message}")
             withContext(Dispatchers.Main) {
-                callbacks.showError("Error processing message: ${e.message}")
+                // Show user-friendly error message based on exception type
+                val errorMessage = when (e) {
+                    is java.net.SocketTimeoutException -> "Request timed out. Please try again."
+                    is java.net.UnknownHostException -> "No internet connection. Please check your connection."
+                    is java.net.ConnectException -> "Connection failed. Please try again later."
+                    is java.io.IOException -> "Network error. Please check your connection."
+                    else -> "Generation error: Please try again"
+                }
+                callbacks.showError(errorMessage)
                 callbacks.setGeneratingState(false)
+                callbacks.updateTypingIndicator(false)
+                
+                // CRITICAL: Ensure full UI reset on any error
+                stopStreamingMode()
             }
         }
     }    /**
      * Process files with smart web search support
      */
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private suspend fun processAndSendFilesWithFileSupportedModelAsync(
         conversationId: String,
         userText: String,
@@ -345,7 +366,8 @@ class AiChatService(
         userMessageId: String,
         forceWebSearch: Boolean = false,
         isReasoningEnabled: Boolean = false,
-        reasoningLevel: String = "low"
+        reasoningLevel: String = "low",
+        selectedFiles: List<FileUtil.FileUtil.SelectedFile>? = null
     ) {
         try {
             withContext(Dispatchers.Main) {
@@ -363,25 +385,50 @@ class AiChatService(
             val processedImages = mutableListOf<ProcessedImageInfo>()
             val extractedDocuments = mutableListOf<ExtractedDocumentInfo>()
 
-            // Process files
+            // Process files using pre-extracted metadata when available
             Timber.d("Processing ${fileUris.size} files for AI model")
-            for (fileUri in fileUris) {
+            for ((index, fileUri) in fileUris.withIndex()) {
                 try {
-                    val mimeType = context.contentResolver.getType(fileUri) ?: ""
-                    val isImage = mimeType.startsWith("image/")
-                    val fileName = getFileName(fileUri)
-                    val fileSize = getFileSize(fileUri)
+                    // Use metadata from selectedFiles if available, otherwise fallback to extraction
+                    val selectedFile = selectedFiles?.getOrNull(index)
+                    val fileName: String
+                    val fileSize: Long
+                    val mimeType: String
                     
-                    Timber.d("File analysis: $fileName")
-                    Timber.d("  MIME type: $mimeType")
-                    Timber.d("  Is image: $isImage")
-                    Timber.d("  File size: ${FileUtil.formatFileSize(fileSize)}")
+                    if (selectedFile != null) {
+                        // Use pre-extracted metadata
+                        fileName = selectedFile.name
+                        fileSize = selectedFile.size
+                        mimeType = context.contentResolver.getType(fileUri) ?: 
+                                  FileUtil.getMimeType(context, fileUri)
+                        Timber.d("Using pre-extracted metadata for: $fileName")
+                    } else {
+                        // Fallback to extraction (legacy path)
+                        mimeType = context.contentResolver.getType(fileUri) ?: ""
+                        fileName = getFileName(fileUri)
+                        fileSize = getFileSize(fileUri)
+                        Timber.w("No pre-extracted metadata available, extracting for: $fileName")
+                    }
+                    
+                    val isImage = mimeType.startsWith("image/")
+                    
+                    Timber.d("📋 File analysis: $fileName")
+                    Timber.d("  📁 MIME type: $mimeType")
+                    Timber.d("  🖼️ Is image: $isImage")
+                    Timber.d("  📏 File size: ${FileUtil.formatFileSize(fileSize)} (raw: $fileSize bytes)")
+                    
+                    // Log exactly what's going into FileInfo
+                    Timber.d("🔄 Creating FileInfo with:")
+                    Timber.d("  📍 URI: ${fileUri.toString()}")
+                    Timber.d("  📝 Name: '$fileName'")
+                    Timber.d("  📊 Size: $fileSize")
+                    Timber.d("  🏷️ MIME Type: '$mimeType' (${if (isImage) "image" else "document"})")
 
                     fileInfos.add(ChatAdapter.FileInfo(
                         uri = fileUri.toString(),
                         name = fileName,
                         size = fileSize,
-                        type = if (isImage) "image" else "document"
+                        type = mimeType // Store the actual MIME type, not just "image"/"document"
                     ))
                     processedFiles.add(fileUri)
 
@@ -389,22 +436,38 @@ class AiChatService(
                         processedImages.add(ProcessedImageInfo(fileUri.toString(), "", fileName))
                         Timber.d("Added image to processedImages: $fileName")
                     } else {
-                        // Document processing logic - FORCE EXTRACTION FOR ALL MODELS
+                        // Document processing logic
                         val currentModel = ModelManager.selectedModel
                         val hasNativeSupport = ModelValidator.hasNativeDocumentSupport(currentModel.id)
+                        val isOcrModel = currentModel.isOcrModel
+                        
                         Timber.d("Processing document file: $fileName (URI: $fileUri)")
                         Timber.d("Current model: ${currentModel.displayName} (${currentModel.id})")
                         Timber.d("Native document support: $hasNativeSupport")
+                        Timber.d("Is OCR model: $isOcrModel")
                         
-                        // CRITICAL FIX: Always extract content for all models to ensure AI can see the text
-                        Timber.d("Extracting content for all models to ensure AI can read document text")
+                        // Skip extraction for OCR models - they need raw files
+                        if (isOcrModel) {
+                            Timber.d("Skipping content extraction for OCR model - will send raw file to OCR endpoint")
+                            // For OCR models, just add the file info without extraction
+                            extractedDocuments.add(ExtractedDocumentInfo(
+                                name = fileName,
+                                mimeType = mimeType,
+                                size = fileSize,
+                                extractedContent = "" // Empty content - raw file will be used
+                            ))
+                            continue
+                        }
+                        
+                        // For non-OCR models: extract content for AI to read
+                        Timber.d("Extracting content for non-OCR model to ensure AI can read document text")
 
                         val fileUriString = fileUri.toString()
-                        var extractedContent = DocumentContentExtractor.getCachedContent(fileUriString)
+                        var extractedContent = SimpleSafeDocumentExtractor.getCachedContent(fileUriString)
 
                         if (extractedContent == null && context is MainActivity) {
                             Timber.d("Direct cache lookup failed, trying via selected files")
-                            val selectedFile = (context as MainActivity).selectedFiles.find {
+                            val selectedFile = context.selectedFiles.find {
                                 it.uri.toString() == fileUriString
                             }
 
@@ -413,48 +476,44 @@ class AiChatService(
 
                                 if (selectedFile.isExtracted && selectedFile.extractedContentId.isNotEmpty()) {
                                     Timber.d("Looking up content with ID: ${selectedFile.extractedContentId}")
-                                    extractedContent = DocumentContentExtractor.getCachedContent(selectedFile.extractedContentId)
+                                    extractedContent = SimpleSafeDocumentExtractor.getCachedContent(selectedFile.extractedContentId)
                                 }
                             }
                         }
 
                         if (extractedContent == null) {
                             Timber.d("Cache lookup failed, extracting content on the fly for file: $fileName")
-                            val tempExtractor = DocumentContentExtractor(context)
+                            val tempExtractor = SimpleSafeDocumentExtractor(context)
                             val result = withContext(Dispatchers.IO) {
-                                tempExtractor.processDocumentForModel(fileUri)
+                                tempExtractor.extractContent(fileUri)
                             }
 
-                            if (result.isSuccess) {
-                                extractedContent = result.getOrNull()
-                                if (extractedContent != null) {
-                                    Timber.d("On-the-fly extraction successful: ${extractedContent.textContent.length} chars extracted from $fileName")
+                            when (result) {
+                                is SimpleSafeDocumentExtractor.ExtractionResult.Success -> {
+                                    extractedContent = result.content
+                                    Timber.d("On-the-fly extraction successful: ${extractedContent.length} chars extracted from $fileName")
                                     // Cache the content for potential reuse
-                                    DocumentContentExtractor.cacheContent(fileUriString, extractedContent)
-                                } else {
-                                    Timber.w("Extraction result was successful but content is null for $fileName")
+                                    SimpleSafeDocumentExtractor.cacheContent(fileUriString, extractedContent)
                                 }
-                            } else {
-                                val errorMsg = result.exceptionOrNull()?.message ?: "Unknown error"
-                                Timber.e("On-the-fly extraction failed for $fileName: $errorMsg")
-                                callbacks.showError("Failed to extract content from $fileName: $errorMsg")
+                                is SimpleSafeDocumentExtractor.ExtractionResult.Error -> {
+                                    Timber.e("On-the-fly extraction failed for $fileName: ${result.message}")
+                                    callbacks.showError("Failed to extract content from $fileName: ${result.message}")
+                                }
                             }
                         }
 
                         if (extractedContent != null) {
-                            val contentLength = extractedContent.textContent.length
-                            val tokenCount = extractedContent.tokenCount
+                            val contentLength = extractedContent.length
+                            val tokenCount = TokenValidator.estimateTokenCount(extractedContent)
                             Timber.d("Adding document with extracted content: $fileName ($contentLength chars, $tokenCount tokens)")
                             
-                            // Use the formatForAiModel method to get properly formatted content with metadata
-                            val formattedContent = extractedContent.formatForAiModel()
-                            
+                            // Use the extracted content directly (it's already formatted)
                             extractedDocuments.add(
                                 ExtractedDocumentInfo(
                                     name = fileName,
                                     mimeType = mimeType,
                                     size = fileSize,
-                                    extractedContent = formattedContent
+                                    extractedContent = extractedContent
                                 )
                             )
                         } else {
@@ -521,8 +580,20 @@ class AiChatService(
 
             // CRITICAL FIX: For documents with extracted content, don't send original file to AI
             // Only send images and documents that failed extraction
-            val documentsForDisplay = fileInfos.filter { it.type == "document" }
-            val imagesForProcessing = fileInfos.filter { it.type == "image" }
+            val documentsForDisplay = fileInfos.filter { !it.type.startsWith("image/") }
+            val imagesForProcessing = fileInfos.filter { it.type.startsWith("image/") }
+            
+            // Log file processing results
+            Timber.d("🎯 Creating GroupedFileMessage:")
+            Timber.d("  🖼️ Images (${imagesForProcessing.size}):")
+            imagesForProcessing.forEach { img ->
+                Timber.d("    - ${img.name} (${FileUtil.formatFileSize(img.size)}) [${img.uri}]")
+            }
+            Timber.d("  📄 Documents (${documentsForDisplay.size}):")
+            documentsForDisplay.forEach { doc ->
+                Timber.d("    - ${doc.name} (${FileUtil.formatFileSize(doc.size)}) [${doc.uri}]")
+            }
+            Timber.d("  📝 Text: '${userVisibleText?.take(50)}${if ((userVisibleText?.length ?: 0) > 50) "..." else ""}'")
             
             val groupedMessage = ChatAdapter.GroupedFileMessage(
                 images = imagesForProcessing,
@@ -530,29 +601,63 @@ class AiChatService(
                 text = userVisibleText
             )
 
-            val messageJson = Gson().toJson(groupedMessage)
+            val messageJson = JsonUtils.toJson(groupedMessage)
+            Timber.d("💾 GroupedFileMessage JSON: ${messageJson?.take(200)}${if ((messageJson?.length ?: 0) > 200) "..." else ""}")
+
+            // Create human-readable message for display
+            val userDisplayMessage = buildString {
+                if (userVisibleText?.isNotBlank() == true) {
+                    append(userVisibleText)
+                    append("\n\n")
+                }
+                append("📎 ")
+                val totalFiles = imagesForProcessing.size + documentsForDisplay.size
+                append("$totalFiles file(s) attached:")
+                
+                imagesForProcessing.forEach { image ->
+                    append("\n🖼️ ${image.name}")
+                }
+                documentsForDisplay.forEach { doc ->
+                    append("\n📄 ${doc.name}")
+                }
+            }
+
+            // Create serialized attachments data for ConversationAttachmentsManager
+            val attachmentsJson = try {
+                val attachmentsList = fileInfos.map { fileInfo ->
+                    mapOf(
+                        "uri" to fileInfo.uri.toString(),
+                        "name" to fileInfo.name,
+                        "size" to fileInfo.size,
+                        "type" to fileInfo.type,
+                        "mimeType" to fileInfo.type
+                    )
+                }
+                JsonUtils.toJson(attachmentsList)
+            } catch (e: Exception) {
+                Timber.e(e, "Error serializing attachments")
+                null
+            }
 
             val userFileMessage = ChatMessage(
                 id = userMessageId,
-                message = messageJson,
+                message = userDisplayMessage,
                 isUser = true,
                 timestamp = System.currentTimeMillis(),
                 conversationId = conversationId,
-                isImage = fileInfos.any { it.type == "image" },
-                isDocument = fileInfos.any { it.type == "document" },
-                prompt = aiOnlyText,
-                isForceSearch = forceWebSearch
+                isImage = fileInfos.any { it.type.startsWith("image/") },
+                isDocument = fileInfos.any { !it.type.startsWith("image/") },
+                prompt = messageJson, // Store JSON in prompt field for AI processing
+                isForceSearch = forceWebSearch,
+                attachments = attachmentsJson // Store file attachments for ConversationAttachmentsManager
             )
 
             withContext(Dispatchers.Main) {
                 messageManager.addMessage(userFileMessage)
                 // Remove delay for instant indicator display
-
-                if (!chatAdapter.currentList.any { it.id == userMessageId }) {
-                    callbacks.showError("Error adding file message to chat. Please try again.")
-                    callbacks.setGeneratingState(false)
-                    return@withContext
-                }
+                
+                // Note: No need to check chatAdapter.currentList immediately since submitList is async
+                // The message will appear in the adapter after the async operation completes
             }
 
             if (!conversationId.startsWith("private_")) {
@@ -560,7 +665,7 @@ class AiChatService(
             }
 
             // Get current button states and analyze web search need
-            val webSearchEnabled = callbacks.getWebSearchEnabled() || forceWebSearch
+            callbacks.getWebSearchEnabled() || forceWebSearch
 
             // CRITICAL FIX: Disable automatic web search when files are present
             // Files contain the information the user is asking about, no need to search the web
@@ -575,7 +680,7 @@ class AiChatService(
                 smartWebSearchEnabled -> {
                     // Web search takes priority
                     val searchType = if (needsWebSearch) "Smart web search" else "Web search"
-                    Triple("$searchType with files", Color.parseColor("#2563EB"), true)
+                    Triple("$searchType with files", "#2563EB".toColorInt(), true)
                 }
                 else -> {
                     // Determine specific file type for better indicator text
@@ -589,7 +694,7 @@ class AiChatService(
                         else -> "Processing files"
                     }
                     
-                    Triple(indicatorText, Color.parseColor("#757575"), false)
+                    Triple(indicatorText, "#757575".toColorInt(), false)
                 }
             }
 
@@ -601,7 +706,7 @@ class AiChatService(
                 id = aiMessageId,
                 conversationId = conversationId,
                 message = "",
-                isUser = false,
+                isUser = false, // CRITICAL: AI messages must NEVER be user messages
                 timestamp = System.currentTimeMillis(),
                 isGenerating = true,
                 showButtons = false,
@@ -611,19 +716,18 @@ class AiChatService(
                 isWebSearchActive = isWebSearchActive,
                 isForceSearch = smartWebSearchEnabled,
                 initialIndicatorText = indicatorText,
-                initialIndicatorColor = indicatorColor
+                initialIndicatorColor = indicatorColor,
+                isImage = false, // AI responses are never images
+                isDocument = false // AI responses are never documents
             )
 
             withContext(Dispatchers.Main) {
                 messageManager.addMessage(aiMessage)
                 // Remove delay for instant indicator display
-
-                if (!chatAdapter.currentList.any { it.id == aiMessageId }) {
-                    callbacks.showError("Error creating AI response. Please try again.")
-                    callbacks.setGeneratingState(false)
-                    return@withContext
-                }
-
+                
+                // Note: No need to check chatAdapter.currentList immediately since submitList is async
+                // The message will appear in the adapter after the async operation completes
+                
                 callbacks.scrollToBottom()
             }
 
@@ -631,26 +735,47 @@ class AiChatService(
                 callbacks.saveMessage(aiMessage)
             }
 
-            // Start enhanced API call with AI-only text and web search params
-            withContext(Dispatchers.Main) {
-                currentApiJob = startEnhancedApiCall(
-                    conversationId = conversationId,
-                    messageId = aiMessageId,
-                    isSubscribed = callbacks.isSubscribed(),
-                    isModelFree = ModelManager.selectedModel.isFree,
-                    enableWebSearch = smartWebSearchEnabled,
+            // Check if this is an OCR model and handle differently
+            if (ModelManager.selectedModel.isOcrModel && fileUris.isNotEmpty()) {
+                Timber.d("🔍 OCR model detected with files - routing to OCR endpoint")
+                
+                // Find the AI message position for updates
+                val aiMessagePosition = withContext(Dispatchers.Main) {
+                    val messages = chatAdapter.currentList
+                    messages.indexOfFirst { it.id == aiMessageId }
+                }
+                
+                processOcrRequest(
+                    messagePosition = aiMessagePosition,
                     originalMessageText = aiOnlyText,
-                    webSearchParams = webSearchParams,
-                    isReasoningEnabled = isReasoningEnabled,
-                    reasoningLevel = reasoningLevel
+                    messageId = aiMessageId,
+                    fileUris = fileUris
                 )
+            } else {
+                // Start enhanced API call with AI-only text and web search params
+                withContext(Dispatchers.Main) {
+                    currentApiJob = startEnhancedApiCall(
+                        conversationId = conversationId,
+                        messageId = aiMessageId,
+                        isSubscribed = callbacks.isSubscribed(),
+                        isModelFree = ModelManager.selectedModel.isFree,
+                        enableWebSearch = smartWebSearchEnabled,
+                        originalMessageText = aiOnlyText,
+                        webSearchParams = webSearchParams,
+                        isReasoningEnabled = isReasoningEnabled,
+                        reasoningLevel = reasoningLevel
+                    )
+                }
             }
         } catch (e: Exception) {
             Timber.e(e, "Error processing and sending files: ${e.message}")
             withContext(Dispatchers.Main) {
                 callbacks.setGeneratingState(false)
                 callbacks.updateTypingIndicator(false)
-                callbacks.showError("Error processing files: ${e.message}")
+                callbacks.showError("Generation error: Please try again")
+                
+                // CRITICAL: Ensure full UI reset on error
+                stopStreamingMode()
             }
         }
     }
@@ -661,7 +786,7 @@ class AiChatService(
 // Update the startEnhancedApiCall method in AiChatService.kt
 // to properly pass the web search flag to StreamingHandler
 
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     fun startEnhancedApiCall(
         conversationId: String,
         messageId: String,
@@ -751,23 +876,34 @@ class AiChatService(
                     reasoningLevel = reasoningLevel
                 )
 
-            } catch (e: CancellationException) {
+            } catch (_: CancellationException) {
                 Timber.d("Enhanced API request cancelled by user")
                 needToRefundCredits = true
                 withContext(Dispatchers.Main) {
                     callbacks.setGeneratingState(false)
                     // CRITICAL: Ensure streaming mode is stopped on cancellation
-                    chatAdapter.stopStreamingMode()
+                    chatAdapter.stopStreamingModeGradually()
                     messageManager.stopStreamingMode()
                 }
             } catch (e: Exception) {
                 Timber.tag("ENHANCED-API-ERROR").e(e, "Error in enhanced API call: ${e.message}")
                 withContext(Dispatchers.Main) {
-                    callbacks.showError("Error: ${e.localizedMessage ?: e.message ?: "Communication error"}")
+                    // Show user-friendly error message based on exception type
+                    val errorMessage = when (e) {
+                        is java.net.SocketTimeoutException -> "Request timed out. Please try again."
+                        is java.net.UnknownHostException -> "No internet connection. Please check your connection."
+                        is java.net.ConnectException -> "Connection failed. Please try again later."
+                        is java.io.IOException -> "Network error. Please check your connection."
+                        else -> "Generation error: Please try again"
+                    }
+                    callbacks.showError(errorMessage)
                     callbacks.setGeneratingState(false)
+                    callbacks.updateTypingIndicator(false)
+                    
                     // CRITICAL: Ensure streaming mode is stopped on error
-                    chatAdapter.stopStreamingMode()
+                    chatAdapter.stopStreamingModeGradually()
                     messageManager.stopStreamingMode()
+                    stopStreamingMode()
                 }
                 needToRefundCredits = true
             } finally {
@@ -784,10 +920,11 @@ class AiChatService(
 
                     callbacks.scrollToBottom()
                     currentApiJob = null
+                    streamingJob = null
 
                     // CRITICAL: Final check to ensure streaming mode is properly stopped
                     if (chatAdapter.isStreamingActive) {
-                        chatAdapter.stopStreamingMode()
+                        chatAdapter.stopStreamingModeGradually()
                     }
                     messageManager.stopStreamingMode()
                 }
@@ -797,7 +934,7 @@ class AiChatService(
     /**
      * Continue with API call using enhanced approach with tool calls support
      */
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private suspend fun continueWithEnhancedApiCall(
         messagePosition: Int,
         conversationId: String,
@@ -840,7 +977,7 @@ class AiChatService(
                         withContext(Dispatchers.Main) {
                             callbacks.showError("No conversation messages found. Please try again.")
                             callbacks.setGeneratingState(false)
-                            chatAdapter.stopStreamingMode()
+                            chatAdapter.stopStreamingModeGradually()
                             messageManager.stopStreamingMode()
                         }
                         return
@@ -850,7 +987,7 @@ class AiChatService(
                     withContext(Dispatchers.Main) {
                         callbacks.showError("Error loading conversation context. Please try again.")
                         callbacks.setGeneratingState(false)
-                        chatAdapter.stopStreamingMode()
+                        chatAdapter.stopStreamingModeGradually()
                         messageManager.stopStreamingMode()
                     }
                     return
@@ -860,75 +997,12 @@ class AiChatService(
             // Build messages using enhanced approach
             val userMessages = buildMessagesForEnhancedApproach(conversationId, modelId)
 
-            // Perform smart pre-processing web search if needed using our tool system
-            val enhancedMessages = if (enableWebSearch && originalMessageText != null) {
-                try {
-                    // Get search parameters from analysis
-                    val cleanedQuery = WebSearchService.cleanSearchQuery(originalMessageText)
-                    val enhancedParams = webSearchParams
-
-                    Timber.d("Performing enhanced web search for: $cleanedQuery with params: $enhancedParams")
-
-                    // Update the message to show web search is in progress
-                    withContext(Dispatchers.Main) {
-                        messageManager.updateLoadingState(
-                            messageId = messageId,
-                            isGenerating = true,
-                            isWebSearching = true
-                        )
-                    }
-
-                    // Convert enhanced params to toolParams
-                    val toolParams = mutableMapOf<String, Any>(
-                        "query" to cleanedQuery
-                    )
-
-                    // Add the enhancedParams to toolParams
-                    enhancedParams.forEach { (key, value) ->
-                        toolParams[key] = value
-                    }
-
-                    // Use ToolServiceHelper to execute web search
-                    val searchMessage = ToolServiceHelper.createWebSearchMessage(
-                        context = context,
-                        message = originalMessageText,
-                        parameters = toolParams
-                    )
-
-                    if (searchMessage != null) {
-                        // Insert search message after system message
-                        val enhancedList = userMessages.toMutableList()
-                        val systemIndex = enhancedList.indexOfFirst { it.role == "system" }
-                        if (systemIndex != -1) {
-                            enhancedList.add(systemIndex + 1, searchMessage)
-                        } else {
-                            enhancedList.add(0, searchMessage)
-                        }
-
-                        Timber.d("Enhanced messages with web search results from tool system")
-
-                        // Update the message state to show search completed
-                        withContext(Dispatchers.Main) {
-                            messageManager.updateLoadingState(
-                                messageId = messageId,
-                                isGenerating = true,
-                                isWebSearching = false
-                            )
-                        }
-
-                        enhancedList
-                    } else {
-                        // Fall back to existing WebSearchService if our tool fails
-                        performFallbackWebSearch(originalMessageText, modelId, webSearchParams, messageId, userMessages)
-                    }
-                } catch (e: Exception) {
-                    Timber.e(e, "Error performing web search with tool: ${e.message}")
-
-                    // Fall back to existing WebSearchService
-                    performFallbackWebSearch(originalMessageText, modelId, webSearchParams, messageId, userMessages)
-                }
-            } else {
-                userMessages
+            // Skip pre-processing web search - let AI model handle it through streaming tool calls
+            // This eliminates delays and reduces token usage
+            val enhancedMessages = userMessages
+            
+            if (enableWebSearch && originalMessageText != null) {
+                Timber.d("Web search enabled - AI model will handle tool calls during streaming")
             }
 
             // Create API request using enhanced method
@@ -953,12 +1027,8 @@ class AiChatService(
             val requestBody = ModelApiHandler.createRequestBody(
                 apiRequest = request,
                 modelId = modelId,
-                useWebSearch = enableWebSearch,
-                messageText = originalMessageText,
                 context = context,
-                audioEnabled = false,
-                audioFormat = "mp3",
-                voiceType = "alloy"
+                audioEnabled = false
             )
             Timber.d("Enhanced API request - model: $modelId, context messages: ${conversationMessages.size}, " +
                     "webSearch: $enableWebSearch, streaming: ${request.stream}")
@@ -968,21 +1038,39 @@ class AiChatService(
                 AimlApiService::class.java
             )
 
-            // We're now enforcing streaming for real-time updates
-            val response = withContext(Dispatchers.IO) {
-                try {
-                    apiService.sendRawMessageStreaming(requestBody)
-                } catch (e: Exception) {
-                    Timber.e(e, "Enhanced API streaming request failed: ${e.message}")
-                    throw e
+            // Check if this is an OCR model and handle specially
+            // CRITICAL FIX: Capture model information at start of request to prevent state issues
+            val currentModelInfo = ModelManager.selectedModel
+            val currentModelDisplayName = currentModelInfo.displayName
+            val isCurrentOcrModel = currentModelInfo.isOcrModel
+            
+            val response = if (isCurrentOcrModel) {
+                Timber.d("🔍 Detected OCR model without files, showing user-friendly message")
+                
+                // For OCR models without files, show a user-friendly message - use captured model name
+                throw Exception("The $currentModelDisplayName is designed for document and image processing. Please attach a file (PDF or image) to use this model. Text-only messages are not supported with OCR models.")
+                
+            } else {
+                // We're now enforcing streaming for real-time updates
+                withContext(Dispatchers.IO) {
+                    try {
+                        // Note: sendRawMessageStreaming returns Response, not Call
+                        // So we track the individual calls through the client interceptor
+                        apiService.sendRawMessageStreaming(requestBody)
+                    } catch (e: Exception) {
+                        Timber.e(e, "Enhanced API streaming request failed: ${e.message}")
+                        throw e
+                    }
                 }
             }
 
             if (response.isSuccessful) {
                 val responseBody = response.body()
                 if (responseBody != null) {
-                    // Use enhanced streaming processing with tool calls support
-                    StreamingHandler.processEnhancedStreamingResponse(
+                    // CRITICAL: Track the streaming job for cancellation - use background scope to avoid premature cancellation
+                    streamingJob = backgroundScope.launch {
+                        // Use enhanced streaming processing with tool calls support
+                        StreamingHandler.processEnhancedStreamingResponse(
                         responseBody = responseBody,
                         adapter = chatAdapter,
                         messagePosition = messagePosition,
@@ -1002,29 +1090,39 @@ class AiChatService(
                                 }
 
                                 // CRITICAL: Stop streaming mode when complete
-                                chatAdapter.stopStreamingMode()
+                                chatAdapter.stopStreamingModeGradually()
                                 messageManager.stopStreamingMode()
+                                
+                                // CRITICAL: Reset streaming job reference
+                                streamingJob = null
                             }
                         },
                         onError = { errorMessage ->
                             serviceScope.launch(Dispatchers.Main) {
-                                callbacks.showError("Enhanced streaming error: $errorMessage")
+                                callbacks.showError("Generation error: Please try again")
                                 callbacks.setGeneratingState(false)
                                 callbacks.updateTypingIndicator(false)
 
                                 // CRITICAL: Stop streaming mode on error
-                                chatAdapter.stopStreamingMode()
+                                chatAdapter.stopStreamingModeGradually()
                                 messageManager.stopStreamingMode()
+                                
+                                // CRITICAL: Ensure full UI reset on error
+                                stopStreamingMode()
+                                
+                                // CRITICAL: Reset streaming job reference
+                                streamingJob = null
                             }
                         }
                     )
+                    }
                 } else {
                     withContext(Dispatchers.Main) {
                         callbacks.showError("Empty response from the enhanced API")
                         callbacks.setGeneratingState(false)
 
                         // CRITICAL: Stop streaming mode on empty response
-                        chatAdapter.stopStreamingMode()
+                        chatAdapter.stopStreamingModeGradually()
                         messageManager.stopStreamingMode()
                     }
                 }
@@ -1037,7 +1135,7 @@ class AiChatService(
                     callbacks.setGeneratingState(false)
 
                     // CRITICAL: Stop streaming mode on API error
-                    chatAdapter.stopStreamingMode()
+                    chatAdapter.stopStreamingModeGradually()
                     messageManager.stopStreamingMode()
                 }
             }
@@ -1050,7 +1148,7 @@ class AiChatService(
                 callbacks.updateTypingIndicator(false)
 
                 // CRITICAL: Stop streaming mode on exception
-                chatAdapter.stopStreamingMode()
+                chatAdapter.stopStreamingModeGradually()
                 messageManager.stopStreamingMode()
             }
         }
@@ -1058,10 +1156,9 @@ class AiChatService(
 
     // Add this helper method
 // In AiChatService.kt - Update performFallbackWebSearch
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private suspend fun performFallbackWebSearch(
         originalMessageText: String,
-        modelId: String,
         webSearchParams: Map<String, String>,
         messageId: String,
         userMessages: List<AimlApiRequest.Message>
@@ -1139,44 +1236,9 @@ class AiChatService(
 
             return userMessages
         }
-    }    private fun isExplicitWebSearchRequest(message: String): Boolean {
-        val lowerMessage = message.lowercase()
+    }
 
-        val explicitPatterns = listOf(
-            "search the internet",
-            "search the web",
-            "search online",
-            "google",
-            "look up online",
-            "search for",
-            "find information about",
-            "web search",
-            "internet search",
-            "look this up",
-            "find out about",
-            "get current information",
-            "latest information",
-            "recent news",
-            "what's happening",
-            "current events"
-        )
-
-        val hasExplicitPattern = explicitPatterns.any { lowerMessage.contains(it) }
-
-        // Also check for question patterns that typically need current info
-        val questionPatterns = listOf(
-            "what's the latest",
-            "what are the current",
-            "what is happening",
-            "tell me about recent",
-            "any news about",
-            "latest updates on"
-        )
-
-        val hasQuestionPattern = questionPatterns.any { lowerMessage.contains(it) }
-
-        return hasExplicitPattern || hasQuestionPattern
-    }    /**
+    /**
      * Build messages for enhanced approach with smart context
      */
     private fun buildMessagesForEnhancedApproach(conversationId: String, modelId: String): List<AimlApiRequest.Message> {
@@ -1217,17 +1279,10 @@ class AiChatService(
             // Create enhanced system message for non-Claude models
             val systemPrompt = when {
                 ModelValidator.supportsFunctionCalling(modelId) -> {
-                    """You are a helpful AI assistant with enhanced capabilities chatting with ${userName}.
-Address them by name when appropriate to personalize the conversation.
-Current conversation has ${messages.size} messages total.
-
-You can access current information through web search when needed.
-Always cite sources when using web search results and prioritize recent, authoritative information."""
+                    "You are a helpful AI assistant with enhanced capabilities. You have access to web search when needed."
                 }
                 else -> {
-                    """You are a helpful AI assistant chatting with ${userName}.
-Address them by name when appropriate to personalize the conversation.
-Current conversation has ${messages.size} messages total."""
+                    "You are a helpful AI assistant."
                 }
             }
 
@@ -1238,13 +1293,32 @@ Current conversation has ${messages.size} messages total."""
 
                 for (message in messages) {
                     if (message.isUser) {
-                        // CRITICAL FIX: Use prompt field for file messages with extracted content
-                        val messageContent = if (!message.prompt.isNullOrBlank()) {
-                            message.prompt // Use extracted content
+                        // CRITICAL FIX: Handle image messages with structured content
+                        if (message.isImage) {
+                            Timber.d("🖼️ Processing image message: ${message.id}")
+                            val structuredContent = createStructuredContentForImageMessage(message)
+                            if (structuredContent != null) {
+                                formattedMessages.add(AimlApiRequest.Message("user", structuredContent))
+                                Timber.d("✅ Added structured image message to API request")
+                            } else {
+                                // Fallback to text content if structured content creation fails
+                                val messageContent = if (!message.prompt.isNullOrBlank()) {
+                                    message.prompt
+                                } else {
+                                    message.message
+                                }
+                                formattedMessages.add(AimlApiRequest.Message("user", messageContent))
+                                Timber.w("⚠️ Fallback to text content for image message")
+                            }
                         } else {
-                            message.message // Use regular message
+                            // Regular text message
+                            val messageContent = if (!message.prompt.isNullOrBlank()) {
+                                message.prompt // Use extracted content
+                            } else {
+                                message.message // Use regular message
+                            }
+                            formattedMessages.add(AimlApiRequest.Message("user", messageContent))
                         }
-                        formattedMessages.add(AimlApiRequest.Message("user", messageContent))
                     } else if (!message.isGenerating && message.message.isNotBlank()) {
                         formattedMessages.add(AimlApiRequest.Message("assistant", message.message))
                     }
@@ -1330,7 +1404,7 @@ Current conversation has ${messages.size} messages total."""
     }
 
     // Keep original startApiCall for backward compatibility
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     fun startApiCall(
         conversationId: String,
         messageId: String,
@@ -1362,7 +1436,6 @@ Current conversation has ${messages.size} messages total."""
      * Make audio request with proper error handling
      */
     suspend fun makeAudioRequest(
-        modelId: String,
         requestBody: RequestBody
     ): AimlApiResponse? {
         return try {
@@ -1376,6 +1449,8 @@ Current conversation has ${messages.size} messages total."""
             val call = withContext(Dispatchers.IO) {
                 apiService.sendRawMessage(requestBody)
             }
+            
+            // Note: This call will be tracked via OkHttpClient interceptor for cancellation
 
             val response = withContext(Dispatchers.IO) {
                 call.execute()
@@ -1409,7 +1484,7 @@ Current conversation has ${messages.size} messages total."""
                         Timber.d("Audio API JSON response: ${responseString.take(100)}...")
                         
                         try {
-                            Gson().fromJson(responseString, AimlApiResponse::class.java)
+                            JsonUtils.fromJson(responseString, AimlApiResponse::class.java)
                         } catch (e: Exception) {
                             Timber.e(e, "Failed to parse JSON response: $responseString")
                             null
@@ -1464,16 +1539,58 @@ Current conversation has ${messages.size} messages total."""
     }
 
     fun cancelCurrentGeneration() {
-        Timber.d("Cancelling current generation from AiChatService")
+        Timber.d("🛑🛑🛑 CANCELLING current generation from AiChatService")
+        Timber.d("🛑 Current API Job active: ${currentApiJob?.isActive}")
+        Timber.d("🛑 Current Streaming Job active: ${streamingJob?.isActive}")
+        Timber.d("🛑 Service thread: ${Thread.currentThread().name}")
+
+        // CRITICAL FIX: Cancel streaming handler IMMEDIATELY for instant response
+        try {
+            StreamingHandler.cancelAllStreaming()
+            Timber.d("🛑 ✅ Streaming handler cancelled immediately")
+        } catch (e: Exception) {
+            Timber.e(e, "🛑 ❌ Error cancelling streaming handler: ${e.message}")
+        }
+
+        // CRITICAL: Cancel HTTP requests FIRST to stop network activity
+        try {
+            RetrofitInstance.cancelAllRequests()
+            Timber.d("🛑 ✅ HTTP requests cancelled from AiChatService")
+        } catch (e: Exception) {
+            Timber.e(e, "🛑 ❌ Error cancelling HTTP requests from AiChatService: ${e.message}")
+        }
+
+        // CRITICAL: Set generating state to false FIRST to stop monitoring
+        callbacks.setGeneratingState(false)
+        callbacks.updateTypingIndicator(false)
 
         currentApiJob?.cancel()
+        Timber.d("🛑 API Job cancelled")
         currentApiJob = null
+        
+        // CRITICAL: Cancel streaming job separately
+        streamingJob?.cancel()
+        Timber.d("🛑 Streaming Job cancelled")
+        streamingJob = null
 
         // CRITICAL: Ensure streaming mode is stopped when cancelling
         stopStreamingMode()
-
-        callbacks.setGeneratingState(false)
-        callbacks.updateTypingIndicator(false)
+        
+        // CRITICAL: Force stop any adapter or manager streaming
+        chatAdapter.stopStreamingModeGradually()
+        messageManager.stopStreamingMode()
+        
+        // CRITICAL: Stop any background generation service
+        try {
+            // Stop the background service entirely
+            val serviceIntent = Intent(context, BackgroundAiService::class.java)
+            context.stopService(serviceIntent)
+            Timber.d("🛑 Background service stopped")
+        } catch (e: Exception) {
+            Timber.e(e, "Error stopping background service: ${e.message}")
+        }
+        
+        Timber.d("🛑 All generation jobs cancelled successfully")
     }
     
     /**
@@ -1486,6 +1603,10 @@ Current conversation has ${messages.size} messages total."""
             // Cancel current foreground job
             currentApiJob?.cancel()
             currentApiJob = null
+            
+            // Cancel streaming job
+            streamingJob?.cancel()
+            streamingJob = null
             
             // Start background service to continue generation
             BackgroundAiService.startGeneration(context, messageId, conversationId)
@@ -1645,43 +1766,28 @@ Current conversation has ${messages.size} messages total."""
             prompt.append(userText).append("\n\n")
         }
 
+        // Concise image attachment notice (reduced from ~50 tokens to ~10 tokens)
         if (processedImages.isNotEmpty()) {
-            prompt.append("User has attached ${processedImages.size} image(s):\n")
-            processedImages.forEachIndexed { index, image ->
-                prompt.append("Image ${index+1}: ${image.name}\n")
-            }
-            prompt.append("\n")
+            prompt.append("📎 ${processedImages.size} image(s) attached\n\n")
         }
 
+        // Concise document content inclusion (reduced from ~200+ tokens to ~20 tokens)
         if (extractedDocuments.isNotEmpty()) {
             Timber.d("Adding ${extractedDocuments.size} extracted documents to prompt")
-            prompt.append("\n=== DOCUMENT CONTENT PROVIDED BELOW ===\n")
-            prompt.append("The following documents have been uploaded and their content extracted for you to analyze:\n")
-            prompt.append("Total Documents: ${extractedDocuments.size}\n")
-            prompt.append("IMPORTANT: All document content is included in this message - you do not need to request file access.\n\n")
+            prompt.append("📄 ${extractedDocuments.size} document(s):\n")
             
             extractedDocuments.forEachIndexed { index, doc ->
-                prompt.append("DOCUMENT ${index+1}:\n")
-                prompt.append("Name: ${doc.name}\n")
-                prompt.append("Type: ${doc.mimeType}\n")
-                prompt.append("Size: ${FileUtil.formatFileSize(doc.size)}\n")
-
                 if (doc.extractedContent.isNotEmpty()) {
-                    // Count tokens in the extracted content
                     val contentTokens = TokenValidator.estimateTokenCount(doc.extractedContent)
-                    prompt.append("Content Tokens: $contentTokens\n")
-                    prompt.append("\n--- COMPLETE EXTRACTED CONTENT FROM ${doc.name} ---\n")
+                    prompt.append("\n${doc.name}:\n")
                     prompt.append(doc.extractedContent)
-                    prompt.append("\n--- END OF EXTRACTED CONTENT FROM ${doc.name} ---\n\n")
-
+                    prompt.append("\n")
                     Timber.d("Added ${doc.extractedContent.length} chars ($contentTokens tokens) of extracted content for ${doc.name}")
                 } else {
                     Timber.w("Document ${doc.name} has empty extracted content!")
-                    prompt.append("⚠️ Content extraction failed for this document\n\n")
+                    prompt.append("⚠️ ${doc.name}: extraction failed\n")
                 }
             }
-            prompt.append("=== END OF DOCUMENT CONTENT ===\n\n")
-            prompt.append("Please analyze the provided document content above to answer the user's question.\n")
         } else {
             Timber.d("No extracted documents to add to prompt")
         }
@@ -1690,24 +1796,30 @@ Current conversation has ${messages.size} messages total."""
     }
 
     private fun validateTokenLimit(message: String, modelId: String, isSubscribed: Boolean): Boolean {
-        val (wouldExceed, remainingTokens, _) =
-            conversationTokenManager.wouldExceedLimit(message, modelId, isSubscribed)
+        try {
+            // Use TokenValidator for simple token limit validation
+            val messageTokens = TokenValidator.getAccurateTokenCount(message, modelId)
+            val maxTokens = TokenValidator.getEffectiveMaxInputTokens(modelId, isSubscribed)
+            
+            if (messageTokens > maxTokens) {
+                val errorMessage = if (isSubscribed) {
+                    "Your message ($messageTokens tokens) exceeds the model's token limit ($maxTokens tokens). Please shorten your message."
+                } else {
+                    "Your message exceeds the free tier token limit. Upgrade to Pro for higher limits, or shorten your message."
+                }
 
-        if (wouldExceed) {
-            val errorMessage = if (isSubscribed) {
-                "Your message would exceed the model's token limit. You have $remainingTokens tokens available for this message."
-            } else {
-                "Your message would exceed the free tier token limit. Upgrade to Pro for higher limits, or shorten your message."
+                callbacks.showError(errorMessage)
+                return false
             }
 
-            callbacks.showError(errorMessage)
-            return false
+            return true
+        } catch (e: Exception) {
+            Timber.e(e, "Error validating token limit")
+            return true // Allow the message to proceed if validation fails
         }
-
-        return true
     }
 
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     fun generateResponseForEditedMessage(
         conversationId: String,
         message: String,
@@ -1748,7 +1860,7 @@ Current conversation has ${messages.size} messages total."""
         )
     }
 
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     fun sendTranslationMessage(
         userText: String,
         sourceLanguage: String,
@@ -1801,7 +1913,7 @@ Current conversation has ${messages.size} messages total."""
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun startTranslationApiCall(
         messageId: String,
         translationContext: String,
@@ -1863,15 +1975,13 @@ Current conversation has ${messages.size} messages total."""
                 val requestBody = ModelApiHandler.createRequestBody(
                     apiRequest = request,
                     modelId = modelId,
-                    useWebSearch = false,
-                    messageText = userText,
                     context = context,
-                    audioEnabled = false,
-                    audioFormat = "mp3",
-                    voiceType = "alloy"
+                    audioEnabled = false
                 )
 
                 val response = withContext(Dispatchers.IO) {
+                    // Note: sendRawMessageStreaming returns Response, not Call
+                    // So we track the individual calls through the client interceptor
                     apiService.sendRawMessageStreaming(requestBody)
                 }
 
@@ -1929,7 +2039,7 @@ Current conversation has ${messages.size} messages total."""
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun handleStreamingResponse(
         responseBody: ResponseBody,
         messagePosition: Int,
@@ -1938,7 +2048,7 @@ Current conversation has ${messages.size} messages total."""
         // CRITICAL: Ensure streaming mode is active before processing begins
         startStreamingMode()
 
-        coroutineScope.launch {
+        streamingJob = coroutineScope.launch {
             try {
                 StreamingHandler.processStreamingResponse(
                     responseBody = responseBody,
@@ -1958,26 +2068,37 @@ Current conversation has ${messages.size} messages total."""
 
                             // CRITICAL: Stop streaming mode when complete
                             stopStreamingMode()
+                            
+                            // CRITICAL: Reset streaming job reference
+                            streamingJob = null
                         }
                     },
                     onError = { errorMessage ->
                         coroutineScope.launch(Dispatchers.Main) {
-                            callbacks.showError("Streaming error: $errorMessage")
+                            callbacks.showError("Generation error: Please try again")
                             callbacks.setGeneratingState(false)
+                            callbacks.updateTypingIndicator(false)
 
                             // CRITICAL: Stop streaming mode on error
                             stopStreamingMode()
+                            
+                            // CRITICAL: Reset streaming job reference
+                            streamingJob = null
                         }
                     }
                 )
             } catch (e: Exception) {
                 Timber.e(e, "Error in streaming response: ${e.message}")
                 coroutineScope.launch(Dispatchers.Main) {
-                    callbacks.showError("Error processing response: ${e.message}")
+                    callbacks.showError("Generation error: Please try again")
                     callbacks.setGeneratingState(false)
+                    callbacks.updateTypingIndicator(false)
 
                     // CRITICAL: Stop streaming mode on exception
                     stopStreamingMode()
+                    
+                    // CRITICAL: Reset streaming job reference
+                    streamingJob = null
                 }
             }
         }
@@ -2011,7 +2132,7 @@ Current conversation has ${messages.size} messages total."""
         isStreamingActive = false
         serviceScope.launch(Dispatchers.Main) {
             // Stop streaming mode in ChatAdapter
-            chatAdapter.stopStreamingMode()
+            chatAdapter.stopStreamingModeGradually()
 
             // Stop streaming mode in MessageManager
             messageManager.stopStreamingMode()
@@ -2063,7 +2184,7 @@ Current conversation has ${messages.size} messages total."""
 
             val parsedError = try {
                 JSONObject(errorBody)
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 null
             }
 
@@ -2076,7 +2197,7 @@ Current conversation has ${messages.size} messages total."""
                     } else {
                         messageStr
                     }
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     it.optString("message", "")
                 }
             } ?: errorBody
@@ -2191,7 +2312,7 @@ Current conversation has ${messages.size} messages total."""
     }
 
     private fun updateModelCapabilities(modelId: String) {
-        scope.launch {
+        serviceScope.launch {
             try {
                 val config = ModelConfigManager.getConfig(modelId)
                 if (config != null) {
@@ -2217,6 +2338,201 @@ Current conversation has ${messages.size} messages total."""
         callbacks.markFilesWithError(fileUris)
     }
 
+    /**
+     * Process OCR request using OCR endpoint with multipart file upload
+     */
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    private suspend fun processOcrRequest(
+        messagePosition: Int,
+        originalMessageText: String?,
+        messageId: String,
+        fileUris: List<Uri>
+    ) {
+        try {
+            Timber.d("🔍 Processing OCR request with ${fileUris.size} files")
+
+            RetrofitInstance.getApiService(
+                RetrofitInstance.ApiServiceType.AIMLAPI,
+                AimlApiService::class.java
+            )
+
+            // Process each file for OCR
+            for (fileUri in fileUris) {
+                // CRITICAL: Check if generation was cancelled
+                if (!callbacks.isGenerating()) {
+                    Timber.d("🛑 OCR processing cancelled by user")
+                    return
+                }
+                try {
+                    val mimeType = context.contentResolver.getType(fileUri) ?: ""
+                    val fileName = getFileName(fileUri)
+                    
+                    Timber.d("🔍 Processing OCR file: $fileName, MIME: $mimeType")
+                    
+                    // Create multipart file for OCR
+                    val fileInputStream = context.contentResolver.openInputStream(fileUri)
+                    if (fileInputStream == null) {
+                        Timber.e("Cannot read file: $fileName")
+                        continue
+                    }
+                    
+                    val fileBytes = fileInputStream.use { it.readBytes() }
+                    val requestFile = RequestBody.create(
+                        mimeType.toMediaTypeOrNull(),
+                        fileBytes
+                    )
+                    
+                    val filePart = okhttp3.MultipartBody.Part.createFormData(
+                        "document", 
+                        fileName, 
+                        requestFile
+                    )
+                    
+                    // Add prompt if provided
+                    val promptPart = originalMessageText?.let { text ->
+                        text.toRequestBody("text/plain".toMediaTypeOrNull())
+                    }
+                    
+                    Timber.d("🔍 Calling OCR API for file: $fileName")
+                    
+                    // CRITICAL: Final check before API call
+                    if (!callbacks.isGenerating()) {
+                        Timber.d("🛑 OCR API call cancelled by user")
+                        return
+                    }
+                    
+                    // Call OCR API with extended timeout service
+                    val ocrApiService = getOcrApiService()
+                    val call = ocrApiService.performOCR(
+                        document = filePart,
+                        prompt = promptPart
+                    )
+                    
+                    val response = withContext(Dispatchers.IO) {
+                        executeWithRetry(call, fileName)
+                    }
+                    
+                    // CRITICAL: Check cancellation after API response
+                    if (!callbacks.isGenerating()) {
+                        Timber.d("🛑 OCR processing cancelled after API response")
+                        return
+                    }
+                    
+                    if (response.isSuccessful) {
+                        val responseBody = response.body()
+                        if (responseBody != null) {
+                            // Extract OCR result from response
+                            val ocrResult = responseBody.choices?.firstOrNull()?.message?.content
+                                ?: responseBody.content
+                                ?: "OCR processing completed but no content returned"
+                            
+                            Timber.d("🔍 OCR successful for $fileName: ${ocrResult.length} chars")
+                            
+                            // Update the AI message with OCR result
+                            withContext(Dispatchers.Main) {
+                                val messages = chatAdapter.currentList.toMutableList()
+                                val messageToUpdate = messages.find { it.id == messageId }
+                                
+                                if (messageToUpdate != null) {
+                                    // Update message properties
+                                    messageToUpdate.message = ocrResult
+                                    messageToUpdate.isGenerating = false
+                                    messageToUpdate.isOcrDocument = true
+                                    messageToUpdate.processCompleted = true
+                                    
+                                    // Update through message manager
+                                    messageManager.updateMessageContent(messageId, ocrResult)
+                                    
+                                    // Update adapter
+                                    chatAdapter.notifyItemChanged(messagePosition)
+                                    
+                                    callbacks.setGeneratingState(false)
+                                    callbacks.updateTypingIndicator(false)
+                                    callbacks.scrollToBottom()
+                                }
+                            }
+                            return // Successfully processed
+                        }
+                    } else {
+                        val errorBody = response.errorBody()?.string() ?: "Unknown error"
+                        Timber.e("🔍 OCR API error for $fileName: ${response.code()} - $errorBody")
+                        
+                        // Handle specific HTTP error codes with user-friendly messages
+                        val errorMessage = when (response.code()) {
+                            502 -> "OCR service is temporarily unavailable (502 Bad Gateway). Please try again in a few moments."
+                            503 -> "OCR service is temporarily overloaded (Service Unavailable). Please try again later."
+                            500 -> "OCR service encountered an internal error. Please try again or contact support."
+                            429 -> "Too many requests. Please wait before trying again."
+                            413 -> "File is too large for OCR processing. Please try with a smaller file."
+                            415 -> "Unsupported file format. Please try with a different image format (PNG, JPG, PDF)."
+                            401, 403 -> "Authentication error with OCR service. Please check your API configuration."
+                            404 -> "OCR service endpoint not found. Please contact support."
+                            408 -> "Request timeout. The file may be too large or connection is slow."
+                            else -> "OCR service error (${response.code()}). Please try again later."
+                        }
+                        
+                        withContext(Dispatchers.Main) {
+                            callbacks.showError(errorMessage)
+                            callbacks.setGeneratingState(false)
+                            callbacks.updateTypingIndicator(false)
+                        }
+                        continue // Try next file if available
+                    }
+                } catch (e: Exception) {
+                    val fileName = getFileName(fileUri)
+                    Timber.e(e, "🔍 Error processing OCR for file: $fileName")
+                    
+                    // Provide specific error messages based on exception type
+                    when (e) {
+                        is java.net.ProtocolException -> {
+                            if (e.message?.contains("unexpected end of stream") == true) {
+                                "File upload interrupted. This may be due to large file size or network issues. Please try again with a smaller file or check your connection."
+                            } else {
+                                "Network protocol error: ${e.message}"
+                            }
+                        }
+                        is java.net.SocketTimeoutException -> "Request timed out. The file may be too large or the server is busy. Please try again."
+                        is java.net.UnknownHostException -> "Unable to connect to OCR service. Please check your internet connection."
+                        is java.net.ConnectException -> "Failed to connect to OCR service. Please try again later."
+                        is java.io.IOException -> "File upload error: ${e.message}"
+                        else -> "OCR processing failed: ${e.localizedMessage ?: e.message}"
+                    }
+                    
+                    withContext(Dispatchers.Main) {
+                        callbacks.showError("Processing error: Please try again")
+                        callbacks.setGeneratingState(false)
+                        callbacks.updateTypingIndicator(false)
+                        
+                        // CRITICAL: Ensure full UI reset on OCR error
+                        stopStreamingMode()
+                    }
+                    continue // Try next file if available
+                }
+            }
+            
+            // If we get here, all files failed
+            withContext(Dispatchers.Main) {
+                callbacks.showError("Processing error: Please try again")
+                callbacks.setGeneratingState(false)
+                callbacks.updateTypingIndicator(false)
+                
+                // CRITICAL: Ensure full UI reset when all files fail
+                stopStreamingMode()
+            }
+            
+        } catch (e: Exception) {
+            Timber.e(e, "🔍 Fatal error in OCR processing: ${e.message}")
+            withContext(Dispatchers.Main) {
+                callbacks.showError("Processing error: Please try again")
+                callbacks.setGeneratingState(false)
+                callbacks.updateTypingIndicator(false)
+                
+                // CRITICAL: Ensure full UI reset on fatal OCR error
+                stopStreamingMode()
+            }
+        }
+    }
+
     // Utility data classes and methods
     data class ProcessedImageInfo(
         val uri: String,
@@ -2234,14 +2550,174 @@ Current conversation has ${messages.size} messages total."""
     private fun getFileName(uri: Uri): String {
         return FileUtil.getFileNameFromUri(context, uri) ?: uri.lastPathSegment ?: "file"
     }
+
+    /**
+     * Execute OCR request with retry logic for improved reliability
+     */
+    private fun executeWithRetry(call: retrofit2.Call<AimlApiResponse>, fileName: String): retrofit2.Response<AimlApiResponse> {
+        var lastException: Exception? = null
+        val maxRetries = 3
+        
+        repeat(maxRetries) { attempt ->
+            try {
+                val response = call.clone().execute()
+                
+                // Check for server errors that should be retried
+                val shouldRetryHttpError = when (response.code()) {
+                    502, 503, 504 -> true // Bad Gateway, Service Unavailable, Gateway Timeout
+                    500 -> attempt < 1 // Only retry 500 once
+                    else -> false
+                }
+                
+                if (shouldRetryHttpError && attempt < maxRetries - 1) {
+                    val waitTime = when (response.code()) {
+                        502 -> (attempt + 1) * 3000L // 3s, 6s, 9s for Bad Gateway
+                        503 -> (attempt + 1) * 5000L // 5s, 10s, 15s for Service Unavailable
+                        else -> (attempt + 1) * 2000L // Default backoff
+                    }
+                    Timber.w("🔍 OCR server error ${response.code()} for $fileName, retrying in ${waitTime}ms (attempt ${attempt + 1})")
+                    response.errorBody()?.close()
+                    
+                    try {
+                        Thread.sleep(waitTime)
+                    } catch (ie: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        throw ie
+                    }
+                    return@repeat // Continue to next attempt
+                }
+                
+                // Log successful attempts after retries
+                if (attempt > 0) {
+                    Timber.d("🔍 OCR request succeeded on attempt ${attempt + 1} for file: $fileName")
+                }
+                
+                return response
+                
+            } catch (e: Exception) {
+                lastException = e
+                val shouldRetry = when (e) {
+                    is java.net.ProtocolException -> {
+                        // Retry on "unexpected end of stream" which often resolves on retry
+                        e.message?.contains("unexpected end of stream") == true
+                    }
+                    is java.net.SocketTimeoutException,
+                    is java.net.SocketException,
+                    is java.io.IOException -> {
+                        // Retry on network-related issues
+                        !e.message?.contains("Canceled")!! // Don't retry if explicitly canceled
+                    }
+                    else -> false
+                }
+                
+                if (shouldRetry && attempt < maxRetries - 1) {
+                    val waitTime = (attempt + 1) * 2000L // Progressive backoff: 2s, 4s, 6s
+                    Timber.w("🔍 OCR attempt ${attempt + 1} failed for $fileName: ${e.message}. Retrying in ${waitTime}ms...")
+                    
+                    try {
+                        Thread.sleep(waitTime)
+                    } catch (ie: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        throw ie
+                    }
+                } else {
+                    Timber.e(e, "🔍 OCR request failed after ${attempt + 1} attempts for file: $fileName")
+                    throw e
+                }
+            }
+        }
+        
+        // This should never be reached due to the throw in the catch block
+        throw lastException ?: Exception("OCR request failed after $maxRetries attempts")
+    }
+
+    /**
+     * Create a specialized API service for OCR operations with extended timeouts
+     */
+    private fun getOcrApiService(): AimlApiService {
+        return RetrofitInstance.createCustomOcrService()
+    }
     private fun getToolStatusText(toolId: String): Pair<String, Int> {
         return when (toolId) {
-            "web_search" -> Pair("Searching the web", Color.parseColor("#2563EB"))
+            "web_search" -> Pair("Searching the web", "#2563EB".toColorInt())
             "calculator", "spreadsheet_creator", "weather", "translator", "wikipedia" ->
-                Pair("Analyzing", Color.parseColor("#757575"))
-            else -> Pair("Processing", Color.parseColor("#757575"))
+                Pair("Analyzing", "#757575".toColorInt())
+            else -> Pair("Processing", "#757575".toColorInt())
         }
     }
+    /**
+     * Creates structured content for image messages to be sent to multimodal AI models
+     * Converts images to base64 and creates ContentPart arrays for API requests
+     */
+    private fun createStructuredContentForImageMessage(message: ChatMessage): List<AimlApiRequest.ContentPart>? {
+        return try {
+            Timber.d("🖼️ Creating structured content for image message: ${message.id}")
+            
+            // Parse GroupedFileMessage JSON from message content
+            val groupedMessage = JsonUtils.fromJson(message.message, ChatAdapter.GroupedFileMessage::class.java)
+            if (groupedMessage == null) {
+                Timber.e("Failed to parse GroupedFileMessage JSON: ${message.message}")
+                return null
+            }
+            
+            val contentParts = mutableListOf<AimlApiRequest.ContentPart>()
+            
+            // Add text content if present
+            if (!groupedMessage.text.isNullOrBlank()) {
+                contentParts.add(AimlApiRequest.ContentPart(
+                    type = "text",
+                    text = groupedMessage.text
+                ))
+                Timber.d("✅ Added text content: ${groupedMessage.text.take(50)}...")
+            }
+            
+            // Process images and convert to base64
+            for (imageInfo in groupedMessage.images) {
+                try {
+                    val imageUri = Uri.parse(imageInfo.uri)
+                    Timber.d("🖼️ Processing image: ${imageInfo.name} (${imageInfo.type})")
+                    
+                    // Read image data and encode to base64
+                    val inputStream = context.contentResolver.openInputStream(imageUri)
+                    if (inputStream != null) {
+                        val imageBytes = inputStream.readBytes()
+                        val base64String = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
+                        
+                        // Create image content part with base64 data
+                        val imageContentPart = AimlApiRequest.ContentPart(
+                            type = "image_url",
+                            imageUrl = AimlApiRequest.ImageUrl(
+                                url = "data:${imageInfo.type};base64,$base64String",
+                                detail = "auto"
+                            )
+                        )
+                        contentParts.add(imageContentPart)
+                        
+                        inputStream.close()
+                        Timber.d("✅ Successfully converted ${imageInfo.name} to base64 (${imageBytes.size} bytes)")
+                    } else {
+                        Timber.e("Failed to open input stream for image: ${imageInfo.uri}")
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "Error processing image ${imageInfo.name}: ${e.message}")
+                    // Continue processing other images even if one fails
+                }
+            }
+            
+            if (contentParts.isEmpty()) {
+                Timber.w("No content parts created for image message")
+                return null
+            }
+            
+            Timber.d("✅ Created ${contentParts.size} content parts for image message")
+            return contentParts
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Error creating structured content for image message: ${e.message}")
+            return null
+        }
+    }
+
     private fun getFileSize(uri: Uri): Long {
         return try {
             context.contentResolver.openFileDescriptor(uri, "r")?.use {

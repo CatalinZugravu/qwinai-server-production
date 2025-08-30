@@ -61,7 +61,7 @@
                 android:background="@drawable/circle_background_white"
                 android:padding="3dp"
                 android:visibility="gone"
-                app:tint="?attr/colorPrimary" />
+                app:tint="@color/colorPrimary" />
 
         </LinearLayout>
 
@@ -94,7 +94,7 @@
             android:layout_margin="8dp"
             android:visibility="gone"
             android:background="@drawable/circle_background_white"
-            android:buttonTint="?attr/colorPrimary" />
+            android:buttonTint="@color/colorPrimary" />
 
     </FrameLayout>
 

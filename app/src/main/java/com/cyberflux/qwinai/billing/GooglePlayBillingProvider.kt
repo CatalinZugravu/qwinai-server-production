@@ -4,19 +4,21 @@ import android.app.Activity
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import com.android.billingclient.api.AcknowledgePurchaseParams
 import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.BillingClientStateListener
 import com.android.billingclient.api.BillingFlowParams
 import com.android.billingclient.api.BillingResult
+import com.android.billingclient.api.PendingPurchasesParams
 import com.android.billingclient.api.ProductDetails
 import com.android.billingclient.api.Purchase
 import com.android.billingclient.api.PurchasesUpdatedListener
 import com.android.billingclient.api.QueryProductDetailsParams
+import com.android.billingclient.api.QueryProductDetailsResult
 import com.android.billingclient.api.QueryPurchasesParams
-// import com.android.billingclient.api.PendingPurchasesParams // Not available in 6.2.1
 import com.cyberflux.qwinai.utils.PrefsManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,18 +30,15 @@ import timber.log.Timber
  */
 class GooglePlayBillingProvider(private val context: Context) : BillingProvider {
 
-    // LiveData fields
-    private val _subscriptionStatus = MutableLiveData<Boolean>()
-    override val subscriptionStatus: LiveData<Boolean>
-        get() = _subscriptionStatus
+    // StateFlow fields
+    private val _subscriptionStatus = MutableStateFlow(false)
+    override val subscriptionStatus: StateFlow<Boolean> = _subscriptionStatus.asStateFlow()
 
-    private val _productDetails = MutableLiveData<List<ProductInfo>>()
-    override val productDetails: LiveData<List<ProductInfo>>
-        get() = _productDetails
+    private val _productDetails = MutableStateFlow<List<ProductInfo>>(emptyList())
+    override val productDetails: StateFlow<List<ProductInfo>> = _productDetails.asStateFlow()
 
-    private val _errorMessage = MutableLiveData<String>()
-    override val errorMessage: LiveData<String>
-        get() = _errorMessage
+    private val _errorMessage = MutableStateFlow("")
+    override val errorMessage: StateFlow<String> = _errorMessage.asStateFlow()
 
     // Google Play Billing Client
     private lateinit var billingClient: BillingClient
@@ -64,11 +63,11 @@ class GooglePlayBillingProvider(private val context: Context) : BillingProvider 
         } else if (billingResult.responseCode == BillingClient.BillingResponseCode.USER_CANCELED) {
             // User canceled the purchase flow
             Timber.d("User canceled the purchase")
-            _errorMessage.postValue("Purchase canceled")
+            _errorMessage.value = "Purchase canceled"
         } else {
             // Handle other error cases
             Timber.e("Purchase failed: ${billingResult.responseCode}, ${billingResult.debugMessage}")
-            _errorMessage.postValue("Purchase failed: ${billingResult.debugMessage}")
+            _errorMessage.value = "Purchase failed: ${billingResult.debugMessage}"
         }
     }
 
@@ -79,7 +78,11 @@ class GooglePlayBillingProvider(private val context: Context) : BillingProvider 
         Timber.d("Initializing Google Play Billing Client")
         billingClient = BillingClient.newBuilder(context)
             .setListener(purchasesUpdatedListener)
-            .enablePendingPurchases()
+            .enablePendingPurchases(
+                PendingPurchasesParams.newBuilder()
+                    .enableOneTimeProducts()
+                    .build()
+            )
             .build()
 
         connectToPlayBilling()
@@ -107,7 +110,7 @@ class GooglePlayBillingProvider(private val context: Context) : BillingProvider 
                     // Connection problem
                     Timber.e("Google Play Billing setup failed: ${billingResult.responseCode}, ${billingResult.debugMessage}")
                     isConnected = false
-                    _errorMessage.postValue("Google Play Billing setup failed: ${billingResult.debugMessage}")
+                    _errorMessage.value = "Google Play Billing setup failed: ${billingResult.debugMessage}"
                 }
             }
 
@@ -154,10 +157,12 @@ class GooglePlayBillingProvider(private val context: Context) : BillingProvider 
             .setProductList(productList)
             .build()
 
-        billingClient.queryProductDetailsAsync(params) { billingResult, productDetailsList ->
+        billingClient.queryProductDetailsAsync(params) { billingResult: BillingResult, queryProductDetailsResult: QueryProductDetailsResult ->
             Timber.d("Google Play product details query result: ${billingResult.responseCode}, ${billingResult.debugMessage}")
             
-            if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && productDetailsList != null) {
+            if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                val productDetailsList = queryProductDetailsResult.productDetailsList ?: emptyList()
+                
                 if (productDetailsList.isNotEmpty()) {
                     Timber.d("Found ${productDetailsList.size} Google products")
                     
@@ -176,21 +181,20 @@ class GooglePlayBillingProvider(private val context: Context) : BillingProvider 
                     }
 
                     // Update the available products
-                    _productDetails.postValue(commonProducts)
+                    _productDetails.value = commonProducts
 
                     // Log details for debugging
                     for (product in productDetailsList) {
                         Timber.d("Google product: ${product.productId}, ${product.title}")
                     }
                 } else {
-                    // No products found
-                    Timber.e("No Google Play subscription products found")
-                    _errorMessage.postValue("No subscription products found. Please check your Google Play Console configuration.")
+                    Timber.w("No products found")
+                    _errorMessage.value = "No subscription products available"
                 }
             } else {
-                // Query failed
+                // Query failed or no products found
                 Timber.e("Failed to query Google Play product details: ${billingResult.responseCode}, ${billingResult.debugMessage}")
-                _errorMessage.postValue("Failed to retrieve subscription details: ${billingResult.debugMessage}")
+                _errorMessage.value = "Failed to retrieve subscription details: ${billingResult.debugMessage}"
             }
         }
     }
@@ -243,7 +247,7 @@ class GooglePlayBillingProvider(private val context: Context) : BillingProvider 
                     } else {
                         // No active subscriptions in Google Play
                         // Check Huawei status before concluding user has no active subscriptions
-                        _subscriptionStatus.postValue(false)
+                        _subscriptionStatus.value = false
                     }
                 }
             } else {
@@ -260,13 +264,13 @@ class GooglePlayBillingProvider(private val context: Context) : BillingProvider 
 
         if (!isConnected) {
             connectToPlayBilling()
-            _errorMessage.postValue("Google Play Billing service not connected. Please try again.")
+            _errorMessage.value = "Google Play Billing service not connected. Please try again."
             return
         }
 
         // Check if we need to query products first
         if (googleProductDetails.isEmpty()) {
-            _errorMessage.postValue("Loading product details...")
+            _errorMessage.value = "Loading product details..."
             queryProducts()
             Handler(Looper.getMainLooper()).postDelayed({
                 launchBillingFlow(activity, productId)
@@ -278,7 +282,7 @@ class GooglePlayBillingProvider(private val context: Context) : BillingProvider 
         val productDetails = googleProductDetails[productId]
         if (productDetails == null) {
             Timber.e("No product details found for: $productId")
-            _errorMessage.postValue("Subscription details not available. Please try again later.")
+            _errorMessage.value = "Subscription details not available. Please try again later."
 
             // Refresh products and try again
             queryProducts()
@@ -289,7 +293,7 @@ class GooglePlayBillingProvider(private val context: Context) : BillingProvider 
         val offerToken = productDetails.subscriptionOfferDetails?.firstOrNull()?.offerToken
         if (offerToken == null) {
             Timber.e("No offer token found for product: $productId")
-            _errorMessage.postValue("Subscription offer details not available. Please try again later.")
+            _errorMessage.value = "Subscription offer details not available. Please try again later."
             return
         }
 
@@ -311,11 +315,11 @@ class GooglePlayBillingProvider(private val context: Context) : BillingProvider 
 
             if (billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
                 Timber.e("Failed to launch Google Play billing flow: ${billingResult.responseCode}, ${billingResult.debugMessage}")
-                _errorMessage.postValue("Failed to start subscription process: ${billingResult.debugMessage}")
+                _errorMessage.value = "Failed to start subscription process: ${billingResult.debugMessage}"
             }
         } catch (e: Exception) {
             Timber.e(e, "Exception launching billing flow")
-            _errorMessage.postValue("Error launching subscription: ${e.message}")
+            _errorMessage.value = "Error launching subscription: ${e.message}"
         }
     }
 
@@ -329,7 +333,7 @@ class GooglePlayBillingProvider(private val context: Context) : BillingProvider 
             // Verify purchase signature first
             if (!verifyPurchase(purchase)) {
                 Timber.e("Purchase signature verification failed")
-                _errorMessage.postValue("Purchase verification failed. Please contact support.")
+                _errorMessage.value = "Purchase verification failed. Please contact support."
                 return
             }
 
@@ -346,7 +350,7 @@ class GooglePlayBillingProvider(private val context: Context) : BillingProvider 
                         processPurchaseSuccess(purchase)
                     } else {
                         Timber.e("Failed to acknowledge purchase: ${billingResult.responseCode}, ${billingResult.debugMessage}")
-                        _errorMessage.postValue("Failed to complete purchase. Please try again.")
+                        _errorMessage.value = "Failed to complete purchase. Please try again."
                     }
                 }
             } else {
@@ -356,7 +360,7 @@ class GooglePlayBillingProvider(private val context: Context) : BillingProvider 
         } else if (purchase.purchaseState == Purchase.PurchaseState.PENDING) {
             // Handle pending purchases (e.g., waiting for payment)
             Timber.d("Purchase is pending. Payment may be processing.")
-            _errorMessage.postValue("Your subscription is pending. This may be due to a pending payment.")
+            _errorMessage.value = "Your subscription is pending. This may be due to a pending payment."
         }
     }
 
@@ -382,7 +386,7 @@ class GooglePlayBillingProvider(private val context: Context) : BillingProvider 
 
         // Update subscription status in PrefsManager
         PrefsManager.setSubscribed(context, true, subscriptionDays)
-        _subscriptionStatus.postValue(true)
+        _subscriptionStatus.value = true
         
         Timber.d("Purchase processed successfully: ${purchase.products.joinToString()}, days: $subscriptionDays")
     }

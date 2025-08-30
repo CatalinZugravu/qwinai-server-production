@@ -64,15 +64,16 @@ class ModelSpinnerAdapter(
         val holder: ViewHolder
 
         if (convertView == null) {
-            // Use a more elegant layout for the closed spinner
-            view = inflater.inflate(R.layout.spinner_selected_item, parent, false)
+            // Use custom transparent layout for the closed spinner
+            view = inflater.inflate(R.layout.spinner_item_custom, parent, false)
             holder = ViewHolder()
-            holder.textView = view.findViewById(R.id.tvModelName)
-            holder.iconView = view.findViewById(R.id.ivModelIcon)
-            holder.proBadge = view.findViewById(R.id.tvProBadge)
-            holder.checkmark = view.findViewById(R.id.ivCheckmark)
-            holder.background = view.findViewById(R.id.selectedItemBackground)
-            holder.warningIndicator = view.findViewById(R.id.ivWarningIndicator)
+            holder.textView = view.findViewById(R.id.text1)
+            // For the custom layout, we don't need all these components
+            holder.iconView = null
+            holder.proBadge = null
+            holder.checkmark = null
+            holder.background = null
+            holder.warningIndicator = null
             view.tag = holder
         } else {
             view = convertView
@@ -82,70 +83,29 @@ class ModelSpinnerAdapter(
         // Use the selectedPosition for the main view
         val model = getItem(selectedPosition)
 
-        // Set model name with proper styling
+        // Set model name with proper styling (clean and simple)
         holder.textView.text = model.displayName
         holder.textView.setTypeface(Typeface.DEFAULT_BOLD)
         holder.textView.maxLines = 1  // Always single line for the closed spinner
 
-        // Set the icon with proper size and padding
-        val iconResource = ModelIconUtils.getIconResourceForModel(model.id)
-        holder.iconView.setImageResource(iconResource)
-        holder.iconView.visibility = View.VISIBLE
-
-        // Add subtle scaling animation on first display
-        if (holder.iconView.scaleX == 1.0f) {
-            holder.iconView.scaleX = 0.8f
-            holder.iconView.scaleY = 0.8f
-            holder.iconView.animate()
-                .scaleX(1.0f)
-                .scaleY(1.0f)
-                .setDuration(300)
-                .setInterpolator(OvershootInterpolator())
-                .start()
-        }
-
-        // Show PRO badge for non-free models with enhanced gradient
-        if (!model.isFree) {
-            holder.proBadge.visibility = View.VISIBLE
-            holder.proBadge.background = ContextCompat.getDrawable(context, R.drawable.premium_badge_gradient)
-        } else {
-            holder.proBadge.visibility = View.GONE
-        }
-
-        // Never show checkmark in the closed spinner
-        holder.checkmark.visibility = View.GONE
-
-        // Keep text with proper contrast - FIXED: Using direct color value instead of reference
-        holder.textView.setTypeface(holder.textView.typeface, Typeface.BOLD)
+        // Simple styling for custom layout - just text and arrow
         holder.textView.setTextColor(ContextCompat.getColor(context, R.color.text_primary))
 
-        // Handle translation mode styling
+        // Handle translation mode styling (simplified for clean layout)
         if (isTranslationMode()) {
             val isSupported = TranslationUtils.supportsTranslation(model.id)
             if (!isSupported) {
                 // Dim the spinner if selected model doesn't support translation
                 view.alpha = 0.5f
                 holder.textView.setTextColor(ContextCompat.getColor(context, R.color.text_disabled))
-                holder.iconView.alpha = 0.5f
-
-                // Add warning indicator
-                holder.warningIndicator?.visibility = View.VISIBLE
             } else {
                 view.alpha = 1.0f
                 holder.textView.setTextColor(ContextCompat.getColor(context, R.color.text_primary))
-                holder.iconView.alpha = 1.0f
-
-                // Hide warning indicator
-                holder.warningIndicator?.visibility = View.GONE
             }
         } else {
             // Reset styling for normal mode
             view.alpha = 1.0f
             holder.textView.setTextColor(ContextCompat.getColor(context, R.color.text_primary))
-            holder.iconView.alpha = 1.0f
-
-            // Hide warning indicator
-            holder.warningIndicator?.visibility = View.GONE
         }
 
         return view
@@ -157,15 +117,16 @@ class ModelSpinnerAdapter(
         val holder: ViewHolder
 
         if (convertView == null) {
-            // Use enhanced dropdown item layout with proper spacing and dividers
-            view = inflater.inflate(R.layout.spinner_dropdown_item, parent, false)
+            // Use custom dropdown item layout
+            view = inflater.inflate(R.layout.spinner_dropdown_item_custom, parent, false)
             holder = ViewHolder()
-            holder.textView = view.findViewById(R.id.tvModelName)
-            holder.iconView = view.findViewById(R.id.ivModelIcon)
-            holder.proBadge = view.findViewById(R.id.tvProBadge)
-            holder.checkmark = view.findViewById(R.id.ivCheckmark)
-            holder.divider = view.findViewById(R.id.itemDivider)
-            holder.rootLayout = view.findViewById(R.id.dropdownItemRoot)
+            holder.textView = view.findViewById(R.id.text1)
+            // Simplified dropdown - just text for clean appearance
+            holder.iconView = null
+            holder.proBadge = null
+            holder.checkmark = null
+            holder.divider = null
+            holder.rootLayout = null
             view.tag = holder
         } else {
             view = convertView
@@ -178,88 +139,38 @@ class ModelSpinnerAdapter(
         val translationActive = isTranslationMode()
         val isCompatibleWithTranslation = TranslationUtils.supportsTranslation(model.id)
 
-        // Set model name with enhanced typography
+        // Set model name with clean typography
         holder.textView.text = model.displayName
-        holder.textView.maxLines = 2 // Allow two lines for dropdown items
+        holder.textView.maxLines = 1 // Keep single line for clean appearance
 
-        // Set icon with better sizing and padding
-        val iconResource = ModelIconUtils.getIconResourceForModel(model.id)
-        holder.iconView.setImageResource(iconResource)
-        holder.iconView.visibility = View.VISIBLE
-        holder.iconView.setPadding(8, 8, 8, 8)
-
-        // Show divider for all items except the last one
-        holder.divider?.visibility = if (position < models.size - 1) View.VISIBLE else View.GONE
-
-        // Handle translation mode styling with enhanced visuals
+        // Handle translation mode styling (simplified)
         if (translationActive && !isCompatibleWithTranslation) {
             // DISABLE non-compatible models with clear visual indication
             view.alpha = 0.5f
-            holder.textView.alpha = 0.5f
-            holder.iconView.alpha = 0.3f
-
-            // Set disabled appearance with gray background
-            holder.rootLayout?.setBackgroundColor(ContextCompat.getColor(context, R.color.disabled_card_background))
             holder.textView.setTextColor(ContextCompat.getColor(context, R.color.text_disabled))
-
-            // Add incompatibility indicator with icon
-            val warningIcon = AppCompatResources.getDrawable(context, R.drawable.ic_warning)
-            holder.textView.setCompoundDrawablesWithIntrinsicBounds(null, null, warningIcon, null)
-            holder.textView.compoundDrawablePadding = 8
-
-            // Add explanation text
-            holder.textView.text = "${model.displayName}\n(Not for translation)"
-
-            // Hide selection indicators
-            holder.proBadge.visibility = View.GONE
-            holder.checkmark.visibility = View.GONE
+            holder.textView.text = "${model.displayName} (Not for translation)"
 
             // Make non-clickable
             view.isEnabled = false
             view.isClickable = false
         } else {
-            // Normal styling for compatible models with enhanced visuals
+            // Normal styling for compatible models
             view.alpha = 1.0f
-            holder.textView.alpha = 1.0f
-            holder.iconView.alpha = 1.0f
             holder.textView.setTextColor(ContextCompat.getColor(context, R.color.text_primary))
-
-            // Remove any warning icons
-            holder.textView.setCompoundDrawablesWithIntrinsicBounds(null, null, null, null)
 
             // Make clickable
             view.isEnabled = true
             view.isClickable = true
 
-            // Handle selection state with enhanced visuals
+            // Handle selection state (simplified)
             if (position == selectedPosition) {
-                // Selected item styling
-                holder.checkmark.visibility = View.VISIBLE
-                holder.rootLayout?.setBackgroundResource(R.drawable.selected_item_background)
+                // Selected item styling - bolder text
                 holder.textView.setTypeface(holder.textView.typeface, Typeface.BOLD)
-
-                // Show PRO badge if needed with enhanced styling
-                if (!model.isFree) {
-                    holder.proBadge.visibility = View.VISIBLE
-                    holder.proBadge.background = ContextCompat.getDrawable(context, R.drawable.premium_badge_gradient)
-                } else {
-                    holder.proBadge.visibility = View.GONE
-                }
+                view.setBackgroundColor(ContextCompat.getColor(context, R.color.selected_item_background))
             } else {
                 // Unselected item styling
-                holder.checkmark.visibility = View.GONE
                 holder.textView.setTypeface(holder.textView.typeface, Typeface.NORMAL)
-
-                // Show PRO badge if needed
-                if (!model.isFree) {
-                    holder.proBadge.visibility = View.VISIBLE
-                    holder.proBadge.background = ContextCompat.getDrawable(context, R.drawable.premium_badge_gradient)
-                } else {
-                    holder.proBadge.visibility = View.GONE
-                }
-
-                // Set normal background with hover effect
-                holder.rootLayout?.setBackgroundResource(R.drawable.dropdown_item_hover_background)
+                view.setBackgroundColor(ContextCompat.getColor(context, android.R.color.transparent))
             }
         }
 
@@ -268,9 +179,9 @@ class ModelSpinnerAdapter(
 
     private class ViewHolder {
         lateinit var textView: TextView
-        lateinit var iconView: ImageView
-        lateinit var proBadge: TextView
-        lateinit var checkmark: ImageView
+        var iconView: ImageView? = null
+        var proBadge: TextView? = null
+        var checkmark: ImageView? = null
         var divider: View? = null
         var background: View? = null
         var rootLayout: ViewGroup? = null

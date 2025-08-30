@@ -1,113 +1,146 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
+<androidx.cardview.widget.CardView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginVertical="8dp"
-    android:background="@drawable/bg_code_block"
-    android:orientation="vertical"
-    android:elevation="2dp"
-    android:padding="0dp">
+    app:cardUseCompatPadding="true"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="4dp"
+    app:cardBackgroundColor="?attr/colorSurface">
 
-    <!-- Header: language label and copy button -->
-    <RelativeLayout
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingHorizontal="16dp"
-        android:paddingVertical="10dp"
-        android:background="@drawable/bg_code_header">
+        android:orientation="vertical"
+        android:background="?attr/colorSurfaceVariant">
 
-        <TextView
-            android:id="@+id/tvLanguage"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_alignParentStart="true"
-            android:layout_centerVertical="true"
-            android:text="javascript"
-            android:textColor="#999999"
-            android:textSize="12sp"
-            android:fontFamily="sans-serif"
-            android:textStyle="normal" />
-
+        <!-- Header -->
         <LinearLayout
-            android:id="@+id/btnCopyCode"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_alignParentEnd="true"
-            android:layout_centerVertical="true"
-            android:orientation="horizontal"
-            android:clickable="true"
-            android:focusable="true"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:gravity="center"
-            android:minWidth="60dp"
-            android:minHeight="32dp"
-            android:paddingHorizontal="8dp"
-            android:paddingVertical="8dp">
-
-            <ImageView
-                android:id="@+id/copyIcon"
-                android:layout_width="16dp"
-                android:layout_height="16dp"
-                android:layout_marginEnd="6dp"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_copy_24"
-                app:tint="#999999" />
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="10dp"
+            android:background="?attr/colorPrimaryContainer"
+            android:gravity="center_vertical">
 
             <TextView
-                android:id="@+id/copyText"
+                android:id="@+id/tvLanguage"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Copy"
-                android:textColor="#999999"
+                android:text="javascript"
+                android:textColor="?attr/colorOnPrimaryContainer"
                 android:textSize="12sp"
-                android:fontFamily="sans-serif"
-                android:gravity="center" />
+                android:fontFamily="sans-serif-medium" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <!-- Action Buttons Container -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center">
+
+                <!-- Open in Full Screen Button -->
+                <LinearLayout
+                    android:id="@+id/btnOpenCode"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:gravity="center"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="4dp"
+                    android:layout_marginEnd="4dp">
+
+                    <ImageView
+                        android:id="@+id/openIcon"
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:src="@drawable/ic_expand_corner"
+                        android:tint="?attr/colorOnSurfaceVariant"
+                        android:contentDescription="Open in full screen" />
+                </LinearLayout>
+
+                <!-- Copy Button -->
+                <LinearLayout
+                    android:id="@+id/btnCopyCode"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:gravity="center"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="4dp">
+
+                    <ImageView
+                        android:id="@+id/copyIcon"
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:layout_marginEnd="6dp"
+                        android:src="@drawable/ic_copy_24"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+
+                    <TextView
+                        android:id="@+id/copyText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Copy"
+                        android:textColor="?attr/colorOnPrimaryContainer"
+                        android:textSize="12sp"
+                        android:fontFamily="sans-serif" />
+                </LinearLayout>
+            </LinearLayout>
         </LinearLayout>
-    </RelativeLayout>
 
-    <!-- Divider line -->
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="0.5dp"
-        android:layout_marginHorizontal="12dp"
-        android:background="#737373" />
+        <!-- Divider -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginHorizontal="12dp"
+            android:background="@color/divider" />
 
-    <!-- Scrollable code block -->
-    <HorizontalScrollView
-        android:id="@+id/scrollView"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:scrollbars="horizontal"
-        android:fadeScrollbars="false"
-        android:scrollbarSize="6dp"
-        android:scrollbarStyle="outsideOverlay"
-        android:background="@drawable/bg_code_content"
-        android:overScrollMode="ifContentScrolls"
-        android:scrollbarThumbHorizontal="@android:color/darker_gray"
-        android:scrollbarTrackHorizontal="@android:color/transparent">
-
-        <TextView
-            android:id="@+id/tvCodeContent"
-            android:layout_width="wrap_content"
+        <!-- Code content with proper horizontal scrolling -->
+        <HorizontalScrollView
+            android:id="@+id/scrollView"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:fontFamily="monospace"
-            android:text="Loading code..."
-            android:textColor="#D4D4D4"
-            android:textSize="13sp"
-            android:textStyle="normal"
-            android:padding="16dp"
-            android:textIsSelectable="true"
-            android:lineSpacingExtra="2dp"
-            android:breakStrategy="simple"
-            android:hyphenationFrequency="none"
-            android:letterSpacing="0.02"
-            android:scrollHorizontally="true"
-            android:ellipsize="none"
-            android:maxLines="2147483647"
-            android:minWidth="0dp"
-            android:singleLine="false"
-            android:background="@android:color/transparent" />
-    </HorizontalScrollView>
-</LinearLayout>
+            android:scrollbars="horizontal"
+            android:scrollbarStyle="outsideOverlay"
+            android:fadeScrollbars="false"
+            android:scrollbarAlwaysDrawHorizontalTrack="true"
+            android:overScrollMode="ifContentScrolls"
+            android:background="?attr/colorSurfaceVariant"
+            android:paddingVertical="8dp">
+
+            <TextView
+                android:id="@+id/tvCodeContent"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="12dp"
+                android:fontFamily="monospace"
+                android:text="Loading code..."
+                android:textColor="?attr/colorOnSurface"
+                android:textSize="13sp"
+                android:lineSpacingExtra="4dp"
+                android:textIsSelectable="true"
+                android:scrollHorizontally="true"
+                android:ellipsize="none"
+                android:singleLine="false"
+                android:maxLines="100"
+                android:breakStrategy="simple"
+                android:hyphenationFrequency="none"
+                android:minWidth="0dp"
+                android:background="@android:color/transparent" />
+        </HorizontalScrollView>
+    </LinearLayout>
+</androidx.cardview.widget.CardView>

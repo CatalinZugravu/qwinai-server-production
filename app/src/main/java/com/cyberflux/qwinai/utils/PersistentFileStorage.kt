@@ -43,7 +43,7 @@ class PersistentFileStorage(private val context: Context) {
             // Create a persistent URI using FileProvider
             val persistentUri = FileProvider.getUriForFile(
                 context,
-                "${context.packageName}.provider",
+                "${context.packageName}.fileprovider",
                 targetFile
             )
 

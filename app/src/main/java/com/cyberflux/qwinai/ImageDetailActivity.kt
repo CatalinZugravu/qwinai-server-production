@@ -13,6 +13,7 @@ import android.text.format.DateUtils
 import android.text.format.Formatter
 import android.view.Menu
 import android.view.MenuItem
+import android.widget.EditText
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
@@ -90,14 +91,30 @@ class ImageDetailActivity : BaseThemedActivity() {
             setAsWallpaper()
         }
         
+        binding.btnRename.setOnClickListener {
+            showRenameDialog()
+        }
+        
+        binding.btnCopyPrompt.setOnClickListener {
+            copyPromptToClipboard()
+        }
+        
+        binding.btnFullscreen.setOnClickListener {
+            openFullscreen()
+        }
+        
         // Setup image info
         setupImageInfo()
     }
     
     private fun loadImage() {
         val file = File(image.filePath)
+        android.util.Log.d("ImageDetail", "Loading image from: ${image.filePath}")
+        android.util.Log.d("ImageDetail", "File exists: ${file.exists()}")
+        
         if (!file.exists()) {
-            Toast.makeText(this, "Image file not found", Toast.LENGTH_SHORT).show()
+            android.util.Log.e("ImageDetail", "Image file not found at: ${image.filePath}")
+            Toast.makeText(this, "Image file not found: ${file.name}", Toast.LENGTH_LONG).show()
             finish()
             return
         }
@@ -180,7 +197,7 @@ class ImageDetailActivity : BaseThemedActivity() {
                         bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
                     }
                     true
-                } ?: false
+                } == true
             } else {
                 val imagesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES).toString() + "/AI_Generated"
                 val dir = File(imagesDir)
@@ -284,14 +301,6 @@ class ImageDetailActivity : BaseThemedActivity() {
                 finish()
                 true
             }
-            R.id.action_info -> {
-                showImageInfo()
-                true
-            }
-            R.id.action_copy_prompt -> {
-                copyPromptToClipboard()
-                true
-            }
             else -> super.onOptionsItemSelected(item)
         }
     }
@@ -332,5 +341,215 @@ class ImageDetailActivity : BaseThemedActivity() {
         
         Toast.makeText(this, "Prompt copied to clipboard", Toast.LENGTH_SHORT).show()
         HapticManager.customVibration(this, 50)
+    }
+    
+    private fun showRenameDialog() {
+        val currentName = File(image.fileName).nameWithoutExtension
+        val extension = File(image.fileName).extension
+        
+        val editText = EditText(this).apply {
+            setText(currentName)
+            setSelectAllOnFocus(true)
+            setSingleLine(true)
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(48, 16, 48, 16)
+            }
+        }
+        
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle("Rename Image")
+            .setMessage("Enter new name:")
+            .setView(editText)
+            .setPositiveButton("Rename") { dialog, _ ->
+                val newName = editText.text.toString().trim()
+                if (newName.isNotEmpty() && newName != currentName) {
+                    // Clear focus before proceeding to prevent IME callback issues
+                    editText.clearFocus()
+                    renameImageFile(newName, extension)
+                }
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel") { dialog, _ ->
+                editText.clearFocus()
+                dialog.dismiss()
+            }
+            .create()
+        
+        dialog.show()
+        
+        // Request focus and show keyboard after dialog is shown
+        editText.post {
+            editText.requestFocus()
+            val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            imm.showSoftInput(editText, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+    
+    private fun renameImageFile(newName: String, extension: String) {
+        val currentFile = File(image.filePath)
+        val newFileName = "$newName.$extension"
+        val newFile = File(currentFile.parent, newFileName)
+        
+        // Debug logging
+        android.util.Log.d("ImageDetail", "Renaming from: ${currentFile.absolutePath}")
+        android.util.Log.d("ImageDetail", "Renaming to: ${newFile.absolutePath}")
+        android.util.Log.d("ImageDetail", "Current file exists: ${currentFile.exists()}")
+        android.util.Log.d("ImageDetail", "Parent directory exists: ${currentFile.parent != null && File(currentFile.parent!!).exists()}")
+        
+        if (!currentFile.exists()) {
+            Toast.makeText(this, "Original file not found", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        if (newFile.exists()) {
+            Toast.makeText(this, "A file with this name already exists", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        try {
+            val renameSuccess = currentFile.renameTo(newFile)
+            android.util.Log.d("ImageDetail", "Rename success: $renameSuccess")
+            
+            if (renameSuccess && newFile.exists()) {
+                // Update the database
+                lifecycleScope.launch {
+                    try {
+                        val success = withContext(Dispatchers.IO) {
+                            repository.updateImageInfo(image.id, newFileName, newFile.absolutePath)
+                        }
+                        
+                        android.util.Log.d("ImageDetail", "Database update success: $success")
+                        
+                        if (success) {
+                            // Update the UI immediately
+                            supportActionBar?.title = newFileName
+                            
+                            // Create updated image object
+                            val updatedImage = image.copy(
+                                fileName = newFileName, 
+                                filePath = newFile.absolutePath
+                            )
+                            image = updatedImage
+                            
+                            // Refresh the info display
+                            setupImageInfo()
+                            
+                            // Reload the image with new path
+                            loadImage()
+                            
+                            Toast.makeText(this@ImageDetailActivity, "Image renamed successfully", Toast.LENGTH_SHORT).show()
+                            HapticManager.customVibration(this@ImageDetailActivity, 50)
+                        } else {
+                            Toast.makeText(this@ImageDetailActivity, "Failed to update database", Toast.LENGTH_SHORT).show()
+                            // Try to rename back if database update failed
+                            newFile.renameTo(currentFile)
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("ImageDetail", "Database update error", e)
+                        Toast.makeText(this@ImageDetailActivity, "Error updating database: ${e.message}", Toast.LENGTH_LONG).show()
+                        // Try to rename back if database update failed
+                        newFile.renameTo(currentFile)
+                    }
+                }
+            } else {
+                Toast.makeText(this, "Failed to rename file", Toast.LENGTH_SHORT).show()
+                android.util.Log.e("ImageDetail", "File rename failed or new file doesn't exist after rename")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ImageDetail", "Rename operation error", e)
+            Toast.makeText(this, "Error renaming file: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+    
+    private fun openFullscreen() {
+        // Toggle system UI visibility for fullscreen experience
+        if (isInFullscreenMode) {
+            showSystemUI()
+            // Show all UI elements
+            supportActionBar?.show()
+            binding.toolbar.visibility = android.view.View.VISIBLE
+            binding.btnFullscreen.show()
+            // Show the scrollable content with image info
+            binding.root.getChildAt(1).visibility = android.view.View.VISIBLE // NestedScrollView
+            
+            // Remove fullscreen overlay if it exists
+            val childCount = binding.root.childCount
+            if (childCount > 2) { // AppBarLayout + NestedScrollView + potential overlay
+                binding.root.removeViewAt(childCount - 1) // Remove the last added fullscreen overlay
+            }
+            
+            isInFullscreenMode = false
+        } else {
+            hideSystemUI()
+            // Hide all UI elements except the image
+            supportActionBar?.hide()
+            binding.toolbar.visibility = android.view.View.GONE
+            binding.btnFullscreen.hide()
+            // Hide the scrollable content, show only image
+            binding.root.getChildAt(1).visibility = android.view.View.GONE // NestedScrollView
+            isInFullscreenMode = true
+            
+            // Show only the PhotoView in fullscreen
+            showImageOnlyFullscreen()
+        }
+    }
+    
+    private fun showImageOnlyFullscreen() {
+        // Create a temporary fullscreen image view
+        val fullscreenLayout = android.widget.FrameLayout(this).apply {
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+            )
+            setBackgroundColor(android.graphics.Color.BLACK)
+        }
+        
+        // Create a new PhotoView for fullscreen
+        val fullscreenPhotoView = com.github.chrisbanes.photoview.PhotoView(this).apply {
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+            )
+            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            maximumScale = 10.0f
+            mediumScale = 3.0f
+            minimumScale = 0.5f
+            
+            // Exit fullscreen on tap
+            setOnPhotoTapListener { _, _, _ ->
+                openFullscreen() // Toggle back to normal mode
+            }
+        }
+        
+        // Load the same image
+        val file = File(image.filePath)
+        if (file.exists()) {
+            Glide.with(this@ImageDetailActivity)
+                .load(file)
+                .into(fullscreenPhotoView)
+        }
+        
+        fullscreenLayout.addView(fullscreenPhotoView)
+        binding.root.addView(fullscreenLayout)
+    }
+    
+    private var isInFullscreenMode = false
+    
+    private fun hideSystemUI() {
+        window.decorView.systemUiVisibility = (
+            android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+            or android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            or android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+            or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+            or android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+            or android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+        )
+    }
+    
+    private fun showSystemUI() {
+        window.decorView.systemUiVisibility = android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
     }
 }

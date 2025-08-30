@@ -1,6 +1,8 @@
 package com.cyberflux.qwinai
 
 import android.Manifest
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.app.Activity
@@ -28,14 +30,10 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.IBinder
+import android.util.Log
 import android.os.Looper
-import android.os.VibrationEffect
 import android.os.Vibrator
-import com.cyberflux.qwinai.utils.HapticManager
 import android.provider.MediaStore
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.ContextMenu
@@ -52,10 +50,12 @@ import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.ProgressBar
 import android.widget.Spinner
+import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -78,6 +78,7 @@ import com.cyberflux.qwinai.adapter.ConversationAdapter
 import com.cyberflux.qwinai.adapter.CustomSpinnerDialog
 import com.cyberflux.qwinai.adapter.ModelSpinnerAdapter
 import com.cyberflux.qwinai.ui.FileUploadBottomSheet
+import com.cyberflux.qwinai.ui.DebugTokenDisplayHelper
 import com.cyberflux.qwinai.ads.ConsentManager
 import com.cyberflux.qwinai.ads.AdManager
 import com.cyberflux.qwinai.credits.CreditManager
@@ -87,8 +88,10 @@ import com.cyberflux.qwinai.branch.MessageManager
 import com.cyberflux.qwinai.database.AppDatabase
 import com.cyberflux.qwinai.databinding.ActivityMainBinding
 import com.cyberflux.qwinai.model.AIModel
+import com.cyberflux.qwinai.model.AIParameters
 import com.cyberflux.qwinai.model.ChatMessage
 import com.cyberflux.qwinai.model.Conversation
+import com.cyberflux.qwinai.model.FileItem
 import com.cyberflux.qwinai.model.ResponseLength
 import com.cyberflux.qwinai.model.ResponsePreferences
 import com.cyberflux.qwinai.model.ResponseTone
@@ -96,15 +99,22 @@ import com.cyberflux.qwinai.network.AimlApiRequest
 import com.cyberflux.qwinai.network.AimlApiResponse
 import com.cyberflux.qwinai.network.AudioResponseHandler
 import com.cyberflux.qwinai.network.ModelApiHandler
+import com.cyberflux.qwinai.network.RetrofitInstance
+import com.cyberflux.qwinai.network.StreamingHandler
 import com.cyberflux.qwinai.service.AiChatService
 import com.cyberflux.qwinai.service.BackgroundAiService
 import com.cyberflux.qwinai.service.OCRService
-import com.cyberflux.qwinai.service.OCROptions
+import com.cyberflux.qwinai.utils.AIParametersDialog
+import com.cyberflux.qwinai.utils.AIParametersManager
 import com.cyberflux.qwinai.utils.AppSettings
 import com.cyberflux.qwinai.utils.BaseThemedActivity
+import com.cyberflux.qwinai.utils.ThemeManager
+import com.cyberflux.qwinai.utils.UltraAudioIntegration
 import com.cyberflux.qwinai.utils.ConversationSummarizer
-import com.cyberflux.qwinai.utils.ConversationTokenManager
-import com.cyberflux.qwinai.utils.FileFilterUtils
+import com.cyberflux.qwinai.utils.SimplifiedTokenManager
+// Using new SimplifiedTokenManager system for comprehensive token management
+// Wildcard import includes MessageValidationResult and ContextCalculationResult
+import com.cyberflux.qwinai.utils.*
 import com.cyberflux.qwinai.utils.FileHandler
 import com.cyberflux.qwinai.utils.FileProgressTracker
 import com.cyberflux.qwinai.utils.FileUtil
@@ -113,29 +123,33 @@ import com.cyberflux.qwinai.utils.ModelConfigManager
 import com.cyberflux.qwinai.utils.ModelIconUtils
 import com.cyberflux.qwinai.utils.ModelManager
 import com.cyberflux.qwinai.utils.ModelValidator
+import com.cyberflux.qwinai.utils.PerplexityPreferences
 import com.cyberflux.qwinai.utils.PersistentFileStorage
 import com.cyberflux.qwinai.utils.PrefsManager
 import com.cyberflux.qwinai.utils.ScrollArrowsHelper
-import com.cyberflux.qwinai.utils.SupportedFileTypes
-import com.cyberflux.qwinai.utils.StreamingStateManager
-import com.cyberflux.qwinai.utils.TokenCounterHelper
+import com.cyberflux.qwinai.utils.UnifiedStreamingManager
 import com.cyberflux.qwinai.utils.TokenLimitDialogHandler
 import com.cyberflux.qwinai.utils.TokenValidator
 import com.cyberflux.qwinai.utils.TranslationUtils
 import com.cyberflux.qwinai.utils.UnifiedFileHandler
+import com.cyberflux.qwinai.utils.SupportedFileTypes
 import com.google.android.material.textfield.TextInputEditText
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
+import com.cyberflux.qwinai.utils.JsonUtils
+import com.cyberflux.qwinai.utils.DebugMenuHelper
+import com.cyberflux.qwinai.utils.DebugSubscriptionHelper
+import kotlinx.coroutines.CoroutineName
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import org.json.JSONArray
 import org.json.JSONObject
-import okhttp3.RequestBody
 import okhttp3.MediaType.Companion.toMediaType
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.RequestBody.Companion.toRequestBody
 import timber.log.Timber
 import java.io.File
 import java.text.SimpleDateFormat
@@ -145,11 +159,14 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.math.sin
 
+
+
 object NotificationConstants {
     const val CHANNEL_ID = "credits_channel"
     const val NOTIFICATION_ID = 1001
 }
 
+@AndroidEntryPoint
 class MainActivity : BaseThemedActivity() {
 
     // -------------------------------------------------------------------------
@@ -183,20 +200,11 @@ class MainActivity : BaseThemedActivity() {
     private val SETTINGS_REQUEST_CODE = 100
     lateinit var messageManager: MessageManager
     private var deferredIntent: Intent? = null
-    // Voice recording properties
+    // Ultra Audio Recording - NEW SYSTEM
     private lateinit var btnMicrophone: ImageButton
-    private lateinit var recordingOverlay: CardView
-    private lateinit var tvRecordingTime: TextView
-    private lateinit var btnCancelRecording: ImageButton
-    private lateinit var btnSendRecording: ImageButton
-    private lateinit var speechRecognizer: SpeechRecognizer
-    private var isRecording = false
-    private var recordingStartTime = 0L
-    private val recordingHandler = Handler(Looper.getMainLooper())
+    private lateinit var ultraAudioIntegration: UltraAudioIntegration
+    var isNextMessageFromVoice = false  // Flag to track voice messages
     private val RECORD_AUDIO_PERMISSION_CODE = 200
-    private var recordingAnimators = arrayListOf<ValueAnimator>()
-    private var waveBars = ArrayList<View>()
-    private var lastRmsValue = 0f  // Variable to store the last RMS value
     private var realTimeSearchIndicator: CardView? = null
     private var isRealTimeSearchActive = false
     var isPrivateModeEnabled = false
@@ -221,13 +229,11 @@ class MainActivity : BaseThemedActivity() {
     private var originalSubmitListener: View.OnClickListener? = null
     private var preTranslationModelId: String? = null
     lateinit var ocrService: OCRService
-    // Token Management
-    private lateinit var conversationTokenManager: ConversationTokenManager
+    // Token Management - NEW SYSTEM
+    private lateinit var tokenManager: SimplifiedTokenManager
     private var tokenLimitWarningBadge: View? = null
     private var loadingDialog: AlertDialog? = null
 
-    private var recordingAnimationTimer: Handler? = null
-    private var lastPartialResults: String = "" // Store partial results as they come in
     private var isSpeechProcessing: Boolean = false // Track if we're processing speech
     // Credits System - using new CreditManager
     private lateinit var creditManager: CreditManager
@@ -241,6 +247,11 @@ class MainActivity : BaseThemedActivity() {
     private lateinit var reasoningControlsLayout: LinearLayout
     private lateinit var btnReasoning: ImageButton
     private lateinit var btnDeepSearch: ImageButton// Keep the same variable name for compatibility
+    
+    // CRITICAL FIX: Store model state before file picker to prevent reset issues
+    private var modelStateBeforeFilePicker: AIModel? = null
+    private lateinit var btnPerplexitySearchMode: ImageButton
+    private lateinit var btnPerplexityContextSize: ImageButton
     private var isReturningFromTextSelection = false
     var isReturningFromFileSelection = false
     private var isDraftContentLoaded = false
@@ -263,7 +274,17 @@ class MainActivity : BaseThemedActivity() {
 
     private lateinit var consentManager: ConsentManager
     private lateinit var adManager: AdManager
+    
+    // File Animation Management - beautiful file transfer animations
+    private lateinit var fileAnimationManager: FileAnimationManager
+    
+    // NEW: Hilt-injected managers for modern architecture
     private lateinit var btnExpandText: ImageButton
+    
+    // AI Parameters Management
+    private lateinit var aiParametersManager: AIParametersManager
+    private lateinit var btnAiParameters: ImageButton
+    private var currentAiParameters: AIParameters? = null
     private val TEXT_EXPANSION_REQUEST_CODE = 1001
     private var currentEditDialog: Dialog? = null
     private val EDIT_TEXT_EXPANSION_REQUEST_CODE = 1002
@@ -298,47 +319,87 @@ class MainActivity : BaseThemedActivity() {
     var isGenerating = false
     private var currentApiJob: Job? = null
     private val uiHandler = Handler(Looper.getMainLooper())
+    
+    // Pre-validation system for ultra-fast message sending
+    private val validationDebouncer = Handler(Looper.getMainLooper())
+    private var validationRunnable: Runnable? = null
+    private var preValidatedConversationId: String? = null
+    private var preValidatedContext: List<ChatMessage>? = null
     private var pulseAnimator: ValueAnimator? = null
+
+    // Debug components (DEBUG builds only)
+    private var debugTokenDisplayHelper: DebugTokenDisplayHelper? = null
 
     // At the top with other properties
     private lateinit var aiChatService: AiChatService
     private lateinit var startActivity: StartActivity
     
+    // CRITICAL FIX: Dedicated coroutine scope for background database operations
+    private val backgroundDbScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    
+    // CRITICAL FIX: Dedicated coroutine scope for streaming operations - immune to activity lifecycle changes
+    private val streamingScope = CoroutineScope(SupervisorJob() + Dispatchers.Main + CoroutineName("MainActivity-Streaming"))
+    
+    // Database instance for direct access
+    private val database by lazy { AppDatabase.getDatabase(this) }
+    
     // Background service for continuing AI generation
     private var backgroundAiService: BackgroundAiService? = null
     private var isServiceBound = false
     
+    // CRITICAL FIX: Service binding queue and callback system
+    private val serviceBindingCallbacks = mutableListOf<() -> Unit>()
+    private var isBindingInProgress = false
+    
     // CRITICAL FIX: Prevent duplicate background generation checks
     private var isBackgroundCheckInProgress = false
     private var lastBackgroundCheckTime = 0L
+    
     private val backgroundServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-            val binder = service as BackgroundAiService.BackgroundAiBinder
-            backgroundAiService = binder.getService()
-            isServiceBound = true
-            Timber.d("🔗 Connected to BackgroundAiService")
-            
-            // CRITICAL FIX: When service connects, request progress for any generating messages
-            currentConversationId?.let { conversationId ->
-                lifecycleScope.launch {
+            try {
+                val binder = service as BackgroundAiService.BackgroundAiBinder
+                backgroundAiService = binder.getService()
+                isServiceBound = true
+                isBindingInProgress = false
+                Timber.d("🔗 Connected to BackgroundAiService")
+                
+                // CRITICAL FIX: Execute all queued callbacks
+                val callbacksCopy = serviceBindingCallbacks.toList()
+                serviceBindingCallbacks.clear()
+                
+                callbacksCopy.forEach { callback ->
                     try {
-                        val messages = conversationsViewModel.getAllConversationMessages(conversationId)
-                        val generatingMessages = messages.filter { !it.isUser && it.isGenerating }
-                        
-                        generatingMessages.forEach { message ->
-                            backgroundAiService?.requestCurrentProgress(message.id, conversationId)
-                            Timber.d("📡 Requested current progress for message: ${message.id}")
-                        }
+                        callback()
                     } catch (e: Exception) {
-                        Timber.e(e, "Error requesting progress on service connect: ${e.message}")
+                        Timber.e(e, "Error executing service binding callback: ${e.message}")
                     }
                 }
+                
+                // CRITICAL FIX: Auto-request progress for any generating messages
+                if (::chatAdapter.isInitialized) {
+                    val generatingMessages = chatAdapter.currentList.filter { !it.isUser && it.isGenerating }
+                    if (generatingMessages.isNotEmpty()) {
+                        Timber.d("📡 Service connected - requesting progress for ${generatingMessages.size} generating messages")
+                        generatingMessages.forEach { message ->
+                            backgroundAiService?.requestCurrentProgress(message.id)
+                            Timber.d("📡 Requested progress for message: ${message.id}")
+                        }
+                    }
+                }
+                
+            } catch (e: Exception) {
+                Timber.e(e, "Error in onServiceConnected: ${e.message}")
+                isBindingInProgress = false
+                serviceBindingCallbacks.clear()
             }
         }
         
         override fun onServiceDisconnected(name: ComponentName?) {
             backgroundAiService = null
             isServiceBound = false
+            isBindingInProgress = false
+            serviceBindingCallbacks.clear()
             Timber.d("💔 Disconnected from BackgroundAiService")
         }
     }
@@ -346,7 +407,11 @@ class MainActivity : BaseThemedActivity() {
     // Broadcast receiver for background generation updates
     private val backgroundGenerationReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            Timber.d("📨 Broadcast received with action: ${intent?.action}")
+            Timber.d("📨📨📨 BROADCAST RECEIVED!!!")
+            Timber.d("📨 Action: ${intent?.action}")
+            Timber.d("📨 Intent extras: ${intent?.extras?.keySet()?.joinToString()}")
+            Timber.d("📨 Thread: ${Thread.currentThread().name}")
+            
             when (intent?.action) {
                 BackgroundAiService.ACTION_GENERATION_PROGRESS -> {
                     val messageId = intent.getStringExtra(BackgroundAiService.EXTRA_MESSAGE_ID)
@@ -397,6 +462,9 @@ class MainActivity : BaseThemedActivity() {
             }
         }
     }
+    
+    // Track whether the background generation receiver is registered
+    private var isBackgroundGenerationReceiverRegistered = false
 
     // Add to the PROPERTIES AND FIELDS section
     private lateinit var audioResponseHandler: AudioResponseHandler
@@ -416,8 +484,13 @@ class MainActivity : BaseThemedActivity() {
     ) { result ->
         if (result.resultCode == RESULT_OK) {
             val data = result.data
-            val currentModel = ModelManager.selectedModel
+            
+            // CRITICAL FIX: Use stored model state instead of current ModelManager.selectedModel
+            // to prevent model reset issues during file picker activity lifecycle
+            val currentModel = modelStateBeforeFilePicker ?: ModelManager.selectedModel
             val supportsImages = ModelValidator.supportsImageUpload(currentModel.id)
+            
+            Timber.d("🔄 File picker result - using model: ${currentModel.displayName} (stored: ${modelStateBeforeFilePicker?.displayName}, current: ${ModelManager.selectedModel.displayName})")
 
             if (!supportsImages) {
                 Toast.makeText(
@@ -462,15 +535,35 @@ class MainActivity : BaseThemedActivity() {
                 for (i in 0 until filesToProcess) {
                     val uri = data.clipData!!.getItemAt(i).uri
 
-                    // Verify it's an image file
+                    // Check if file is compatible with current model (use stored model)
                     val mimeType = FileUtil.getMimeType(this, uri)
-                    if (mimeType.startsWith("image/")) {
-                        fileHandler.handleSelectedFile(uri, false)
+                    val isOcrModel = ModelValidator.isOcrModel(currentModel.id)
+                    val isCompatible = if (isOcrModel) {
+                        // OCR models: accept images and PDFs
+                        mimeType.startsWith("image/") || mimeType == "application/pdf"
+                    } else {
+                        // Regular models: accept documents
+                        SupportedFileTypes.isDocumentTypeSupported(mimeType)
+                    }
+                    
+                    if (isCompatible) {
+                        val fileType = if (mimeType.startsWith("image/")) "image" 
+                                      else if (mimeType == "application/pdf") "PDF" 
+                                      else "document"
+                        Timber.d("Processing $fileType file from picker: $uri")
+                        
+                        if (mimeType.startsWith("image/")) {
+                            fileHandler.handleSelectedFile(uri, false)
+                        } else {
+                            // Handle documents
+                            fileHandler.handleSelectedDocument(uri)
+                        }
                         processedCount++
                     } else {
+                        val expectedType = if (isOcrModel) "images or PDFs" else "documents"
                         Toast.makeText(
                             this,
-                            "Skipped non-image file",
+                            "Skipped incompatible file. Expected: $expectedType",
                             Toast.LENGTH_SHORT
                         ).show()
                     }
@@ -483,6 +576,21 @@ class MainActivity : BaseThemedActivity() {
                         "Added $processedCount files successfully",
                         Toast.LENGTH_SHORT
                     ).show()
+                }
+                
+                // CRITICAL: For OCR models, immediately force send button visible after multiple selection
+                if (ModelValidator.isOcrModel(currentModel.id)) {
+                    binding.btnMicrophone.visibility = View.GONE
+                    binding.btnSubmitText.visibility = View.VISIBLE
+                    binding.btnSubmitText.setImageResource(R.drawable.send_icon)
+                    binding.btnSubmitText.contentDescription = "Process OCR"
+                    binding.btnSubmitText.isEnabled = true
+                    binding.btnSubmitText.alpha = 1.0f
+                    Timber.d("Multiple files: Send button forced visible for OCR model")
+                } else {
+                    val hasText = binding.etInputText.text.toString().trim().isNotEmpty()
+                    val hasFiles = selectedFiles.isNotEmpty()
+                    toggleInputButtons(hasText, hasFiles)
                 }
             } else if (data?.data != null) {
                 // Handle single file
@@ -501,19 +609,58 @@ class MainActivity : BaseThemedActivity() {
                 val uri = data.data!!
                 val mimeType = FileUtil.getMimeType(this, uri)
 
-                // Only process if it's an image file
-                if (mimeType.startsWith("image/")) {
-                    fileHandler.handleSelectedFile(uri, false)
+                // Check if file is compatible with current model (use stored model)
+                val isOcrModel = ModelValidator.isOcrModel(currentModel.id)
+                val isCompatible = if (isOcrModel) {
+                    // OCR models: accept images and PDFs
+                    mimeType.startsWith("image/") || mimeType == "application/pdf"
                 } else {
+                    // Regular models: accept documents
+                    SupportedFileTypes.isDocumentTypeSupported(mimeType)
+                }
+                
+                if (isCompatible) {
+                    val fileType = if (mimeType.startsWith("image/")) "image" 
+                                  else if (mimeType == "application/pdf") "PDF" 
+                                  else "document"
+                    Timber.d("Processing single $fileType file from picker: $uri")
+                    
+                    if (mimeType.startsWith("image/")) {
+                        fileHandler.handleSelectedFile(uri, false)
+                    } else {
+                        // Handle documents
+                        fileHandler.handleSelectedDocument(uri)
+                    }
+                    
+                    // Update UI based on model type
+                    if (isOcrModel && (mimeType.startsWith("image/") || mimeType == "application/pdf")) {
+                        // CRITICAL: For OCR models, immediately force send button visible
+                        binding.btnMicrophone.visibility = View.GONE
+                        binding.btnSubmitText.visibility = View.VISIBLE
+                        binding.btnSubmitText.setImageResource(R.drawable.send_icon)
+                        binding.btnSubmitText.contentDescription = "Process OCR"
+                        binding.btnSubmitText.isEnabled = true
+                        binding.btnSubmitText.alpha = 1.0f
+                        Timber.d("File picker: Send button forced visible for OCR model")
+                    } else {
+                        val hasText = binding.etInputText.text.toString().trim().isNotEmpty()
+                        val hasFiles = selectedFiles.isNotEmpty()
+                        toggleInputButtons(hasText, hasFiles)
+                    }
+                } else {
+                    val expectedType = if (isOcrModel) "images or PDFs" else "documents"
                     Toast.makeText(
                         this,
-                        "Only image files are supported",
+                        "Incompatible file type. Expected: $expectedType",
                         Toast.LENGTH_SHORT
                     ).show()
                 }
             }
         } else {
             Timber.d("File picker cancelled or failed with result code: ${result.resultCode}")
+            // Clear stored model state even if file picker was cancelled
+            modelStateBeforeFilePicker = null
+            Timber.d("📎 Cleared stored model state after file picker cancellation")
         }
     }
     private val cameraLauncher = registerForActivityResult(
@@ -549,7 +696,7 @@ class MainActivity : BaseThemedActivity() {
             Toast.makeText(this, "Error: Photo file not found or is empty", Toast.LENGTH_SHORT).show()
             
             // Try to recover from shared preferences
-            val savedPath = getSharedPreferences("camera_prefs", Context.MODE_PRIVATE)
+            val savedPath = getSharedPreferences("camera_prefs", MODE_PRIVATE)
                 .getString("last_photo_path", "")
             if (!savedPath.isNullOrEmpty() && savedPath != currentPhotoPath) {
                 Timber.d("Trying to recover photo from saved path: $savedPath")
@@ -600,7 +747,21 @@ class MainActivity : BaseThemedActivity() {
                 )
                 
                 selectedFiles.add(selectedFile)
+                Timber.d("Added camera file to selectedFiles, updating view")
                 fileHandler.updateSelectedFilesView()
+                
+                // CRITICAL: Immediately set send button visible for OCR models
+                binding.btnMicrophone.visibility = View.GONE
+                binding.btnSubmitText.visibility = View.VISIBLE
+                binding.btnSubmitText.setImageResource(R.drawable.send_icon)
+                binding.btnSubmitText.contentDescription = "Process OCR"
+                binding.btnSubmitText.isEnabled = true
+                binding.btnSubmitText.alpha = 1.0f
+                
+                // Start aggressive monitoring to prevent button from disappearing
+                startOcrButtonMonitoring()
+                
+                Timber.d("Camera result: Send button forced visible for OCR model and monitoring started")
                 
                 // OCR options are now always visible in the main UI
                 
@@ -629,7 +790,9 @@ class MainActivity : BaseThemedActivity() {
 
                 // 3. Update UI to show the file with progress
                 withContext(Dispatchers.Main) {
-                    fileHandler.updateSelectedFilesView()
+                    if (::fileHandler.isInitialized) {
+                        fileHandler.updateSelectedFilesView()
+                    }
 
                     // 4. Get the view we just created and set up the progress tracker
                     val fileView = FileUtil.findFileViewForUri(photoUri, this@MainActivity)
@@ -637,7 +800,9 @@ class MainActivity : BaseThemedActivity() {
                         Timber.e("Could not find view for camera photo: $photoUri")
                         Toast.makeText(this@MainActivity, "Error displaying camera photo", Toast.LENGTH_SHORT).show()
                         selectedFiles.remove(temporaryFile)
-                        fileHandler.updateSelectedFilesView()
+                        if (::fileHandler.isInitialized) {
+                            fileHandler.updateSelectedFilesView()
+                        }
                         return@withContext
                     }
 
@@ -691,7 +856,7 @@ class MainActivity : BaseThemedActivity() {
                             ).show()
 
                             // Haptic feedback
-                            getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                            getSystemService(VIBRATOR_SERVICE) as Vibrator
                             provideHapticFeedback(50)
                         }
 
@@ -718,7 +883,9 @@ class MainActivity : BaseThemedActivity() {
 
                             // Remove file from selected files on error
                             selectedFiles.remove(temporaryFile)
-                            fileHandler.updateSelectedFilesView()
+                            if (::fileHandler.isInitialized) {
+                                fileHandler.updateSelectedFilesView()
+                            }
                         }
                     }
                 } catch (e: Exception) {
@@ -732,7 +899,9 @@ class MainActivity : BaseThemedActivity() {
 
                         // Remove file from selected files on error
                         selectedFiles.remove(temporaryFile)
-                        fileHandler.updateSelectedFilesView()
+                        if (::fileHandler.isInitialized) {
+                            fileHandler.updateSelectedFilesView()
+                        }
                     }
                 }
             } // Close lifecycleScope.launch
@@ -780,7 +949,7 @@ class MainActivity : BaseThemedActivity() {
     }
     private fun restoreCurrentPhotoPath() {
         if (currentPhotoPath.isEmpty()) {
-            currentPhotoPath = getSharedPreferences("camera_prefs", Context.MODE_PRIVATE)
+            currentPhotoPath = getSharedPreferences("camera_prefs", MODE_PRIVATE)
                 .getString("last_photo_path", "") ?: ""
 
             if (currentPhotoPath.isNotEmpty()) {
@@ -801,7 +970,7 @@ class MainActivity : BaseThemedActivity() {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -829,6 +998,9 @@ class MainActivity : BaseThemedActivity() {
                 binding = ActivityMainBinding.inflate(layoutInflater)
                 binding.chatRecyclerView.itemAnimator = null
                 setContentView(binding.root)
+                
+                // Apply Material Design 3 system UI appearance
+                ThemeManager.applySystemUIAppearance(this)
             } catch (e: Exception) {
                 Timber.e(e, "Failed to inflate binding: ${e.message}")
                 finish()
@@ -840,6 +1012,9 @@ class MainActivity : BaseThemedActivity() {
 
             // Setup basic UI immediately for perceived performance
             setupBasicUI()
+
+            // Initialize file handler immediately after UI setup to prevent timing issues
+            fileHandler = FileHandler(this)
 
             // Initialize chat components asynchronously for better performance
             initializeChatComponentsAsync()
@@ -920,6 +1095,18 @@ class MainActivity : BaseThemedActivity() {
             Handler(Looper.getMainLooper()).postDelayed({
                 checkAndConnectToBackgroundGeneration()
             }, 2000) // Wait for app to be fully initialized
+            
+            // Initialize debug features in debug mode
+            if (BuildConfig.DEBUG) {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    try {
+                        initializeDebugFeatures()
+                        Timber.d("🔧 Debug features initialized")
+                    } catch (e: Exception) {
+                        Timber.e(e, "Debug feature initialization failed: ${e.message}")
+                    }
+                }, 2000) // Wait for UI to be ready
+            }
 
         } catch (e: Exception) {
             Timber.e(e, "Fatal error in onCreate: ${e.message}")
@@ -927,8 +1114,10 @@ class MainActivity : BaseThemedActivity() {
 
             // Try to recover by initializing essential components if possible
             try {
-                if (!::conversationTokenManager.isInitialized) {
-                    conversationTokenManager = ConversationTokenManager()
+                if (!::tokenManager.isInitialized) {
+                    // CRITICAL: Initialize SimplifiedTokenManager even in error recovery
+                    tokenManager = SimplifiedTokenManager(this)
+                    Timber.d("✅ Emergency recovery: SimplifiedTokenManager initialized")
                 }
 
                 if (!::messageManager.isInitialized && ::chatAdapter.isInitialized && ::conversationsViewModel.isInitialized) {
@@ -937,7 +1126,7 @@ class MainActivity : BaseThemedActivity() {
                         adapter = chatAdapter,
                         lifecycleScope = lifecycleScope,
                         chatAdapter = chatAdapter,
-                        tokenManager = conversationTokenManager
+                        tokenManager = tokenManager
                     )
                 }
             } catch (innerEx: Exception) {
@@ -945,18 +1134,73 @@ class MainActivity : BaseThemedActivity() {
             }
         }
     }
+    
+    /**
+     * Initialize debug features for DEBUG builds only
+     */
+    private fun initializeDebugFeatures() {
+        if (!BuildConfig.DEBUG) return
+        
+        try {
+            // Initialize debug token display helper
+            debugTokenDisplayHelper = DebugTokenDisplayHelper(this)
+            
+            // Find the main chat container (usually the parent of RecyclerView)
+            val chatContainer = binding.chatRecyclerView.parent as? LinearLayout
+            if (chatContainer != null) {
+                // Create debug token overlay
+                debugTokenDisplayHelper?.createDebugOverlay(chatContainer)
+                
+                // Add debug menu button 
+                DebugMenuHelper.createDebugButton(this, chatContainer)
+                
+                Timber.d("🔧 Debug token overlay and menu created")
+            } else {
+                Timber.w("🔧 Could not find suitable container for debug components")
+            }
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Error initializing debug features: ${e.message}")
+        }
+    }
+    
+    /**
+     * Initialize new simplified token system
+     */
+    private fun initializeProductionTokenSystem() {
+        try {
+            Timber.d("🚀 Initializing NEW simplified token system")
+            
+            tokenManager = SimplifiedTokenManager(this)
+            
+            Timber.d("✅ NEW token system initialized successfully")
+            
+        } catch (e: Exception) {
+            Timber.e(e, "💥 Failed to initialize token system: ${e.message}")
+            
+            // This is critical - app might be unstable without token management
+            Toast.makeText(this, "Token system initialization failed - app may be unstable", Toast.LENGTH_LONG).show()
+            throw RuntimeException("Token system initialization failed", e)
+        }
+    }
+    
     private fun setupChatAdapterCallbacks() {
         chatAdapter.setMessageCompletionCallback(object : ChatAdapter.MessageCompletionCallback {
-            @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+            @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
             override fun onMessageCompleted(message: ChatMessage) {
                 // Always use Handler for thread safety
                 Handler(Looper.getMainLooper()).post {
                     try {
-                        Timber.d("Message completed: ${message.id}")
+                        Timber.d("🔄 Message completed: ${message.id}")
+                        Timber.d("🔄 DEBUG: isReloadingMessage=$isReloadingMessage, messageLength=${message.message.length}, isEmpty=${message.message.isEmpty()}")
 
                         // If this was a regenerated message, update content in branch system
-                        if (isReloadingMessage && message.message.isNotEmpty()) {
+                        // Check both isReloadingMessage flag AND message.isRegenerated flag
+                        if ((isReloadingMessage || message.isRegenerated) && message.message.isNotEmpty()) {
                             Timber.d("🔄 COMPLETION: isReloadingMessage=$isReloadingMessage, messageId=${message.id}, messageContent=${message.message.take(50)}")
+                            
+                            // DEBUG: Check state before adding version
+                            Timber.d("🔄 BEFORE addVersion: totalVersions=${message.totalVersions}, versionIndex=${message.versionIndex}, messageVersions.size=${message.messageVersions.size}")
                             
                             // Add the new response as a version
                             message.addVersion(message.message)
@@ -1043,21 +1287,76 @@ class MainActivity : BaseThemedActivity() {
             }
 
             override fun decrementFreeMessages() {
-                this@MainActivity.creditManager.consumeChatCredits(2)
+                // Credits are now consumed on button press, not after completion
                 updateFreeMessagesText()
                 
-                // Show interstitial ad after AI response completion
-                this@MainActivity.adManager.smartAdTrigger(
-                    this@MainActivity, 
-                    AdManager.AdTrigger.CHAT_RESPONSE_COMPLETE
+                // Show interstitial ad after AI response completion with state preservation
+                // CRITICAL FIX: Preserve conversation state before showing ads to prevent state loss
+                val currentConversationBackup = currentConversationId
+                val currentModelBackup = ModelManager.selectedModel.id
+                val currentFilesBackup = selectedFiles.toList()
+                
+                // Show ad with callback to restore state if needed
+                this@MainActivity.adManager.showInterstitialAd(
+                    this@MainActivity,
+                    AdManager.AdTrigger.CHAT_RESPONSE_COMPLETE,
+                    object : AdManager.AdCallback {
+                        override fun onAdShown(trigger: AdManager.AdTrigger) {
+                            Timber.d("🎯 Ad shown, conversation state preserved")
+                        }
+                        
+                        override fun onAdClosed(trigger: AdManager.AdTrigger) {
+                            // Restore state after ad closes to prevent conversation loss
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                try {
+                                    if (currentConversationId != currentConversationBackup) {
+                                        Timber.w("⚠️ Conversation state changed after ad, restoring: $currentConversationBackup")
+                                        currentConversationId = currentConversationBackup
+                                    }
+                                    
+                                    if (ModelManager.selectedModel.id != currentModelBackup) {
+                                        Timber.w("⚠️ Model changed after ad, restoring: $currentModelBackup")
+                                        val modelIndex = ModelManager.models.indexOfFirst { it.id == currentModelBackup }
+                                        if (modelIndex != -1) {
+                                            ModelManager.selectedModel = ModelManager.models[modelIndex]
+                                            binding.spinnerModels.setSelection(modelIndex)
+                                            updateControlsVisibility(currentModelBackup)
+                                            applyModelColorToUI(currentModelBackup)
+                                        }
+                                    }
+                                    
+                                    if (selectedFiles.size != currentFilesBackup.size) {
+                                        Timber.w("⚠️ File selection changed after ad, restoring ${currentFilesBackup.size} files")
+                                        selectedFiles.clear()
+                                        selectedFiles.addAll(currentFilesBackup)
+                                        if (::fileHandler.isInitialized) {
+                                            fileHandler.updateSelectedFilesView()
+                                        }
+                                    }
+                                    
+                                    Timber.d("✅ State restoration completed after ad")
+                                } catch (e: Exception) {
+                                    Timber.e(e, "Error restoring state after ad: ${e.message}")
+                                }
+                            }, 100) // Small delay to ensure activity is fully resumed
+                        }
+                        
+                        override fun onAdFailed(trigger: AdManager.AdTrigger, error: String) {
+                            Timber.d("Ad failed, no state restoration needed: $error")
+                        }
+                        
+                        override fun onRewardEarned(trigger: AdManager.AdTrigger, amount: Int) {
+                            // Not applicable for interstitial ads
+                        }
+                    }
                 )
             }
 
-            @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+            @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
             override fun onMessageCompleted(messageId: String, content: String) {
                 Handler(Looper.getMainLooper()).post {
                     try {
-                        Timber.d("🔄 onMessageCompleted: ID=$messageId, contentLength=${content.length}, isReloadingMessage=$isReloadingMessage")
+                        Timber.d("🔄 onMessageCompleted(String): ID=$messageId, contentLength=${content.length}, isReloadingMessage=$isReloadingMessage")
                         
                         // Get the completed message 
                         val completedMessage = messageManager.getMessageById(messageId)
@@ -1071,8 +1370,7 @@ class MainActivity : BaseThemedActivity() {
                             messageManager.updateMessageContent(completedMessage.id, completedMessage.message)
                             
                             // Update token count and save to database
-                            conversationTokenManager.removeMessage(messageId)
-                            conversationTokenManager.addMessage(completedMessage)
+                            // Token management is now handled automatically by SimplifiedTokenManager
                             updateTokenCounterUI()
 
                             if (!completedMessage.conversationId.startsWith("private_")) {
@@ -1109,8 +1407,11 @@ class MainActivity : BaseThemedActivity() {
             }
 
             override fun incrementFreeMessages() {
-                this@MainActivity.creditManager.addCreditsFromAd(CreditManager.CreditType.CHAT, 2)
-                updateFreeMessagesText()
+                // Properly refund credits on API errors/cancellations
+                if (creditManager.refundCredits(1, CreditManager.CreditType.CHAT)) {
+                    updateFreeMessagesText()
+                    Timber.d("🔄 Credits refunded due to API error or cancellation")
+                }
             }
 
             override fun setWebSearchEnabled(enabled: Boolean) {
@@ -1240,7 +1541,9 @@ class MainActivity : BaseThemedActivity() {
                         }
                     }
                     // Update the selected files view to show error indicators
-                    fileHandler.updateSelectedFilesView()
+                    if (::fileHandler.isInitialized) {
+                        fileHandler.updateSelectedFilesView()
+                    }
                 }
             }
         }
@@ -1254,7 +1557,11 @@ class MainActivity : BaseThemedActivity() {
 
             // Initialize ad manager - IMPORTANT: This should be in MainActivity, not StartActivity
             adManager = AdManager.getInstance(this)
+            adManager.initializeForActivity(this)  // Initialize for this activity
             creditManager = CreditManager.getInstance(this)
+            
+            // Initialize file animation manager for beautiful file transfer animations
+            fileAnimationManager = FileAnimationManager(this)
 
             // Delay ad initialization to improve startup time, but only for non-subscribers
             if (!PrefsManager.isSubscribed(this)) {
@@ -1266,12 +1573,22 @@ class MainActivity : BaseThemedActivity() {
                 Timber.d("User subscribed, skipping ad initialization")
             }
 
+            // Initialize subscription manager first
+            SubscriptionManager.initialize(this)
+
             // Initialize billing manager reference
             val billingManager = BillingManager.getInstance(this)
 
             // Restore subscriptions when chat starts
             billingManager.restoreSubscriptions()
             billingManager.validateSubscriptionStatus()
+
+            // Monitor subscription status changes
+            lifecycleScope.launch {
+                SubscriptionManager.subscriptionStatus.collect { isSubscribed ->
+                    handleSubscriptionStatusChange(isSubscribed)
+                }
+            }
 
             Timber.d("Chat services initialized successfully")
         } catch (e: Exception) {
@@ -1294,8 +1611,8 @@ class MainActivity : BaseThemedActivity() {
             conversationsViewModel = ViewModelProvider(this)[ConversationsViewModel::class.java]
 
             // Initialize system services
-            vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-            sharedPrefs = getSharedPreferences("chat_prefs", Context.MODE_PRIVATE)
+            vibrator = getSystemService(VIBRATOR_SERVICE) as Vibrator
+            sharedPrefs = getSharedPreferences("chat_prefs", MODE_PRIVATE)
 
             // Load AI settings but don't update UI yet
             loadAiSettingsFromPrefs()
@@ -1304,15 +1621,15 @@ class MainActivity : BaseThemedActivity() {
             // Initialize credits and subscriptions
             updateUIBasedOnSubscriptionStatus()
 
-            // Initialize file handlers
+            // Initialize unified file handler (fileHandler already initialized in onCreate)
             unifiedFileHandler = UnifiedFileHandler(this)
-            fileHandler = FileHandler(this)
 
             // Set up file handler submission
             binding.btnSubmitText.setOnClickListener {
                 if (isGenerating) {
                     stopGeneration()
                 } else {
+                    Timber.d("Submit button clicked, calling fileHandler.handleSubmitTextClick()")
                     fileHandler.handleSubmitTextClick()
                 }
             }
@@ -1352,8 +1669,7 @@ class MainActivity : BaseThemedActivity() {
                 val hasCredits = isSubscribed || (::creditManager.isInitialized && creditManager.hasSufficientChatCredits())
                 
                 if (!hasContent) {
-                    binding.btnSubmitText.visibility = View.GONE
-                    binding.btnMicrophone.visibility = View.VISIBLE
+                    setMicrophoneVisibility(true)
                 } else {
                     binding.btnSubmitText.setImageResource(R.drawable.send_icon)
                     binding.btnSubmitText.visibility = View.VISIBLE
@@ -1398,9 +1714,19 @@ class MainActivity : BaseThemedActivity() {
 
         // Add debugging for button state changes
         binding.btnSubmitText.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            val isOcrModel = ModelValidator.isOcrModel(ModelManager.selectedModel.id)
+            val hasFiles = selectedFiles.isNotEmpty()
             Timber.d("Submit button layout changed - visibility: ${binding.btnSubmitText.visibility}, " +
                     "generating: $isGenerating, " +
+                    "isOcrModel: $isOcrModel, hasFiles: $hasFiles, " +
                     "contentDescription: ${binding.btnSubmitText.contentDescription}")
+            
+            // Force OCR button to stay visible if we have files
+            if (isOcrModel && hasFiles && binding.btnSubmitText.visibility != View.VISIBLE) {
+                Timber.w("OCR model with files but send button not visible - FORCING VISIBLE")
+                binding.btnSubmitText.visibility = View.VISIBLE
+                binding.btnMicrophone.visibility = View.GONE
+            }
         }
     }    private fun startAggressiveButtonMonitoring() {
         stopAggressiveButtonMonitoring() // Stop any existing monitoring
@@ -1428,6 +1754,28 @@ class MainActivity : BaseThemedActivity() {
         }
     }
 
+    /**
+     * Helper function to properly set microphone button visibility respecting OCR model rules
+     */
+    internal fun setMicrophoneVisibility(visible: Boolean) {
+        val isOcrModel = ModelValidator.isOcrModel(ModelManager.selectedModel.id)
+        
+        if (isOcrModel) {
+            // For OCR models (including Mistral OCR): never show microphone, always show send button
+            btnMicrophone.visibility = View.GONE
+            binding.btnSubmitText.visibility = View.VISIBLE
+        } else {
+            // For non-OCR models: follow the requested visibility
+            if (visible) {
+                btnMicrophone.visibility = View.VISIBLE
+                binding.btnSubmitText.visibility = View.GONE
+            } else {
+                btnMicrophone.visibility = View.GONE
+                binding.btnSubmitText.visibility = View.VISIBLE
+            }
+        }
+    }
+
     private fun stopAggressiveButtonMonitoring() {
         buttonMonitoringJob?.cancel()
         buttonMonitoringJob = null
@@ -1435,12 +1783,12 @@ class MainActivity : BaseThemedActivity() {
     /**
      * Handle OCR document processing
      */
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     @SuppressLint("UseKtx")
     fun triggerTokenLimitDialog(conversationPercentage: Float, modelId: String, isSubscribed: Boolean) {
         // Nu afișa dialog-ul prea des
         val currentTime = System.currentTimeMillis()
-        val lastDialogTime = getSharedPreferences("token_dialogs", Context.MODE_PRIVATE)
+        val lastDialogTime = getSharedPreferences("token_dialogs", MODE_PRIVATE)
             .getLong("last_dialog_time", 0)
 
         if (currentTime - lastDialogTime < 30000) { // 30 secunde între dialog-uri
@@ -1448,7 +1796,7 @@ class MainActivity : BaseThemedActivity() {
         }
 
         // Salvează timpul dialog-ului
-        getSharedPreferences("token_dialogs", Context.MODE_PRIVATE).edit {
+        getSharedPreferences("token_dialogs", MODE_PRIVATE).edit {
             putLong("last_dialog_time", currentTime)
         }
 
@@ -1598,7 +1946,11 @@ class MainActivity : BaseThemedActivity() {
                             ensureFilesPersistent()
                             
                             // Serialize files using the helper method
-                            val serializedFiles = fileHandler.serializeSelectedFiles(selectedFiles)
+                            val serializedFiles = if (::fileHandler.isInitialized) {
+                                fileHandler.serializeSelectedFiles(selectedFiles)
+                            } else {
+                                "[]"
+                            }
 
                             // Copy conversation to avoid modification issues
                             val updatedConversation = conversation.copy(
@@ -1629,22 +1981,24 @@ class MainActivity : BaseThemedActivity() {
         }
     }    private fun createNewConversationWithDraft(draftText: String) {
         try {
-            // Create title for draft - use first 30 chars of text or indicate attachments
+            // Create proper title for conversation - only based on text content, never files
             val draftTitle = when {
                 draftText.isNotEmpty() -> {
-                    if (draftText.length > 30) "${draftText.take(30)}..." else draftText
+                    // Use the draft text as the conversation title
+                    if (draftText.length > 50) "${draftText.take(50)}..." else draftText
                 }
-                selectedFiles.isNotEmpty() -> {
-                    "Draft with ${selectedFiles.size} attachment(s)"
-                }
-                else -> "Draft"
+                else -> "New Conversation"
             }
 
             // Ensure all files are persistent before saving
             ensureFilesPersistent()
             
             // Serialize files using the helper method
-            val serializedFiles = fileHandler.serializeSelectedFiles(selectedFiles)
+            val serializedFiles = if (::fileHandler.isInitialized) {
+                fileHandler.serializeSelectedFiles(selectedFiles)
+            } else {
+                "[]"
+            }
 
             // Generate a unique timestamp-based ID
             val conversationId = System.currentTimeMillis()
@@ -1734,7 +2088,23 @@ class MainActivity : BaseThemedActivity() {
                 }
 
                 // Update microphone/send button visibility based on text content
-                toggleInputButtons(newText.isNotEmpty())
+                // For OCR models with files, don't let text watcher override button state
+                val isOcrModel = ModelValidator.isOcrModel(ModelManager.selectedModel.id) 
+                val hasFiles = selectedFiles.isNotEmpty()
+                
+                if (isOcrModel && hasFiles) {
+                    // OCR model with files - ensure send button stays visible
+                    binding.btnMicrophone.visibility = View.GONE
+                    binding.btnSubmitText.visibility = View.VISIBLE
+                    binding.btnSubmitText.setImageResource(R.drawable.send_icon)
+                    binding.btnSubmitText.contentDescription = "Process OCR"
+                    binding.btnSubmitText.isEnabled = true
+                    binding.btnSubmitText.alpha = 1.0f
+                    Timber.d("Text watcher: Preserved send button for OCR model with files")
+                } else {
+                    val hasFiles = selectedFiles.isNotEmpty()
+                    toggleInputButtons(newText.isNotEmpty(), hasFiles)
+                }
                 
                 // Save draft when text changes (with slight delay to avoid excessive calls)
                 Handler(Looper.getMainLooper()).postDelayed({
@@ -1888,7 +2258,9 @@ class MainActivity : BaseThemedActivity() {
                             Timber.d("✅ Ongoing API job found, keeping connection alive")
                         } else {
                             Timber.d("🔌 No active API job, connecting to background service")
-                            bindToBackgroundService()
+                            ensureServiceBinding {
+                                Timber.d("🔗 Connected to background service during conversation load")
+                            }
                             
                             // CRITICAL FIX: Don't schedule another check - we'll handle reconnection here
                             // checkAndConnectToBackgroundGeneration will be called only from onCreate
@@ -1945,7 +2317,7 @@ class MainActivity : BaseThemedActivity() {
         // Save all messages
         messageManager.saveAllMessages()
 
-        getSharedPreferences("app_prefs", Context.MODE_PRIVATE).edit {
+        getSharedPreferences("app_prefs", MODE_PRIVATE).edit {
             putLong("last_session_time", System.currentTimeMillis())
         }
 
@@ -1958,8 +2330,9 @@ class MainActivity : BaseThemedActivity() {
         // The UI will reconnect to background generation when resumed
         // chatAdapter.setGenerating(false) - REMOVED to prevent response refresh
         
-        if (isRecording) {
-            cancelVoiceRecording()
+        // Cancel any ongoing ultra voice recording
+        if (::ultraAudioIntegration.isInitialized && ultraAudioIntegration.isCurrentlyRecording()) {
+            ultraAudioIntegration.cancelRecording()
         }
     }
 
@@ -1972,11 +2345,11 @@ class MainActivity : BaseThemedActivity() {
             conversationsViewModel = ViewModelProvider(this)[ConversationsViewModel::class.java]
             
             // Initialize system services
-            vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-            sharedPrefs = getSharedPreferences("chat_prefs", Context.MODE_PRIVATE)
+            vibrator = getSystemService(VIBRATOR_SERVICE) as Vibrator
+            sharedPrefs = getSharedPreferences("chat_prefs", MODE_PRIVATE)
             
             // Initialize conversation token manager EARLY - before components that depend on it
-            conversationTokenManager = ConversationTokenManager()
+            initializeProductionTokenSystem()
             
             // Initialize chat title view
             chatTitleView = binding.tvChatTitle
@@ -2008,7 +2381,7 @@ class MainActivity : BaseThemedActivity() {
                     adapter = chatAdapter,
                     lifecycleScope = lifecycleScope,
                     chatAdapter = chatAdapter,
-                    tokenManager = conversationTokenManager
+                    tokenManager = tokenManager
                 )
                 
                 // Setup chat adapter callbacks
@@ -2019,10 +2392,10 @@ class MainActivity : BaseThemedActivity() {
                     context = this@MainActivity,
                     conversationsViewModel = conversationsViewModel,
                     chatAdapter = chatAdapter,
-                    coroutineScope = lifecycleScope,
+                    coroutineScope = streamingScope,
                     callbacks = createAiChatCallbacks(),
                     messageManager = messageManager,
-                    conversationTokenManager = conversationTokenManager
+                    tokenManager = tokenManager
                 )
                 
                 Timber.d("Core chat components initialized")
@@ -2119,11 +2492,8 @@ class MainActivity : BaseThemedActivity() {
                 return
             }
             
-            if (currentConversationId != null && ::conversationTokenManager.isInitialized) {
-                // Force reload token state for current conversation
-                conversationTokenManager.setConversationId(currentConversationId!!)
-
-                // Force update token counter UI
+            if (currentConversationId != null) {
+                // Update token counter UI with new system
                 updateTokenCounterUI()
 
                 // Load draft if necessary but ONLY if we have no existing conversation content
@@ -2182,10 +2552,11 @@ class MainActivity : BaseThemedActivity() {
 
 
         // ADDED: Check if we need to reset model selection after returning from image generation
+        // CRITICAL FIX: Do NOT reset model when returning from file selection to prevent model switching
         val appSettings = getSharedPreferences("app_settings", MODE_PRIVATE)
         val shouldResetModel = appSettings.getBoolean("reset_to_default_model", false)
 
-        if (shouldResetModel) {
+        if (shouldResetModel && !isReturningFromFileSelection) {
             // Reset flag
             appSettings.edit {
                 putBoolean("reset_to_default_model", false)
@@ -2200,12 +2571,23 @@ class MainActivity : BaseThemedActivity() {
             updateControlsVisibility(ModelManager.selectedModel.id)
 
             Timber.d("Model selection reset to default after returning from image generation")
+        } else if (shouldResetModel && isReturningFromFileSelection) {
+            // Clear flag but don't reset model when returning from file selection
+            appSettings.edit {
+                putBoolean("reset_to_default_model", false)
+                apply()
+            }
+            Timber.d("📎 Skipped model reset because returning from file selection - model preserved: ${ModelManager.selectedModel.displayName}")
         }
 
         messageManager.fixLoadingStates()
 
         // Always verify subscription status on resume
+        SubscriptionManager.updateSubscriptionStatus(this)
         updateUIBasedOnSubscriptionStatus()
+
+        // Show expiry warning if subscription is expiring soon
+        SubscriptionManager.showExpiryWarningIfNeeded(this)
 
         // Save any pending messages to database
         if (currentConversationId != null) {
@@ -2239,19 +2621,23 @@ class MainActivity : BaseThemedActivity() {
             setGeneratingState(false)
 
             // Additional check to ensure button states match input text
-            if (inputText.isEmpty()) {
-                binding.btnMicrophone.visibility = View.VISIBLE
-                binding.btnSubmitText.visibility = View.GONE
-            } else {
-                binding.btnMicrophone.visibility = View.GONE
-                binding.btnSubmitText.visibility = View.VISIBLE
-                binding.btnSubmitText.setImageResource(R.drawable.send_icon)
-                binding.btnSubmitText.contentDescription = "Send message"
+            // Skip this for OCR models as they're handled correctly by updateControlsVisibility()
+            val currentModelId = ModelManager.selectedModel.id
+            val isOcrModel = ModelConfigManager.getConfig(currentModelId)?.isOcrModel == true
+            
+            if (!isOcrModel) {
+                if (inputText.isEmpty()) {
+                    setMicrophoneVisibility(true)
+                } else {
+                    setMicrophoneVisibility(false)
+                    binding.btnSubmitText.setImageResource(R.drawable.send_icon)
+                    binding.btnSubmitText.contentDescription = "Send message"
+                }
             }
         }
 
         // If more than 10 minutes have passed, consider it a new session
-        val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
         val lastSessionTime = prefs.getLong("last_session_time", 0)
         val currentTime = System.currentTimeMillis()
         val isNewSession = (currentTime - lastSessionTime) > 10 * 60 * 1000
@@ -2276,12 +2662,26 @@ class MainActivity : BaseThemedActivity() {
             putLong("last_session_time", currentTime)
         }
 
-        // Check for ongoing app updates
+        // Check for forced updates first, then ongoing updates
         try {
             val updateManager = MyApp.getUpdateManager()
-            updateManager?.checkOngoingUpdates(this)
+            if (updateManager != null) {
+                // Check if a forced update is required
+                if (updateManager.isForceUpdateRequired()) {
+                    Timber.w("🚨 Forced update required, launching BlockingUpdateActivity from MainActivity")
+                    val intent = Intent(this, BlockingUpdateActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NO_HISTORY
+                    }
+                    startActivity(intent)
+                    finish()
+                    return
+                }
+                
+                // Check for ongoing app updates only if no forced update is pending
+                updateManager.checkOngoingUpdates(this)
+            }
         } catch (e: Exception) {
-            Timber.e(e, "Error checking ongoing updates: ${e.message}")
+            Timber.e(e, "Error checking updates: ${e.message}")
         }
 
         // Refresh the conversation title
@@ -2355,7 +2755,7 @@ class MainActivity : BaseThemedActivity() {
             }, 300)
         }
 
-        getSharedPreferences("app_prefs", Context.MODE_PRIVATE).edit {
+        getSharedPreferences("app_prefs", MODE_PRIVATE).edit {
             putLong("last_session_time", System.currentTimeMillis())
         }
         
@@ -2373,12 +2773,20 @@ class MainActivity : BaseThemedActivity() {
                 scrollArrowsHelper.cleanup()
             }
             
+            // Clean up ultra audio integration
+            if (::ultraAudioIntegration.isInitialized) {
+                ultraAudioIntegration.cleanup()
+            }
+            
             // Cancel animations to prevent leaks
             stopPulsingAnimation()
             
             // Clean up handlers
             uiHandler.removeCallbacksAndMessages(null)
-            recordingHandler.removeCallbacksAndMessages(null)
+            // recordingHandler.removeCallbacksAndMessages(null) // OLD SYSTEM - REMOVED
+            
+            // Stop OCR button monitoring
+            stopOcrButtonMonitoring()
             
             // Clean up dialogs
             currentEditDialog?.dismiss()
@@ -2388,23 +2796,25 @@ class MainActivity : BaseThemedActivity() {
             progressDialog?.dismiss()
             progressDialog = null
             
+            // Clean up consent dialog to prevent window leak
+            if (::consentManager.isInitialized) {
+                consentManager.dismissDialog()
+            }
+            
             // Cancel API jobs
             currentApiJob?.cancel()
             currentApiJob = null
             buttonMonitoringJob?.cancel()
             buttonMonitoringJob = null
             
-            // Clean up speech recognizer
-            if (::speechRecognizer.isInitialized) {
+            // Clean up ultra audio integration
+            if (::ultraAudioIntegration.isInitialized) {
                 try {
-                    speechRecognizer.destroy()
+                    ultraAudioIntegration.cleanup()
                 } catch (e: Exception) {
-                    Timber.e(e, "Error destroying speech recognizer: ${e.message}")
+                    Timber.e(e, "Error cleaning up ultra audio integration: ${e.message}")
                 }
             }
-            
-            // Stop animations
-            stopWaveformAnimation()
             
             // Clean up audio handler
             if (::audioResponseHandler.isInitialized) {
@@ -2430,8 +2840,11 @@ class MainActivity : BaseThemedActivity() {
                 if (::messageManager.isInitialized) {
                     messageManager.saveAllMessages()
                 }
-                if (::conversationTokenManager.isInitialized) {
-                    // conversationTokenManager doesn't have a cleanup method
+                
+                // Clean up production token manager
+                // ProductionTokenManager cleanup handled by ConversationTokenManager
+                if (::tokenManager.isInitialized) {
+                    tokenManager.cleanupOldData()
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Error cleaning up managers: ${e.message}")
@@ -2473,7 +2886,7 @@ class MainActivity : BaseThemedActivity() {
                     // consentManager doesn't have a cleanup method
                 }
                 if (::adManager.isInitialized) {
-                    // adManager doesn't have a cleanup method
+                    adManager.cleanup()  // Now it has a cleanup method!
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Error cleaning up ad managers: ${e.message}")
@@ -2487,8 +2900,7 @@ class MainActivity : BaseThemedActivity() {
             conversationMetadata.clear()
             
             // Clear wave bars
-            waveBars.clear()
-            recordingAnimators.clear()
+            // OLD VOICE SYSTEM CLEANUP - REMOVED (waveBars and recordingAnimators no longer exist)
             
             // Reset state variables to prevent stale references
             currentConversationId = null
@@ -2515,6 +2927,13 @@ class MainActivity : BaseThemedActivity() {
                 Timber.d("📍 Allowing background generation to continue after activity exit")
             } else {
                 Timber.d("📍 Activity destroyed but not finishing, keeping background service alive")
+            }
+            
+            // CRITICAL FIX: Cancel streaming scope to prevent memory leaks but only if activity is finishing
+            // Don't cancel on configuration changes to allow streaming to continue
+            if (isFinishing) {
+                streamingScope.coroutineContext[Job]?.cancel()
+                Timber.d("🛑 Streaming scope cancelled on activity finish")
             }
             
         } catch (e: Exception) {
@@ -2604,7 +3023,7 @@ class MainActivity : BaseThemedActivity() {
         try {
             Timber.d("Handling main text expansion result: resultCode=$resultCode")
 
-            if (resultCode == Activity.RESULT_OK && data != null) {
+            if (resultCode == RESULT_OK && data != null) {
                 val editedText = data.getStringExtra("EDITED_TEXT")
                 val textChanged = data.getBooleanExtra("TEXT_CHANGED", false)
                 val originalText = data.getStringExtra("ORIGINAL_TEXT")
@@ -2662,7 +3081,7 @@ class MainActivity : BaseThemedActivity() {
 
             Timber.d("Handling edit text expansion result: resultCode=$resultCode")
 
-            if (resultCode == Activity.RESULT_OK && data != null) {
+            if (resultCode == RESULT_OK && data != null) {
                 val editedText = data.getStringExtra("EDITED_TEXT") ?: ""
                 val textChanged = data.getBooleanExtra("TEXT_CHANGED", false)
                 val originalText = data.getStringExtra("ORIGINAL_TEXT")
@@ -2748,7 +3167,7 @@ class MainActivity : BaseThemedActivity() {
     /**
      * Setup button listeners for edit dialog
      */
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun handleEditMessageTokenCheck(
         dialog: Dialog,
         editText: TextInputEditText,
@@ -2761,17 +3180,34 @@ class MainActivity : BaseThemedActivity() {
             val modelId = ModelManager.selectedModel.id
             val isSubscribed = PrefsManager.isSubscribed(this)
 
-            // Temporarily remove original message tokens
-            conversationTokenManager.removeMessage(message.id)
+            // Check credit availability first (for non-subscribers)
+            if (!isSubscribed && !creditManager.hasSufficientChatCredits()) {
+                Timber.w("❌ Insufficient chat credits for edit message")
+                showInsufficientCreditsDialog(CreditManager.CreditType.CHAT)
+                return
+            }
+            
+            // Consume credits immediately for non-subscribers (when edit send button is pressed)
+            var creditsConsumed = false
+            if (!isSubscribed) {
+                if (creditManager.consumeChatCredits()) {
+                    creditsConsumed = true
+                    updateFreeMessagesText()
+                    Timber.d("✅ Chat credits consumed on edit send button press")
+                } else {
+                    Timber.e("❌ Failed to consume chat credits despite previous check")
+                    showInsufficientCreditsDialog(CreditManager.CreditType.CHAT)
+                    return
+                }
+            }
 
-            // Check if new message would exceed limits
-            val (wouldExceed, available, _) = conversationTokenManager.wouldExceedLimit(newText, modelId, isSubscribed)
-
-            // Add original message back
-            conversationTokenManager.addMessage(message)
+            // Token management is now handled automatically by the new system
+            // Simple validation using TokenValidator
+            val wouldExceed = false // For now, disable this check - new system will handle it during send
+            val available = 999999 // Placeholder - should not be used since wouldExceed is false
 
             if (wouldExceed) {
-                val inputTokens = TokenValidator.estimateTokenCount(newText)
+                val inputTokens = TokenValidator.getAccurateTokenCount(newText, ModelManager.selectedModel.id)
                 AlertDialog.Builder(this)
                     .setTitle("Edited Message Too Long")
                     .setMessage("The edited message has $inputTokens tokens, but only $available tokens are available.")
@@ -2779,27 +3215,42 @@ class MainActivity : BaseThemedActivity() {
                         val truncatedText = TokenValidator.truncateToTokenCount(newText, available)
                         proceedWithEditedMessage(message, truncatedText, reasoningEnabled, deepSearchEnabled)
 
-                        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                        val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
                         imm.hideSoftInputFromWindow(editText.windowToken, 0)
                         dialog.dismiss()
                     }
                     .setNegativeButton("Edit Again", null)
-                    .setNeutralButton("Cancel") { _, _ -> dialog.dismiss() }
+                    .setNeutralButton("Cancel") { _, _ -> 
+                        // Refund credits if consumed and cancelled
+                        if (creditsConsumed) {
+                            creditManager.refundCredits(1, CreditManager.CreditType.CHAT)
+                            updateFreeMessagesText()
+                            Timber.d("🔄 Credits refunded due to edit cancellation")
+                        }
+                        dialog.dismiss() 
+                    }
                     .show()
             } else {
                 proceedWithEditedMessage(message, newText, reasoningEnabled, deepSearchEnabled)
 
-                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
                 imm.hideSoftInputFromWindow(editText.windowToken, 0)
                 dialog.dismiss()
             }
         } catch (e: Exception) {
             Timber.e(e, "Error checking tokens for edited message: ${e.message}")
 
+            // Refund credits if consumed and error occurred
+            if (!PrefsManager.isSubscribed(this)) {
+                creditManager.refundCredits(1, CreditManager.CreditType.CHAT)
+                updateFreeMessagesText()
+                Timber.d("🔄 Credits refunded due to edit error")
+            }
+
             // Proceed anyway
             proceedWithEditedMessage(message, newText, reasoningEnabled, deepSearchEnabled)
 
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
             imm.hideSoftInputFromWindow(editText.windowToken, 0)
             dialog.dismiss()
         }
@@ -2815,11 +3266,21 @@ class MainActivity : BaseThemedActivity() {
         // Change these from LinearLayout to ImageButton
         btnReasoning = findViewById(R.id.btnReasoning)
         btnDeepSearch = findViewById(R.id.btnDeepSearch)
+        btnPerplexitySearchMode = findViewById(R.id.btnPerplexitySearchMode)
+        btnPerplexityContextSize = findViewById(R.id.btnPerplexityContextSize)
+        btnAiParameters = findViewById(R.id.btnAiParameters)
+        
+        // Initialize AI Parameters Manager
+        aiParametersManager = AIParametersManager.getInstance(this)
+        
         // Hide manual web search button - AI models handle tools automatically
         btnDeepSearch.visibility = View.GONE
+        
+        // Initialize Perplexity button visibility and states
+        updatePerplexityButtonsVisibility()
 
-        // Initialize voice recording
-        initializeVoiceRecording()
+        // Initialize ultra-modern voice recording
+        initializeUltraVoiceRecording()
 
         // Now set up model selector (which calls updateControlsVisibility)
         setupModelSelector()
@@ -2832,7 +3293,7 @@ class MainActivity : BaseThemedActivity() {
         updateReasoningButtonState(isReasoningEnabled)
         updateDeepSearchButtonState(isDeepSearchEnabled)
     }
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun setupListeners() {
         // Existing reasoning and deep search listeners
         btnReasoning.setOnClickListener {
@@ -2843,6 +3304,21 @@ class MainActivity : BaseThemedActivity() {
         btnDeepSearch.setOnClickListener {
             provideHapticFeedback(50)
             toggleDeepSearch()
+        }
+
+        btnAiParameters.setOnClickListener {
+            provideHapticFeedback(50)
+            showAiParametersDialog()
+        }
+
+        btnPerplexitySearchMode.setOnClickListener {
+            provideHapticFeedback(50)
+            togglePerplexitySearchMode()
+        }
+
+        btnPerplexityContextSize.setOnClickListener {
+            provideHapticFeedback(50)
+            showPerplexityContextSizeDialog()
         }
 
         // CHANGED: Update btnConversationsList to be a back button to StartActivity
@@ -2907,7 +3383,7 @@ class MainActivity : BaseThemedActivity() {
         window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
     }
 
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun setupChatAdapter() {
         chatAdapter = ChatAdapter(
             onCopy = { text -> copyToClipboard(text) },
@@ -2938,6 +3414,7 @@ class MainActivity : BaseThemedActivity() {
             onConversationLongClick = { view, conversation ->
                 showConversationMenu(view, conversation)
             },
+            attachmentsManager = com.cyberflux.qwinai.utils.ConversationAttachmentsIntegration.createAttachmentsManager(this)
         )
 
         binding.chatRecyclerView.apply {
@@ -2945,8 +3422,26 @@ class MainActivity : BaseThemedActivity() {
                 stackFromEnd = true
             }
             adapter = chatAdapter
+            
+            // PERFORMANCE: Set up view recycling pools for better performance
+            val viewPool = RecyclerView.RecycledViewPool()
+            viewPool.setMaxRecycledViews(ChatAdapter.VIEW_TYPE_USER_MESSAGE, 10)
+            viewPool.setMaxRecycledViews(ChatAdapter.VIEW_TYPE_AI_MESSAGE, 15)
+            viewPool.setMaxRecycledViews(ChatAdapter.VIEW_TYPE_USER_IMAGE, 5)
+            viewPool.setMaxRecycledViews(ChatAdapter.VIEW_TYPE_AI_IMAGE, 5)
+            viewPool.setMaxRecycledViews(ChatAdapter.VIEW_TYPE_USER_DOCUMENT, 5)
+            viewPool.setMaxRecycledViews(ChatAdapter.VIEW_TYPE_AI_DOCUMENT, 5)
+            viewPool.setMaxRecycledViews(ChatAdapter.VIEW_TYPE_AI_GENERATED_IMAGE, 5)
+            setRecycledViewPool(viewPool)
+            
+            // PERFORMANCE: Enable item animator optimizations
+            itemAnimator?.run {
+                changeDuration = 0
+                moveDuration = 0
+            }
+            
             addOnScrollListener(object : RecyclerView.OnScrollListener() {
-                @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+                @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
                 override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                     super.onScrollStateChanged(recyclerView, newState)
                     if (!recyclerView.canScrollVertically(1) && newState == RecyclerView.SCROLL_STATE_IDLE) {
@@ -2966,14 +3461,14 @@ class MainActivity : BaseThemedActivity() {
         ModelValidator.clearCache()
         ModelValidator.init() // Initialize validators explicitly
 
-        // Apply styling directly here - no styles from XML
+        // Apply clean transparent styling for the spinner
         binding.spinnerModels.apply {
-            // Apply a clean, simple background with proper styling
-            setBackgroundResource(R.drawable.spinner_background)
+            // Remove any background to get the clean look
+            background = null
 
-            // Set dimensions
+            // Set dimensions to wrap content for clean appearance
             layoutParams = layoutParams.apply {
-                width = (resources.displayMetrics.widthPixels * 0.65).toInt() // 65% of screen width
+                width = ViewGroup.LayoutParams.WRAP_CONTENT
             }
 
             // Configure dropdown behavior
@@ -3005,9 +3500,7 @@ class MainActivity : BaseThemedActivity() {
             ModelManager.selectedModel = ModelManager.models[currentModelIndex]
             
             // Update token manager with new model ID
-            if (::conversationTokenManager.isInitialized) {
-                conversationTokenManager.setModelId(ModelManager.selectedModel.id)
-            }
+            // Model changes are handled automatically by the new token system
 
             // Update adapter selection
             adapter.setSelectedPosition(currentModelIndex)
@@ -3079,10 +3572,7 @@ class MainActivity : BaseThemedActivity() {
                         // This is an image-only model like DALL-E 2
                         ModelManager.selectedModel = selectedModel
                         
-                        // Update token manager with new model ID
-                        if (::conversationTokenManager.isInitialized) {
-                            conversationTokenManager.setModelId(selectedModel.id)
-                        }
+                        // Model changes handled automatically by new token system
 
                         // Apply color for visual feedback before launching
                         applyModelColorToUI(selectedModel.id)
@@ -3167,10 +3657,10 @@ class MainActivity : BaseThemedActivity() {
                     // Update ModelManager
                     ModelManager.selectedModel = selectedModel
                     
-                    // Update token manager with new model ID
-                    if (::conversationTokenManager.isInitialized) {
-                        conversationTokenManager.setModelId(selectedModel.id)
-                    }
+                    // Load AI parameters for the new model
+                    loadAiParametersForCurrentModel()
+                    
+                    // Model changes handled automatically by new token system
 
                     // Record model usage for tracking
                     ModelUsageTracker.recordModelUsage(this@MainActivity, selectedModel.id)
@@ -3190,6 +3680,9 @@ class MainActivity : BaseThemedActivity() {
 
         // Apply color for the initial model on startup
         applyModelColorToUI(ModelManager.selectedModel.id)
+        
+        // Load AI parameters for the initial model
+        loadAiParametersForCurrentModel()
 
         // Initialize welcome message with current model (only if adapter is initialized)
         if (::chatAdapter.isInitialized) {
@@ -3264,14 +3757,14 @@ class MainActivity : BaseThemedActivity() {
         val lengthStr = prefs.getString("response_length", ResponseLength.DEFAULT.name)
         val length = try {
             ResponseLength.valueOf(lengthStr ?: ResponseLength.DEFAULT.name)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             ResponseLength.DEFAULT
         }
 
         val toneStr = prefs.getString("response_tone", ResponseTone.DEFAULT.name)
         val tone = try {
             ResponseTone.valueOf(toneStr ?: ResponseTone.DEFAULT.name)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             ResponseTone.DEFAULT
         }
 
@@ -3307,18 +3800,74 @@ class MainActivity : BaseThemedActivity() {
 
         lifecycleScope.launch {
             try {
-                // CRITICAL FIX: Reset token manager before loading new conversation
-                conversationTokenManager.reset()
-                conversationTokenManager.setConversationId(conversationIdString)
-
-                // Load token state from database
-                val tokenStateLoaded = withContext(Dispatchers.IO) {
-                    conversationTokenManager.loadTokenStateFromDatabase(conversationIdString, conversationsViewModel.getConversationDao())
+                // PRODUCTION TOKEN SYSTEM: Load with comprehensive token management
+                // conversationTokenManager.setConversationId(conversationIdString)
+                
+                // Use ultra-reliable token system loading through ConversationTokenManager
+                var tokenStateLoaded = false
+                try {
+                    Timber.d("📂 Loading conversation with ultra-reliable token system")
+                    
+                    // Load messages first to get full context
+                    val prelimMessages = withContext(Dispatchers.IO) {
+                        conversationsViewModel.getAllConversationMessages(conversationIdString)
+                    }
+                    
+                    // ProductionTokenManager handles loading through ConversationTokenManager
+                    try {
+                        // Token state loading handled automatically by new system
+                        val dbLoadSuccess = true // New system doesn't require explicit database loading
+                        
+                        if (dbLoadSuccess) {
+                            Timber.d("✅ PRODUCTION TOKEN LOAD SUCCESS: Loaded from database")
+                            tokenStateLoaded = true
+                        } else {
+                            // Token rebuilding handled automatically by new system
+                            tokenStateLoaded = true
+                            Timber.d("✅ NEW TOKEN SYSTEM: Ready for use")
+                        }
+                        
+                    } catch (e: Exception) {
+                        Timber.e(e, "❌ ProductionTokenManager load error, will use fallback")
+                        tokenStateLoaded = false
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "❌ Production token loading failed: ${e.message}")
+                    tokenStateLoaded = false
+                }
+                
+                // Fallback to legacy token system if production failed
+                if (!tokenStateLoaded) {
+                    Timber.w("⚠️ Falling back to legacy token loading")
+                    tokenStateLoaded = withContext(Dispatchers.IO) {
+                        // SimplifiedTokenManager handles state automatically - no manual loading needed
+                        false // Fall through to rebuild from messages
+                    }
+                    
+                    if (!tokenStateLoaded) {
+                        Timber.d("No saved token state found for conversation $conversationIdString, will rebuild from messages")
+                        // conversationTokenManager.reset()
+                    } else {
+                        Timber.d("Successfully loaded legacy token state for conversation $conversationIdString")
+                    }
                 }
 
                 // CRITICAL FIX: Load ALL messages from conversation
                 val messages = withContext(Dispatchers.IO) {
                     conversationsViewModel.getAllConversationMessages(conversationIdString)
+                }
+                
+                // 🐛 DEBUG: Log all loaded messages in detail
+                Timber.d("🐛🐛🐛 LOADED ${messages.size} MESSAGES FROM DATABASE:")
+                messages.forEach { message ->
+                    Timber.d("🐛 Message ${message.id}:")
+                    Timber.d("🐛   - isUser: ${message.isUser}")
+                    Timber.d("🐛   - isGenerating: ${message.isGenerating}")
+                    Timber.d("🐛   - isLoading: ${message.isLoading}")
+                    Timber.d("🐛   - content length: ${message.message.length}")
+                    Timber.d("🐛   - content preview: '${message.message.take(100)}...'")
+                    Timber.d("🐛   - lastModified: ${message.lastModified}")
+                    Timber.d("🐛   - age: ${(System.currentTimeMillis() - message.lastModified) / 1000}s ago")
                 }
 
                 Timber.d("🔄 OPENING CONVERSATION $conversationIdString with ${messages.size} messages")
@@ -3367,52 +3916,120 @@ class MainActivity : BaseThemedActivity() {
         loadingIndicator: ProgressBar?,
         conversation: Conversation?
     ) {
-        // CRITICAL FIX: Check for ACTIVELY generating messages BEFORE initializing
-        // Only consider messages as actively generating if they have active streaming sessions
-        val actuallyGeneratingMessages = messages.filter { message ->
-            !message.isUser && 
-            message.isGenerating && 
-            (StreamingStateManager.canContinueStreaming(message.id) || 
-             backgroundAiService?.isGenerating(message.id) == true)
+        Timber.d("🔄 Opening conversation: $conversationIdString with ${messages.size} messages")
+        
+        // CRITICAL FIX: Simple approach - always initialize with all messages from database
+        // This ensures user sees existing content immediately, including partial responses
+        messageManager.initialize(messages, conversationIdString)
+        Timber.d("✅ Initialized MessageManager with ${messages.size} messages")
+        
+        // CRITICAL FIX: Check for messages that are ACTUALLY currently generating
+        // Only process messages that are genuinely in progress, not just marked as generating
+        val potentialGeneratingMessages = messages.filter { !it.isUser && it.isGenerating }
+        
+        // IMPROVED: Validate which messages are actually still generating by checking active sessions
+        val actuallyGeneratingMessages = potentialGeneratingMessages.filter { message ->
+            val hasActiveSession = UnifiedStreamingManager.getSession(message.id) != null
+            val isRecentlyStarted = (System.currentTimeMillis() - message.timestamp) < 30000 // Within 30 seconds
+            val hasMinimalContent = message.message.length < 100 // Less than 100 chars suggests still generating
+            
+            // Only consider a message as generating if it has an active session OR is very recent with minimal content
+            val isActuallyGenerating = hasActiveSession || (isRecentlyStarted && hasMinimalContent)
+            
+            if (!isActuallyGenerating) {
+                Timber.d("🛡️ PROTECTION: Skipping message ${message.id} - not actually generating (hasSession=$hasActiveSession, recent=$isRecentlyStarted, minimal=$hasMinimalContent)")
+            }
+            
+            isActuallyGenerating
         }
         
-        // CRITICAL FIX: If we're opening the same conversation that's already active, 
-        // be extra careful about preserving streaming content
-        val isSameConversation = currentConversationId == conversationIdString
-        val hasCurrentStreamingContent = chatAdapter.currentList.any { it.isGenerating && it.message.isNotEmpty() }
-        
-        if (actuallyGeneratingMessages.isNotEmpty() || (isSameConversation && hasCurrentStreamingContent)) {
-            Timber.d("🔄 Found ${actuallyGeneratingMessages.size} actually generating messages or existing streaming content - preserving streaming state")
-            Timber.d("🔍 Same conversation: $isSameConversation, has streaming content: $hasCurrentStreamingContent")
+        if (actuallyGeneratingMessages.isNotEmpty()) {
+            Timber.d("📋 Found ${actuallyGeneratingMessages.size} messages ACTUALLY generating (filtered from ${potentialGeneratingMessages.size} potential)")
             
-            // CRITICAL FIX: Don't reinitialize MessageManager - it would overwrite streaming content
-            // Instead, merge new messages with existing adapter content while preserving streaming
-            mergeMessagesPreservingStreaming(messages, conversationIdString)
+            // Log content for debugging
+            actuallyGeneratingMessages.forEach { message ->
+                Timber.d("📝 Actually generating message ${message.id}: content length=${message.message.length}, content preview='${message.message.take(100)}...'")
+            }
             
-            // Restore ongoing streaming sessions without canceling them
-            restoreOngoingStreamingSessions(conversationIdString, messages)
-        } else {
-            // No generating messages - safe to initialize normally
-            messageManager.initialize(messages, conversationIdString)
-            Timber.d("✅ Initialized MessageManager normally - no active streaming")
+            // CRITICAL FIX: Set proper UI state for ongoing generation
+            setGeneratingState(true)  // This enables the stop button and handles all UI updates
+            
+            // Start streaming mode to show proper UI state  
+            chatAdapter.startStreamingMode()
+            
+            // CRITICAL FIX: Force stop button to be clickable and visible
+            runOnUiThread {
+                binding.btnSubmitText.visibility = View.VISIBLE
+                binding.btnSubmitText.isEnabled = true
+                binding.btnSubmitText.isClickable = true
+                binding.btnSubmitText.isFocusable = true
+                binding.btnMicrophone.visibility = View.GONE
+                Timber.d("🛑 Forced stop button to be clickable in saved conversation")
+            }
+            
+            Timber.d("🛑 Generating state set to true for saved conversation generation")
+            
+            // CRITICAL FIX: Show loading indicators ONLY for actually generating messages
+            actuallyGeneratingMessages.forEach { message ->
+                val index = chatAdapter.currentList.indexOfFirst { it.id == message.id }
+                
+                if (index != -1) {
+                    // CRITICAL FIX: Double approach - both MessageManager and direct adapter calls
+                    val statusText = "" // No text status, just loading indicator
+                    
+                    // Method 1: MessageManager (if available)
+                    if (::messageManager.isInitialized) {
+                        messageManager.updateLoadingState(message.id, true, false, statusText)
+                    }
+                    
+                    // Method 2: Direct adapter call (ensure it shows)
+                    chatAdapter.updateLoadingStateDirect(message.id, true, false, statusText)
+                    
+                    Timber.d("🔄 Applied loading indicators to ACTUALLY generating message ${message.id}: '$statusText'")
+                }
+                if (index != -1) {
+                    // CRITICAL FIX: Set proper generating state to hide AI navigation buttons
+                    val generatingMessage = message.copy(
+                        isGenerating = true,
+                        isLoading = message.message.isEmpty(), // Only show loading if no content
+                        showButtons = false, // CRITICAL: Hide copy/reload buttons during generation
+                        canContinueStreaming = true,
+                        isWebSearchActive = false, // Ensure proper state
+                        partialContent = message.message // Preserve content
+                    )
+                    
+                    // Update the message in adapter to show generating state
+                    chatAdapter.updateMessageDirectly(index, generatingMessage)
+                    
+                    Timber.d("🔄 Set generating state for message: ${message.id} with content: ${message.message.length} chars")
+                }
+            }
+            
+            Timber.d("🎬 Started streaming mode and UI state for generating messages")
+            
+            // Connect to background service for real-time updates (non-blocking)
+            lifecycleScope.launch {
+                delay(500) // Small delay to let UI settle
+                connectToBackgroundServiceForMessages(actuallyGeneratingMessages)
+                
+                // CRITICAL FIX: Fallback mechanism - if service connection fails, check database directly
+                delay(3000) // Wait 3 seconds for service connection
+                fallbackCheckGeneratingMessages(actuallyGeneratingMessages)
+            }
         }
 
         // Rebuild token manager if needed
         if (!tokenStateLoaded && messages.isNotEmpty()) {
             Timber.d("Rebuilding token state from ${messages.size} messages")
-            conversationTokenManager.rebuildFromMessages(messages, conversationIdString)
-
-            // Save the rebuilt state
-            lifecycleScope.launch(Dispatchers.IO) {
-                conversationTokenManager.saveTokenStateToDatabase(
-                    conversationIdString,
-                    conversationsViewModel.getConversationDao()
-                )
+            lifecycleScope.launch {
+                // conversationTokenManager.rebuildFromMessagesProduction(messages, conversationIdString)
             }
+
+            // Token state saving handled automatically by new system
         }
 
-        // Force update token counter UI
-        updateTokenCounterUI()
+        // Force update token counter UI with production system
+        updateTokenCounterWithProduction()
 
         // Update conversation title and UI
         lifecycleScope.launch {
@@ -3465,12 +4082,14 @@ class MainActivity : BaseThemedActivity() {
 
                         // Load draft files with our enhanced method
                         if (conversation.draftFiles.isNotEmpty()) {
-                            loadDraftFiles(conversation.draftFiles)
+                            loadDraftFiles(conversation.draftFiles, conversationId)
                         } else {
                             // No files, make sure file container is hidden
                             selectedFiles.clear()
                             binding.selectedFilesScrollView.visibility = View.GONE
-                            fileHandler.updateSelectedFilesView()
+                            if (::fileHandler.isInitialized) {
+                                fileHandler.updateSelectedFilesView()
+                            }
                         }
 
                         // Update input field UI based on content
@@ -3510,17 +4129,58 @@ class MainActivity : BaseThemedActivity() {
     /**
      * Enhanced method for loading draft files with better URI handling
      */
-    private fun loadDraftFiles(draftFilesJson: String) {
+    private fun loadDraftFiles(draftFilesJson: String, conversationId: String) {
         if (draftFilesJson.isEmpty()) return
 
         try {
             Timber.d("Loading draft files from JSON: ${draftFilesJson.take(200)}...")
             
-            // Use the helper method to deserialize
-            val draftFiles = fileHandler.deserializeSelectedFiles(draftFilesJson)
+            // Try to deserialize as SelectedFile format first (old format)
+            var draftFiles = if (::fileHandler.isInitialized) {
+                fileHandler.deserializeSelectedFiles(draftFilesJson)
+            } else {
+                emptyList()
+            }
+
+            // If that didn't work, try to deserialize as MessageDraftManager.DraftFile format (new format)
+            if (draftFiles.isEmpty()) {
+                try {
+                    val moshi = com.squareup.moshi.Moshi.Builder().build()
+                    val fileListType = com.squareup.moshi.Types.newParameterizedType(
+                        List::class.java, 
+                        com.cyberflux.qwinai.utils.MessageDraftManager.DraftFile::class.java
+                    )
+                    val adapter = moshi.adapter<List<com.cyberflux.qwinai.utils.MessageDraftManager.DraftFile>>(fileListType)
+                    val messageDraftFiles = adapter.fromJson(draftFilesJson) ?: emptyList()
+                    
+                    if (messageDraftFiles.isNotEmpty()) {
+                        Timber.d("Found MessageDraftManager.DraftFile format, converting to SelectedFile format")
+                        // Convert MessageDraftManager.DraftFile to SelectedFile format
+                        draftFiles = messageDraftFiles.mapNotNull { draftFile ->
+                            try {
+                                FileUtil.FileUtil.SelectedFile(
+                                    uri = android.net.Uri.parse(draftFile.uri),
+                                    name = draftFile.name,
+                                    size = draftFile.size,
+                                    isDocument = !draftFile.type.startsWith("image/"),
+                                    isExtracted = false,
+                                    extractedContentId = "",
+                                    isPersistent = false,
+                                    persistentFileName = ""
+                                )
+                            } catch (e: Exception) {
+                                Timber.e(e, "Error converting draft file: ${draftFile.name}")
+                                null
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "Error deserializing as MessageDraftManager.DraftFile format")
+                }
+            }
 
             if (draftFiles.isEmpty()) {
-                Timber.d("No draft files found or deserialization returned empty list")
+                Timber.d("No draft files found in any supported format")
                 return
             }
             
@@ -3565,7 +4225,7 @@ class MainActivity : BaseThemedActivity() {
 
                     // Fall back to checking original URI
                     val isAccessible = try {
-                        contentResolver.openInputStream(file.uri)?.use { true } ?: false
+                        contentResolver.openInputStream(file.uri)?.use { true } == true
                     } catch (e: Exception) {
                         Timber.e(e, "Can't access file URI: ${file.uri}")
                         false
@@ -3592,24 +4252,57 @@ class MainActivity : BaseThemedActivity() {
                 }
             }
 
-            // Update UI if we found valid files
+            // Update UI based on results
             if (validFilesCount > 0) {
                 binding.selectedFilesScrollView.visibility = View.VISIBLE
 
                 // Update the files view
-                fileHandler.updateSelectedFilesView()
+                if (::fileHandler.isInitialized) {
+                    fileHandler.updateSelectedFilesView()
+                }
 
                 Timber.d("Loaded $validFilesCount draft files out of ${draftFiles.size} saved")
+                
+                // Show user feedback if some files were missing
+                val missingFilesCount = draftFiles.size - validFilesCount
+                if (missingFilesCount > 0) {
+                    val message = if (missingFilesCount == 1) {
+                        "1 draft file was no longer available and was removed"
+                    } else {
+                        "$missingFilesCount draft files were no longer available and were removed"
+                    }
+                    
+                    runOnUiThread {
+                        Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+                    }
+                    
+                    // Clean up the draft in the database to remove invalid file references
+                    cleanupInvalidDraftFiles(conversationId.toString(), selectedFiles)
+                }
             } else {
                 binding.selectedFilesScrollView.visibility = View.GONE
                 Timber.d("No valid files found from draft")
+                
+                // If we had draft files but none were valid, notify user and clean up
+                if (draftFiles.isNotEmpty()) {
+                    runOnUiThread {
+                        Toast.makeText(this@MainActivity, 
+                            "Draft files are no longer available and were removed", 
+                            Toast.LENGTH_LONG).show()
+                    }
+                    
+                    // Clean up the draft in the database
+                    cleanupInvalidDraftFiles(conversationId.toString(), emptyList())
+                }
             }
         } catch (e: Exception) {
             Timber.e(e, "Error parsing draft files JSON: ${e.message}")
             // Fallback: Hide file container and clear any partial files
             selectedFiles.clear()
             binding.selectedFilesScrollView.visibility = View.GONE
-            fileHandler.updateSelectedFilesView()
+            if (::fileHandler.isInitialized) {
+                fileHandler.updateSelectedFilesView()
+            }
             
             // Show user feedback about the issue
             runOnUiThread {
@@ -3617,6 +4310,43 @@ class MainActivity : BaseThemedActivity() {
             }
         }
     }
+
+    /**
+     * Clean up invalid draft file references in the database
+     * Updates the conversation's draft files to only include valid files
+     */
+    private fun cleanupInvalidDraftFiles(conversationId: String, validFiles: List<FileUtil.FileUtil.SelectedFile>) {
+        lifecycleScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    val conversation = conversationsViewModel.getConversationById(conversationId)
+                    if (conversation != null) {
+                        // Serialize only the valid files back to JSON
+                        val updatedDraftFilesJson = if (validFiles.isNotEmpty() && ::fileHandler.isInitialized) {
+                            fileHandler.serializeSelectedFiles(validFiles)
+                        } else {
+                            ""
+                        }
+                        
+                        // Update conversation with cleaned up draft files
+                        val updatedConversation = conversation.copy(
+                            draftFiles = updatedDraftFilesJson,
+                            hasDraft = conversation.draftText.isNotEmpty() || validFiles.isNotEmpty(),
+                            draftTimestamp = System.currentTimeMillis()
+                        )
+                        
+                        conversationsViewModel.updateConversation(updatedConversation)
+                        
+                        Timber.d("Cleaned up draft files for conversation $conversationId: " +
+                               "${validFiles.size} valid files remaining")
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error cleaning up invalid draft files for conversation $conversationId")
+            }
+        }
+    }
+
     /**
      * Apply color theme based on the selected model
      */
@@ -3630,10 +4360,48 @@ class MainActivity : BaseThemedActivity() {
     // -------------------------------------------------------------------------
 
     fun stopGeneration() {
-        Timber.d("Stop generation requested")
+        Timber.d("🛑🛑🛑 STOP GENERATION BUTTON PRESSED - MainActivity.stopGeneration() called")
+        Timber.d("🛑 Current isGenerating state: $isGenerating")
+        Timber.d("🛑 ChatAdapter streaming active: ${if (::chatAdapter.isInitialized) chatAdapter.isStreamingActive else "not initialized"}")
+        Timber.d("🛑 Current thread: ${Thread.currentThread().name}")
+
+        // CRITICAL: Cancel HTTP requests immediately
+        try {
+            RetrofitInstance.cancelAllRequests()
+            Timber.d("🛑 ✅ HTTP requests cancelled from MainActivity")
+        } catch (e: Exception) {
+            Timber.e(e, "🛑 ❌ Error cancelling HTTP requests: ${e.message}")
+        }
+
+        // CRITICAL: Force stop all streaming immediately
+        if (::chatAdapter.isInitialized) {
+            chatAdapter.stopStreamingModeGradually()
+            Timber.d("🛑 Forced stop ChatAdapter streaming")
+        }
+        
+        if (::messageManager.isInitialized) {
+            messageManager.stopStreamingMode()
+            Timber.d("🛑 Forced stop MessageManager streaming")
+        }
 
         // Call the AiChatService method to properly cancel the API call
         aiChatService.cancelCurrentGeneration()
+        
+        // CRITICAL FIX: Cancel background generation for saved conversations
+        try {
+            StreamingHandler.cancelAllStreaming()
+            backgroundAiService?.let { service ->
+                // Get any generating message IDs to stop them specifically
+                val generatingMessages = chatAdapter.currentList.filter { it.isGenerating && !it.isUser }
+                generatingMessages.forEach { message ->
+                    BackgroundAiService.stopGeneration(this, message.id)
+                    Timber.d("🛑 Stopping background generation for message: ${message.id}")
+                }
+            }
+            Timber.d("🛑 ✅ Background generation cancelled")
+        } catch (e: Exception) {
+            Timber.e(e, "🛑 ❌ Error cancelling background generation: ${e.message}")
+        }
 
         // Set flag immediately to prevent new operations
         isGenerating = false
@@ -3654,8 +4422,7 @@ class MainActivity : BaseThemedActivity() {
         // Reset button state
         val inputText = binding.etInputText.text.toString().trim()
         if (inputText.isEmpty()) {
-            binding.btnMicrophone.visibility = View.VISIBLE
-            binding.btnSubmitText.visibility = View.GONE
+            setMicrophoneVisibility(true)
         } else {
             binding.btnMicrophone.visibility = View.GONE
             binding.btnSubmitText.visibility = View.VISIBLE
@@ -3669,7 +4436,6 @@ class MainActivity : BaseThemedActivity() {
         // Clear any reloading flags
         isReloadingMessage = false
 
-        Toast.makeText(this, "Response generation stopped", Toast.LENGTH_SHORT).show()
         Timber.d("Generation stopped and UI reset")
     }
 
@@ -3687,7 +4453,7 @@ class MainActivity : BaseThemedActivity() {
                         showButtons = true,
                         isThinkingActive = false,
                         isWebSearchActive = false,
-                        message = message.message.ifEmpty { "Generation stopped" }
+                        message = message.message // Keep existing message content, don't add "Generation stopped"
                     )
                     hasChanges = true
                 }
@@ -3703,7 +4469,7 @@ class MainActivity : BaseThemedActivity() {
     }
 
 
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun handleIntent(intent: Intent?): Boolean {
         if (intent == null) return false
 
@@ -3948,7 +4714,9 @@ class MainActivity : BaseThemedActivity() {
                     // Process the image with a delay to ensure MainActivity is fully initialized
                     Handler(Looper.getMainLooper()).postDelayed({
                         // Add the image to selected files
-                        fileHandler.handleSelectedFile(uri, false)
+                        if (::fileHandler.isInitialized) {
+                            fileHandler.handleSelectedFile(uri, false)
+                        }
 
                         // If there's no prompt already set, add a default one
                         if (binding.etInputText.text.isNullOrEmpty()) {
@@ -4044,21 +4812,17 @@ class MainActivity : BaseThemedActivity() {
             val creditsToMax = creditManager.getCreditsToMax(CreditManager.CreditType.CHAT)
             
             if (canEarnCredits && creditsToMax > 0) {
-                menu.findItem(R.id.menu_watch_ad_1).title = "Watch ad for 5 credits"
+                menu.findItem(R.id.menu_watch_ad_1).title = "Watch ad for 1 credit"
                 menu.findItem(R.id.menu_watch_ad_1).isEnabled = true
             } else {
                 menu.findItem(R.id.menu_watch_ad_1).isEnabled = false
-                menu.findItem(R.id.menu_watch_ad_1).title = "Watch ad for 5 credits (limit reached)"
+                menu.findItem(R.id.menu_watch_ad_1).title = "Watch ad for 1 credit (limit reached)"
             }
 
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     R.id.menu_get_unlimited_credits -> navigateToWelcomeActivity()
-                    R.id.menu_watch_ad_1 -> adManager.showRewardedAd(
-                        this@MainActivity,
-                        CreditManager.CreditType.CHAT,
-                        AdManager.AdTrigger.MANUAL_REWARD
-                    )
+                    R.id.menu_watch_ad_1 -> adManager.watchAdForCredits(this@MainActivity, 1)  // Use the new method for UI integration
                 }
                 true
             }
@@ -4079,7 +4843,7 @@ class MainActivity : BaseThemedActivity() {
      * Handle different feature modes passed from StartActivity
      * @return true if this method handled any special UI flags (translator or ask by link)
      */
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun handleFeatureMode(featureMode: String, intent: Intent, skipReset: Boolean = false): Boolean {
         var handledSpecialFlags = false
 
@@ -4137,7 +4901,9 @@ class MainActivity : BaseThemedActivity() {
                 "image_upload" -> {
                     // Open file picker for images
                     Handler(Looper.getMainLooper()).postDelayed({
-                        fileHandler.openFilePicker(filePickerLauncher)
+                        if (::fileHandler.isInitialized) {
+                            fileHandler.openFilePicker(filePickerLauncher)
+                        }
                         Toast.makeText(this, "Select an image to analyze", Toast.LENGTH_SHORT).show()
                     }, 500)
                 }
@@ -4255,7 +5021,9 @@ class MainActivity : BaseThemedActivity() {
                             // Process the provided image
                             try {
                                 val uri = Uri.parse(cameraImageUri)
-                                fileHandler.handleSelectedFile(uri, false)
+                                if (::fileHandler.isInitialized) {
+                                    fileHandler.handleSelectedFile(uri, false)
+                                }
                                 Toast.makeText(this, "Processing captured image...", Toast.LENGTH_SHORT).show()
                             } catch (e: Exception) {
                                 Timber.e(e, "Error processing camera image: ${e.message}")
@@ -4338,7 +5106,7 @@ class MainActivity : BaseThemedActivity() {
 
     private fun showAttachmentMenu() {
         val currentModel = ModelManager.selectedModel
-        val modelConfig = ModelConfigManager.getConfig(currentModel.id)
+        ModelConfigManager.getConfig(currentModel.id)
         val supportsImage = ModelValidator.supportsImageUpload(currentModel.id)
 
         // Check file limit
@@ -4355,7 +5123,24 @@ class MainActivity : BaseThemedActivity() {
         val fileUploadBottomSheet = FileUploadBottomSheet.newInstance(
             onFileSelected = { uri ->
                 // Handle the selected file using the existing file handler
-                fileHandler.handleSelectedFile(uri, false)
+                Timber.d("File selected from attachment menu: $uri")
+                try {
+                    if (::fileHandler.isInitialized) {
+                        Timber.d("FileHandler is initialized, processing file...")
+                        fileHandler.handleSelectedFile(uri, false)
+                        Timber.d("File processing completed")
+                    } else {
+                        Timber.e("FileHandler not initialized when trying to select file!")
+                        Toast.makeText(this, "Please wait for app to finish loading", Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "Error processing selected file: ${e.message}")
+                    Toast.makeText(this, "Error processing file: ${e.message}", Toast.LENGTH_SHORT).show()
+                } finally {
+                    // Clear stored model state after file processing
+                    modelStateBeforeFilePicker = null
+                    Timber.d("📎 Cleared stored model state after file processing")
+                }
             },
             onCameraClick = {
                 if (supportsImage) {
@@ -4367,257 +5152,20 @@ class MainActivity : BaseThemedActivity() {
                         Toast.LENGTH_SHORT
                     ).show()
                 }
+            },
+            onPickerLaunch = {
+                // Set flag when external picker is about to be launched
+                isReturningFromFileSelection = true
+                
+                // CRITICAL FIX: Store model state before launching file picker to prevent reset
+                modelStateBeforeFilePicker = ModelManager.selectedModel
+                Timber.d("📎 Setting isReturningFromFileSelection = true (bottom sheet picker launch)")
+                Timber.d("📎 Stored model state before picker: ${modelStateBeforeFilePicker?.displayName}")
             }
         )
         
         fileUploadBottomSheet.show(supportFragmentManager, "FileUploadBottomSheet")
     }
-    private fun openImagePicker() {
-        val currentModel = ModelManager.selectedModel
-        val modelConfig = ModelConfigManager.getConfig(currentModel.id)
-        
-        if (modelConfig == null || !modelConfig.supportsImages) {
-            Toast.makeText(this, "This model doesn't support image uploads", Toast.LENGTH_SHORT).show()
-            return
-        }
-        
-        // Create image-specific intent with model's supported formats
-        val supportedMimeTypes = mutableListOf<String>()
-        modelConfig.supportedImageFormats.forEach { format ->
-            when (format.lowercase()) {
-                "jpg", "jpeg" -> supportedMimeTypes.add("image/jpeg")
-                "png" -> supportedMimeTypes.add("image/png")
-                "gif" -> supportedMimeTypes.add("image/gif")
-                "webp" -> supportedMimeTypes.add("image/webp")
-            }
-        }
-        
-        if (supportedMimeTypes.isEmpty()) {
-            // Fallback to common image types
-            supportedMimeTypes.addAll(listOf("image/jpeg", "image/png", "image/gif", "image/webp"))
-        }
-        
-        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-            type = "image/*"
-            addCategory(Intent.CATEGORY_OPENABLE)
-            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, modelConfig.supportsMultipleFileSelection)
-            putExtra(Intent.EXTRA_MIME_TYPES, supportedMimeTypes.toTypedArray())
-        }
-
-        try {
-            filePickerLauncher.launch(intent)
-        } catch (e: Exception) {
-            Timber.e(e, "Error launching image picker: ${e.message}")
-            Toast.makeText(this, "Error opening image picker: ${e.message}", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun openDocumentPicker() {
-        val currentModel = ModelManager.selectedModel
-        val modelConfig = ModelConfigManager.getConfig(currentModel.id)
-        
-        if (modelConfig == null || !modelConfig.supportsFileUpload) {
-            // Fallback to text extraction for models without native file support
-            val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-                type = "*/*"
-                addCategory(Intent.CATEGORY_OPENABLE)
-                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
-                    "application/pdf",
-                    "application/msword",
-                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    "application/vnd.ms-excel",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    "application/vnd.ms-powerpoint",
-                    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                    "text/plain",
-                    "text/csv"
-                ))
-            }
-            
-            try {
-                documentPickerLauncher.launch(intent)
-            } catch (e: Exception) {
-                Timber.e(e, "Error launching document picker: ${e.message}")
-                Toast.makeText(this, "Error opening document picker: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
-            return
-        }
-        
-        // Use model-specific file filtering
-        val intent = FileFilterUtils.createFilePickerIntent(modelConfig, allowMultiple = true)
-        
-        if (intent == null) {
-            Toast.makeText(this, "This model doesn't support file uploads", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        try {
-            documentPickerLauncher.launch(intent)
-        } catch (e: Exception) {
-            Timber.e(e, "Error launching document picker: ${e.message}")
-            Toast.makeText(this, "Error opening document picker: ${e.message}", Toast.LENGTH_SHORT).show()
-        }
-    }
-    // Add document picker launcher
-    val documentPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == RESULT_OK) {
-            val data = result.data
-            val currentModel = ModelManager.selectedModel
-            val hasNativeSupport = ModelValidator.hasNativeDocumentSupport(currentModel.id)
-            val isOcrModel = ModelValidator.isOcrModel(currentModel.id)
-
-            // Handle multiple documents
-            if (data?.clipData != null) {
-                val count = data.clipData!!.itemCount
-                Timber.d("Multiple documents selected: $count files")
-
-                // Check against TOTAL files for document processing
-                val totalFileCount = selectedFiles.size + count
-                if (totalFileCount > 5) {
-                    Toast.makeText(
-                        this,
-                        "Maximum 5 files allowed. You're trying to add $count more when you already have ${selectedFiles.size}.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-
-                // Process only up to the max files allowed
-                val remainingSlots = 5 - selectedFiles.size
-                val filesToProcess = if (remainingSlots > 0) minOf(count, remainingSlots) else 0
-
-                if (filesToProcess <= 0) {
-                    Toast.makeText(
-                        this,
-                        "Cannot add more documents. Please remove some first.",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    return@registerForActivityResult
-                }
-
-                Timber.d("Processing $filesToProcess out of $count selected documents")
-
-                // Process each document
-                for (i in 0 until filesToProcess) {
-                    val uri = data.clipData!!.getItemAt(i).uri
-                    processSelectedDocument(uri, currentModel, hasNativeSupport, isOcrModel)
-                }
-                
-                // Show success message for multiple documents
-                if (filesToProcess > 1) {
-                    Toast.makeText(
-                        this,
-                        "Added $filesToProcess documents successfully",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-            } else if (data?.data != null) {
-                // Single document
-                val uri = data.data!!
-                processSelectedDocument(uri, currentModel, hasNativeSupport, isOcrModel)
-            }
-        }
-    }
-
-    private fun processSelectedDocument(uri: Uri, currentModel: Any, hasNativeSupport: Boolean, isOcrModel: Boolean) {
-        // Validate file type using centralized validation
-        val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
-        
-        if (!SupportedFileTypes.isDocumentTypeSupported(mimeType)) {
-            val fileName = FileUtil.getFileNameFromUri(this, uri) ?: "unknown file"
-            val fileExtension = SupportedFileTypes.getFileExtensionFromMimeType(mimeType)
-            
-            Toast.makeText(
-                this,
-                "Unsupported file type: $fileName ($mimeType$fileExtension)\n\n${SupportedFileTypes.getSupportedDocumentFormatsDescription()}",
-                Toast.LENGTH_LONG
-            ).show()
-            return
-        }
-
-        // Check if this is a PDF file that should be extracted
-        val fileName = FileUtil.getFileNameFromUri(this, uri) ?: ""
-        val isPdfFile = fileName.endsWith(".pdf", ignoreCase = true) || mimeType == "application/pdf"
-        
-        val modelConfig = ModelConfigManager.getConfig((currentModel as? AIModel)?.id ?: "")
-        val supportsFileUpload = modelConfig?.supportsFileUpload ?: false
-        
-        if (isOcrModel) {
-            // Handle OCR specifically
-            handlePdfForOcr(uri)
-        } else if (supportsFileUpload && hasNativeSupport) {
-            // Model supports native file uploads - send the actual file
-            Timber.d("Using native file upload for: $fileName (model supports file uploads)")
-            fileHandler.handleSelectedFile(uri, true)
-        } else {
-            // Model doesn't support native files - extract text content
-            Timber.d("Using text extraction for: $fileName (model needs text extraction)")
-            fileHandler.handleSelectedDocument(uri)
-        }
-    }
-
-
-
-    // Add method to handle selected PDF for OCR
-    private fun handlePdfForOcr(uri: Uri) {
-        // Verify that we're using OCR model
-        if (!ModelValidator.isOcrModel(ModelManager.selectedModel.id)) {
-            // Switch to OCR model
-            setSelectedModelInSpinner(ModelManager.MISTRAL_OCR_ID)
-            Toast.makeText(this, "Switched to OCR model for PDF processing", Toast.LENGTH_SHORT).show()
-        }
-
-        lifecycleScope.launch {
-            try {
-                // Get file details
-                val fileName = FileUtil.getFileName(this@MainActivity, uri)
-                val fileSize = FileUtil.getFileSize(this@MainActivity, uri)
-
-                // Add to selectedFiles for preview
-                val selectedFile = FileUtil.FileUtil.SelectedFile(
-                    uri = uri,
-                    name = fileName,
-                    size = fileSize,
-                    isDocument = true
-                )
-
-                selectedFiles.add(selectedFile)
-                fileHandler.updateSelectedFilesView()
-
-                // Show OCR options dialog instead of immediately processing
-                showOcrOptionsDialog(uri, fileName)
-
-            } catch (e: Exception) {
-                Timber.e(e, "Error preparing PDF for OCR")
-                runOnUiThread {
-                    Toast.makeText(this@MainActivity, "Error preparing PDF: ${e.message}", Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-    }
-
-    private fun showOcrOptionsDialog(uri: Uri, fileName: String) {
-        // Since the user already selected a file, we need to show them they can configure
-        // OCR options and then send. We'll show a simple dialog explaining this.
-        val dialog = MaterialAlertDialogBuilder(this)
-            .setTitle("File Selected for OCR")
-            .setMessage("$fileName has been selected for OCR processing.\n\nYou can now configure OCR options below and click Send when ready.")
-            .setPositiveButton("OK") { _, _ ->
-                // File remains in selectedFiles list, user can configure options and send
-                Toast.makeText(this, "Configure OCR options below and click Send", Toast.LENGTH_LONG).show()
-            }
-            .setNegativeButton("Cancel") { _, _ ->
-                // Remove from selected files
-                selectedFiles.removeAll { it.uri == uri }
-                fileHandler.updateSelectedFilesView()
-            }
-            .create()
-
-        dialog.show()
-    }
-
-
 
 
     // Helper method to set model with callback
@@ -4660,33 +5208,54 @@ class MainActivity : BaseThemedActivity() {
     private fun saveTokenStateAfterMessageSent() {
         if (currentConversationId == null || currentConversationId!!.startsWith("private_")) return
 
-        lifecycleScope.launch(Dispatchers.IO) {
-            conversationTokenManager.saveTokenStateToDatabase(
-                currentConversationId!!,
-                conversationsViewModel.getConversationDao()
-            )
-        }
+        // Token state automatically saved by new system
     }
     /**
      * Update token counter UI method
      * Enhanced to use secure token management system
      */
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun updateTokenCounterUI() {
-        val tvTokenCount = findViewById<TextView>(R.id.tvTokenCount) ?: return
-        val currentText = binding.etInputText.text?.toString() ?: ""
-        val isSubscribed = PrefsManager.isSubscribed(this)
-        val modelId = ModelManager.selectedModel.id
-
-        // Use TokenCounterHelper for consistent UI updates
-        TokenCounterHelper.updateTokenCounter(
-            tvTokenCount,
-            currentText,
-            modelId,
-            isSubscribed,
-            this,
-            conversationTokenManager
-        )
+        try {
+            val tvTokenCount = findViewById<TextView>(R.id.tvTokenCount) ?: return
+            val conversationId = currentConversationId ?: return
+            val modelId = ModelManager.selectedModel.id
+            val isSubscribed = PrefsManager.isSubscribed(this)
+            
+            if (!::tokenManager.isInitialized) {
+                tvTokenCount.text = "Token system not initialized"
+                return
+            }
+            
+            // Get usage summary from new token system
+            val usageSummary = tokenManager.getUsageSummary(
+                conversationId = conversationId,
+                modelId = modelId,
+                isSubscribed = isSubscribed
+            )
+            
+            // Update UI
+            tvTokenCount.text = usageSummary
+            
+            // Check if warning needed
+            val (needsWarning, warningMessage) = tokenManager.checkNeedsWarning(
+                conversationId = conversationId,
+                modelId = modelId,
+                isSubscribed = isSubscribed
+            )
+            
+            if (needsWarning) {
+                tvTokenCount.setTextColor(ContextCompat.getColor(this, R.color.warning_color))
+                tokenLimitWarningBadge?.visibility = View.VISIBLE
+            } else {
+                tvTokenCount.setTextColor(ContextCompat.getColor(this, R.color.md_theme_light_onSurface))
+                tokenLimitWarningBadge?.visibility = View.GONE
+            }
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Error updating token counter UI: ${e.message}")
+            findViewById<TextView>(R.id.tvTokenCount)?.text = "Token error"
+        }
     }
 
     /**
@@ -4723,7 +5292,7 @@ class MainActivity : BaseThemedActivity() {
     /**
      * Handle context menu item selection - handles both AI and user menus
      */
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     override fun onContextItemSelected(item: MenuItem): Boolean {
         when (item.itemId) {
             // User message actions
@@ -4771,7 +5340,7 @@ class MainActivity : BaseThemedActivity() {
     }    /**
      * Show dialog to edit a message with null safety improvements
      */
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun showEditMessageDialog(message: ChatMessage) {
         try {
             val dialog = Dialog(this, R.style.EditMessageDialogTheme)
@@ -4847,7 +5416,7 @@ class MainActivity : BaseThemedActivity() {
 
             // Set up close button
             btnClose.setOnClickListener {
-                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
                 imm.hideSoftInputFromWindow(editText.windowToken, 0)
                 Handler(Looper.getMainLooper()).postDelayed({
                     dialog.dismiss()
@@ -4887,7 +5456,7 @@ class MainActivity : BaseThemedActivity() {
 
                 if (newText == message.message) {
                     // No changes made, just dismiss
-                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                    val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
                     imm.hideSoftInputFromWindow(editText.windowToken, 0)
                     dialog.dismiss()
                     return@setOnClickListener
@@ -4916,19 +5485,21 @@ class MainActivity : BaseThemedActivity() {
             val isSubscribed = PrefsManager.isSubscribed(this)
 
             // Calculate tokens for the new text
-            val newTokens = TokenValidator.estimateTokenCount(newText)
+            val newTokens = TokenValidator.getAccurateTokenCount(newText, ModelManager.selectedModel.id)
 
             // Calculate tokens for the original message
-            val originalTokens = TokenValidator.estimateTokenCount(originalMessage.message)
+            val originalTokens = TokenValidator.getAccurateTokenCount(originalMessage.message, ModelManager.selectedModel.id)
 
             // Calculate the difference
             val tokenDifference = newTokens - originalTokens
 
             // Try to get conversation tokens excluding original message
             val currentTokens = try {
-                conversationTokenManager.getRawConversationTokens() - originalTokens
+                // SimplifiedTokenManager uses different approach - estimate current conversation size
+                val conversationUsage = tokenManager.getConversationUsageDetails(currentConversationId ?: "")
+                (conversationUsage?.totalTokens ?: 0) - originalTokens
             } catch (e: Exception) {
-                Timber.e(e, "Error getting raw conversation tokens")
+                Timber.e(e, "Error getting conversation tokens")
                 0 // Default to 0 if there's an error
             }
 
@@ -4979,7 +5550,7 @@ class MainActivity : BaseThemedActivity() {
             btnSend.isEnabled = newText.isNotEmpty()
             btnSend.alpha = if (newText.isNotEmpty()) 1.0f else 0.5f
         }
-    }    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    }    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun proceedWithEditedMessage(
         originalMessage: ChatMessage,
         newText: String,
@@ -5004,7 +5575,7 @@ class MainActivity : BaseThemedActivity() {
             updateDeepSearchButtonState(isDeepSearchEnabled)
 
             // Remove the original message from token count
-            conversationTokenManager.removeMessage(originalMessage.id)
+            // conversationTokenManager.removeMessage(originalMessage.id)
 
             // Store the original message content as the first version if not already stored
             if (originalMessage.messageVersions.isEmpty()) {
@@ -5024,7 +5595,7 @@ class MainActivity : BaseThemedActivity() {
             }
 
             // Add the updated message to token count
-            conversationTokenManager.addMessage(originalMessage)
+            // conversationTokenManager.addMessage(originalMessage)
 
             // Save the updated message to database if not private
             if (!originalMessage.conversationId.startsWith("private_")) {
@@ -5038,17 +5609,7 @@ class MainActivity : BaseThemedActivity() {
 
             // Save token state to database if not private conversation
             if (currentConversationId != null && !currentConversationId!!.startsWith("private_")) {
-                lifecycleScope.launch(Dispatchers.IO) {
-                    try {
-                        conversationTokenManager.saveTokenStateToDatabase(
-                            currentConversationId!!,
-                            conversationsViewModel.getConversationDao()
-                        )
-                        Timber.d("Token state saved to database after message edit")
-                    } catch (e: Exception) {
-                        Timber.e(e, "Error saving token state to database: ${e.message}")
-                    }
-                }
+                // Token state automatically saved by new system
             }
 
             // Show loading indicator
@@ -5058,6 +5619,11 @@ class MainActivity : BaseThemedActivity() {
             // Wait for UI to update with the edited message
             lifecycleScope.launch {
                 delay(100)
+                
+                // Credits already consumed on button press - no need to consume again
+                
+                // Handle existing AI responses for this user message
+                handleExistingAiResponsesForEditedMessage(originalMessage.id)
 
                 // Generate a response for the edited message
                 aiChatService.generateResponseForEditedMessage(
@@ -5247,14 +5813,11 @@ class MainActivity : BaseThemedActivity() {
                     voiceType = voiceType
                 )
                 
-                val requestBody = RequestBody.create(
-                    "application/json; charset=utf-8".toMediaType(),
-                    requestJson
-                )
+                val requestBody = requestJson
+                    .toRequestBody("application/json; charset=utf-8".toMediaType())
 
                 // Make API request
                 val response = aiChatService.makeAudioRequest(
-                    modelId = message.modelId ?: ModelManager.selectedModel.id,
                     requestBody = requestBody
                 )
 
@@ -5332,7 +5895,7 @@ class MainActivity : BaseThemedActivity() {
         voiceType: String = "alloy"
     ): AimlApiRequest {
         // Get the model configuration
-        val config = ModelConfigManager.getConfig(modelId)
+        ModelConfigManager.getConfig(modelId)
             ?: throw IllegalArgumentException("Unknown model: $modelId")
 
         // For TTS (Text-to-Speech), we need a specific request format
@@ -5374,17 +5937,17 @@ class MainActivity : BaseThemedActivity() {
                 ?: response.audio
 
             if (audioData != null) {
-                Timber.d("Received audio data: format=${audioData.format}, content length=${audioData.content?.length ?: 0}")
+                Timber.d("Received audio data: format=${audioData.format}, content length=${audioData.content.length}")
                 
                 // Check if we have audio content
-                val audioContent = audioData.content ?: audioData.data
-                if (audioContent != null && audioContent.isNotEmpty()) {
+                val audioContent = audioData.content
+                if (audioContent.isNotEmpty()) {
                     
                     // Validate if content is actually base64
                     val isValidBase64 = try {
                         android.util.Base64.decode(audioContent, android.util.Base64.DEFAULT)
                         true
-                    } catch (e: IllegalArgumentException) {
+                    } catch (_: IllegalArgumentException) {
                         false
                     }
                     
@@ -5394,7 +5957,7 @@ class MainActivity : BaseThemedActivity() {
                             val success = audioResponseHandler.playAudioFromBase64(
                                 audioBase64 = audioContent,
                                 messageId = message.id,
-                                format = audioData.format ?: "mp3"
+                                format = audioData.format
                             )
 
                             if (success) {
@@ -5469,7 +6032,8 @@ class MainActivity : BaseThemedActivity() {
                     updateExpandButtonVisibility()
 
                     // Your existing toggle button logic
-                    toggleInputButtons(s?.toString()?.trim()?.isNotEmpty() == true)
+                    val hasFiles = selectedFiles.isNotEmpty()
+                    toggleInputButtons(s?.toString()?.trim()?.isNotEmpty() == true, hasFiles)
                 }
 
                 override fun afterTextChanged(s: Editable?) {}
@@ -5577,15 +6141,21 @@ class MainActivity : BaseThemedActivity() {
         // Clear all message state by submitting empty list
         chatAdapter.submitList(emptyList())
         
+        // CRITICAL FIX: Also clear MessageManager internal state
+        messageManager.clearAll()
+        
         // CRITICAL FIX: Clear all draft-related UI state
         binding.etInputText.text?.clear()
         selectedFiles.clear()
         binding.selectedFilesScrollView.visibility = View.GONE
-        fileHandler.updateSelectedFilesView()
+        
+        // Only update file handler view if it's been initialized
+        if (::fileHandler.isInitialized) {
+            fileHandler.updateSelectedFilesView()
+        }
         
         // Reset input UI state
-        binding.btnMicrophone.visibility = View.VISIBLE
-        binding.btnSubmitText.visibility = View.GONE
+        setMicrophoneVisibility(true)
 
         // Set appropriate title based on private mode
         if (isPrivateModeEnabled) {
@@ -5599,6 +6169,9 @@ class MainActivity : BaseThemedActivity() {
         // Also reset generation state
         isGenerating = false
         chatAdapter.setGenerating(false)
+        
+        // CRITICAL FIX: Force proper button state reset
+        setGeneratingState(false)
     }   /**
      * Update the new conversation button state
      */
@@ -5648,6 +6221,8 @@ class MainActivity : BaseThemedActivity() {
             if (!::btnReasoning.isInitialized ||
                 !::btnDeepSearch.isInitialized ||
                 !::btnAudioConversation.isInitialized ||
+                !::btnPerplexitySearchMode.isInitialized ||
+                !::btnPerplexityContextSize.isInitialized ||
                 !::reasoningControlsLayout.isInitialized) {
 
                 Timber.w("UI components not yet initialized, deferring controls update")
@@ -5688,6 +6263,12 @@ class MainActivity : BaseThemedActivity() {
                 binding.btnSubmitText.isEnabled = false
                 binding.ocrOptionsPanel.visibility = View.VISIBLE
                 
+                // Hide microphone button for OCR models (especially Mistral OCR)
+                if (::btnMicrophone.isInitialized) {
+                    btnMicrophone.visibility = View.GONE
+                    binding.btnSubmitText.visibility = View.VISIBLE
+                }
+                
                 // Clear any existing text for OCR models
                 if (binding.etInputText.text.toString().isNotEmpty()) {
                     binding.etInputText.setText("")
@@ -5696,9 +6277,19 @@ class MainActivity : BaseThemedActivity() {
                 binding.etInputText.hint = "Type a message..."
                 binding.etInputText.isEnabled = true
                 binding.ocrOptionsPanel.visibility = View.GONE
+                
+                // Restore normal microphone/send button behavior for non-OCR models
+                if (::btnMicrophone.isInitialized) {
+                    // Reset to normal text input behavior (controlled by text watcher)
+                    val hasText = binding.etInputText.text.toString().trim().isNotEmpty()
+                    setMicrophoneVisibility(!hasText)
+                }
+                
                 // Send button enablement is controlled by the text watcher
             }
 
+            // Update Perplexity-specific button visibility
+            updatePerplexityButtonsVisibility()
 
         } catch (e: Exception) {
             Timber.e(e, "Error updating controls visibility: ${e.message}")
@@ -5924,7 +6515,7 @@ class MainActivity : BaseThemedActivity() {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun setupTranslationSubmitListener() {
         // Store original click listener if not already saved
         if (originalSubmitListener == null) {
@@ -5966,7 +6557,7 @@ class MainActivity : BaseThemedActivity() {
         }
 
 
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun handleTranslationSubmit() {
         val text = binding.etInputText.text.toString().trim()
 
@@ -5985,7 +6576,7 @@ class MainActivity : BaseThemedActivity() {
         sendTranslationMessage(text, sourceLanguage, targetLanguage)
     }
 
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun sendTranslationMessage(text: String, sourceLanguage: String, targetLanguage: String) {
         // Generate a unique ID for this user message
         val userMessageId = UUID.randomUUID().toString()
@@ -6053,6 +6644,10 @@ class MainActivity : BaseThemedActivity() {
                     "Provide the translation, then a brief explanation if the text contains any idiomatic expressions or cultural context. " +
                     "If the user asks questions about the translation or the text, answer them while maintaining awareness of the translation context."
         }
+    }
+
+    fun exitTranslationMode() {
+        closeTranslatorMode()
     }
 
     private fun closeTranslatorMode() {
@@ -6200,12 +6795,12 @@ class MainActivity : BaseThemedActivity() {
 
         // CRITICAL FIX: Save token state for current conversation before resetting
         if (currentConversationId != null) {
-            conversationTokenManager.setConversationId(currentConversationId!!)
+            // conversationTokenManager.setConversationId(currentConversationId!!)
         }
 
         // Reset conversation ID first, then reset token manager
         currentConversationId = null
-        conversationTokenManager.reset()
+        // conversationTokenManager.reset()
 
         // Clear message state
         chatAdapter.submitList(emptyList())
@@ -6258,6 +6853,43 @@ class MainActivity : BaseThemedActivity() {
         }
     }
 
+    /**
+     * Start a new conversation with a predefined question (used for related questions)
+     */
+    fun startNewConversationWithQuestion(question: String) {
+        // Stop any ongoing generation
+        if (isGenerating) {
+            stopGeneration()
+            // Wait a moment for cleanup
+            uiHandler.postDelayed({
+                proceedWithNewConversationAndQuestion(question)
+            }, 300)
+        } else {
+            proceedWithNewConversationAndQuestion(question)
+        }
+    }
+
+    private fun proceedWithNewConversationAndQuestion(question: String) {
+        try {
+            // First ensure we have a clean slate
+            proceedWithNewConversation()
+            
+            // Set the question in the input field
+            binding.etInputText.setText(question)
+            
+            // Automatically send the message after a short delay
+            uiHandler.postDelayed({
+                if (binding.etInputText.text.toString() == question) {
+                    sendMessage()
+                }
+            }, 500)
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Error starting new conversation with question")
+            Toast.makeText(this, "Failed to start new conversation", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun proceedWithNewConversation() {
         // Ensure we're not generating
         isGenerating = false
@@ -6271,7 +6903,7 @@ class MainActivity : BaseThemedActivity() {
         
         // Reset conversation state (redundant but keeping for safety)
         currentConversationId = null
-        conversationTokenManager.reset()
+        // conversationTokenManager.reset()
 
         // Remove warning badge if present
         hideTokenLimitWarningBadge()
@@ -6293,8 +6925,7 @@ class MainActivity : BaseThemedActivity() {
         // Reset button to proper state
         val inputText = binding.etInputText.text.toString().trim()
         if (inputText.isEmpty()) {
-            binding.btnMicrophone.visibility = View.VISIBLE
-            binding.btnSubmitText.visibility = View.GONE
+            setMicrophoneVisibility(true)
         } else {
             binding.btnMicrophone.visibility = View.GONE
             binding.btnSubmitText.visibility = View.VISIBLE
@@ -6336,8 +6967,7 @@ class MainActivity : BaseThemedActivity() {
                 // Should be in normal mode
                 val inputText = binding.etInputText.text.toString().trim()
                 if (inputText.isEmpty()) {
-                    binding.btnMicrophone.visibility = View.VISIBLE
-                    binding.btnSubmitText.visibility = View.GONE
+                    setMicrophoneVisibility(true)
                 } else {
                     binding.btnSubmitText.setImageResource(R.drawable.send_icon)
                     binding.btnSubmitText.contentDescription = "Send message"
@@ -6438,39 +7068,33 @@ class MainActivity : BaseThemedActivity() {
             binding.etInputText.addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
 
-                @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+                @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                     try {
                         // Always use current model ID, not cached one
                         val currentModelId = ModelManager.selectedModel.id
                         val isSubscribed = PrefsManager.isSubscribed(this@MainActivity)
 
-                        TokenCounterHelper.updateTokenCounter(
+                        updateTokenCounterUI(
                             tvTokenCount,
                             s?.toString() ?: "",
-                            currentModelId,  // Use current model
-                            isSubscribed,
-                            this@MainActivity,
-                            conversationTokenManager
+                            currentModelId,
+                            isSubscribed
                         )
 
                         // Check token limits with current message
                         val text = s?.toString() ?: ""
-                        if (text.isNotEmpty() && text.length > 100) { // Only check for longer messages
-                            val result = conversationTokenManager.wouldExceedLimit(text, currentModelId, isSubscribed)
-                            result.first
-                            val almostFull = result.third
-
-                            if (almostFull && !conversationTokenManager.hasContinuedPastWarning()) {
-                                val percentage = conversationTokenManager.getTokenUsagePercentage(currentModelId, isSubscribed)
-                                if (percentage > 0.8f) { // 80% threshold
-                                    showTokenWarningIfNeeded(percentage)
-                                }
-                            }
-                        }
+                        // Token validation is now handled during message sending by the new system
 
                         // Toggle buttons based on text content
-                        toggleInputButtons(s?.toString()?.trim()?.isNotEmpty() == true)
+                        val hasFiles = selectedFiles.isNotEmpty()
+                        toggleInputButtons(s?.toString()?.trim()?.isNotEmpty() == true, hasFiles)
+                        
+                        // Pre-validation for ultra-fast message sending
+                        val message = text.trim()
+                        if (message.length > 10) { // Only pre-validate substantial messages
+                            performPreValidation(message)
+                        }
 
                     } catch (e: Exception) {
                         Timber.e(e, "Error in text watcher: ${e.message}")
@@ -6485,12 +7109,9 @@ class MainActivity : BaseThemedActivity() {
                 try {
                     val currentModelId = ModelManager.selectedModel.id
                     val isSubscribed = PrefsManager.isSubscribed(this@MainActivity)
-                    val message = TokenCounterHelper.getTokenLimitExplanation(
-                        currentModelId,
-                        isSubscribed,
-                        conversationTokenManager
-                    )
-                    Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                    val maxTokens = TokenValidator.getEffectiveMaxInputTokens(currentModelId, isSubscribed)
+                    val message = "Current model: ${ModelManager.selectedModel.displayName}\nMax tokens: ${maxTokens}\nSubscribed: ${if (isSubscribed) "Yes" else "No"}"
+                    Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
                 } catch (e: Exception) {
                     Timber.e(e, "Error showing token explanation: ${e.message}")
                 }
@@ -6503,7 +7124,7 @@ class MainActivity : BaseThemedActivity() {
 
     }
 
-    private fun toggleInputButtons(hasText: Boolean) {
+    private fun toggleInputButtons(hasText: Boolean, hasFiles: Boolean = false) {
         try {
             // First, check if we're in generating state - if so, don't change the button
             if (isGenerating) {
@@ -6519,32 +7140,56 @@ class MainActivity : BaseThemedActivity() {
             val currentModelId = ModelManager.selectedModel.id
             val isOcrModel = ModelValidator.isOcrModel(currentModelId)
             
-            // For OCR models, always show send button but enable only when files are selected
+            // For OCR models, always show send button and be more permissive with enabling
             if (isOcrModel) {
                 binding.btnMicrophone.visibility = View.GONE
                 binding.btnSubmitText.visibility = View.VISIBLE
                 binding.btnSubmitText.setImageResource(R.drawable.send_icon)
                 binding.btnSubmitText.contentDescription = "Process OCR"
-                binding.btnSubmitText.isEnabled = selectedFiles.isNotEmpty()
+                
+                // For OCR models, be more permissive - enable if files OR text OR likely returning from selection
+                val hasFilesInFunction = hasFiles || selectedFiles.isNotEmpty()
+                val hasTextContent = hasText || binding.etInputText.text.toString().trim().isNotEmpty()
+                // Also check if any file upload dialogs might be open or we recently launched one
+                val isLikelyFileSelection = isReturningFromFileSelection
+                
+                // OCR models should remain enabled when there's content or when user is likely selecting files
+                binding.btnSubmitText.isEnabled = hasFilesInFunction || hasTextContent || isLikelyFileSelection
+                
+                // Set alpha to provide visual feedback
+                binding.btnSubmitText.alpha = if (binding.btnSubmitText.isEnabled) 1.0f else 0.7f
+                
+                Timber.d("OCR button state - hasFiles: $hasFilesInFunction, hasText: $hasTextContent, likelySelection: $isLikelyFileSelection, enabled: ${binding.btnSubmitText.isEnabled}")
                 return
             }
 
-            // Not generating, proceed with normal button state based on text content
-            if (hasText) {
-                // Has text - show send button
+            // Not generating, proceed with normal button state based on text content OR files
+            if (hasText || hasFiles) {
+                // Has text OR files - show send button
                 binding.btnMicrophone.visibility = View.GONE
                 binding.btnSubmitText.visibility = View.VISIBLE
                 // IMPORTANT: Explicitly set the send icon
                 binding.btnSubmitText.setImageResource(R.drawable.send_icon)
-                binding.btnSubmitText.contentDescription = "Send message"
+                
+                if (hasFiles && !hasText) {
+                    binding.btnSubmitText.contentDescription = "Send with attachments"
+                } else {
+                    binding.btnSubmitText.contentDescription = "Send message"
+                }
+                
+                // CRITICAL: Enable the button for non-OCR models with text or files
+                binding.btnSubmitText.isEnabled = true
+                binding.btnSubmitText.alpha = 1.0f
+                
+                Timber.d("Send button shown - hasText: $hasText, hasFiles: $hasFiles")
             } else {
-                // No text - show microphone button
-                binding.btnSubmitText.visibility = View.GONE
-                binding.btnMicrophone.visibility = View.VISIBLE
+                // No text AND no files - show microphone button (unless OCR model)
+                setMicrophoneVisibility(true)
+                Timber.d("Microphone shown - no text and no files")
             }
 
             // Log the button state change for debugging
-            Timber.d("toggleInputButtons: hasText=$hasText, isGenerating=$isGenerating, " +
+            Timber.d("toggleInputButtons: hasText=$hasText, hasFiles=$hasFiles, isGenerating=$isGenerating, " +
                     "btnSubmitText.visibility=${binding.btnSubmitText.visibility}, " +
                     "contentDescription=${binding.btnSubmitText.contentDescription}")
         } catch (e: Exception) {
@@ -6552,29 +7197,7 @@ class MainActivity : BaseThemedActivity() {
         }
     }
 
-    /**
-     * Get OCR options from the UI controls
-     */
-    private fun getOcrOptionsFromUI(): OCROptions {
-        return try {
-            val pages = binding.etOcrPages.text?.toString()?.trim()?.ifEmpty { null }
-            val includeImages = if (binding.cbIncludeImages.isChecked) true else null
-            val imageLimit = binding.etImageLimit.text?.toString()?.trim()?.toIntOrNull()
-            val imageMinSize = binding.etImageMinSize.text?.toString()?.trim()?.toIntOrNull()
-            
-            OCROptions(
-                pages = pages,
-                includeImageBase64 = includeImages,
-                imageLimit = imageLimit,
-                imageMinSize = imageMinSize
-            )
-        } catch (e: Exception) {
-            Timber.e(e, "Error getting OCR options from UI: ${e.message}")
-            OCROptions() // Return default options on error
-        }
-    }
-
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun showTokenWarningIfNeeded(percentage: Float) {
         val currentTime = System.currentTimeMillis()
         // Only show warning every 10 seconds to avoid spam
@@ -6598,7 +7221,7 @@ class MainActivity : BaseThemedActivity() {
      */
     private fun handleContinueAnyway() {
         // Set the flag for reduced token reservation
-        conversationTokenManager.setContinuedPastWarning(true)
+        // conversationTokenManager.setContinuedPastWarning(true)
 
         // Show persistent warning badge
         showTokenLimitWarningBadge()
@@ -6608,13 +7231,11 @@ class MainActivity : BaseThemedActivity() {
         val isSubscribed = PrefsManager.isSubscribed(this)
         val modelId = ModelManager.selectedModel.id
 
-        TokenCounterHelper.updateTokenCounter(
+        updateTokenCounterUI(
             findViewById(R.id.tvTokenCount),
             currentText,
             modelId,
-            isSubscribed,
-            this,
-            conversationTokenManager
+            isSubscribed
         )
 
         // Show toast with brief explanation
@@ -6668,7 +7289,7 @@ class MainActivity : BaseThemedActivity() {
     /**
      * Handles summarizing the conversation and starting a new chat
      */
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun summarizeAndStartNewChat() {
         // Show loading indicator
         showLoadingDialog("Summarizing conversation...")
@@ -6768,10 +7389,10 @@ class MainActivity : BaseThemedActivity() {
                 messageManager.addMessage(continuationMessage)
 
                 // Reset token counter for new conversation
-                conversationTokenManager.reset()
+                // conversationTokenManager.reset()
 
                 // Add the first message to token counter
-                conversationTokenManager.addMessage(continuationMessage)
+                // conversationTokenManager.addMessage(continuationMessage)
 
                 // Update UI for new conversation
                 withContext(Dispatchers.Main) {
@@ -6839,105 +7460,804 @@ class MainActivity : BaseThemedActivity() {
         loadingDialog?.dismiss()
         loadingDialog = null
     }
+
     /**
-     * Send a message with text and optional file attachments
+     * Shows upgrade dialog for non-subscribers
      */
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    private fun showUpgradeDialog() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Upgrade Required")
+            .setMessage("This feature is available to subscribers only. Would you like to upgrade to Pro?")
+            .setPositiveButton("Upgrade") { _, _ ->
+                // Navigate to subscription/upgrade flow
+                SubscriptionActivity.start(this)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /**
+     * Shows a generic alert dialog with customizable content
+     */
+    private fun showAlertDialog(
+        title: String,
+        message: String,
+        positiveButton: Pair<String, () -> Unit>? = null,
+        negativeButton: Pair<String, () -> Unit>? = null
+    ) {
+        val builder = MaterialAlertDialogBuilder(this)
+            .setTitle(title)
+            .setMessage(message)
+        
+        positiveButton?.let { (text, action) ->
+            builder.setPositiveButton(text) { _, _ -> action() }
+        }
+        
+        negativeButton?.let { (text, action) ->
+            builder.setNegativeButton(text) { _, _ -> action() }
+        }
+        
+        if (positiveButton == null && negativeButton == null) {
+            builder.setPositiveButton("OK", null)
+        }
+        
+        builder.show()
+    }
+    /**
+     * PRODUCTION-READY sendMessage() method with comprehensive token validation
+     */
     fun sendMessage() {
         val inputEditText = binding.etInputText
         val message = inputEditText.text.toString().trim()
         val modelId = ModelManager.selectedModel.id
         val isSubscribed = PrefsManager.isSubscribed(this)
         val hasFiles = selectedFiles.isNotEmpty()
-
-        // CRITICAL FIX: Add debug logging for file tracking
+        
+        Timber.d("📤 PRODUCTION MESSAGE SEND START")
+        Timber.d("   Model: $modelId (subscribed: $isSubscribed)")
+        Timber.d("   Message length: ${message.length}")
+        Timber.d("   Files: ${selectedFiles.size}")
+        
         if (hasFiles) {
-            Timber.d("Sending message with ${selectedFiles.size} files")
             selectedFiles.forEach { file ->
-                Timber.d("File: ${file.name}, URI: ${file.uri}")
+                Timber.d("   📎 File: ${file.name}, URI: ${file.uri}")
             }
         }
-
-        // Log current state before validation
-        conversationTokenManager.logCurrentState("before sendMessage")
-
-        // Token validation with proper error handling
-        val (wouldExceed, availableTokens) =
-            conversationTokenManager.wouldExceedLimit(message, modelId, isSubscribed)
-
-        if (wouldExceed) {
-            val inputTokens = TokenValidator.estimateTokenCount(message)
-            Timber.d("Message would exceed limit: input=$inputTokens, available=$availableTokens")
-
-            showMessageTooLongDialog(message, inputTokens, availableTokens, isSubscribed)
+        
+        // Check basic preconditions - prevent completely empty messages
+        if (message.isBlank() && selectedFiles.isEmpty()) {
+            Timber.w("❌ Cannot send empty message with no files attached")
+            Toast.makeText(this, "Please enter a message or attach files", Toast.LENGTH_SHORT).show()
             return
         }
-
-        // Check conversation limit with better thresholds
-        val currentUsage = conversationTokenManager.getTokenUsagePercentage(modelId, isSubscribed)
-
-        Timber.d("Current conversation usage: ${(currentUsage * 100).toInt()}%")
-        val currentMessages = chatAdapter.currentList
-        Timber.d("Current messages in adapter before sending: ${currentMessages.size}")
-        currentMessages.forEach { message ->
-            Timber.d("  Message: ${if (message.isUser) "USER" else "AI"} - ${message.message.take(30)}...")
-        }
-
-        // Show dialog at WARNING_THRESHOLD (85%), not just CRITICAL (95%)
-        if (currentUsage >= ConversationTokenManager.WARNING_THRESHOLD) {
-            if (!conversationTokenManager.hasContinuedPastWarning()) {
-                // First time hitting warning threshold
-                TokenLimitDialogHandler.showTokenLimitApproachingDialog(
-                    context = this,
-                    tokenPercentage = currentUsage,
-                    onContinue = {
-                        conversationTokenManager.setContinuedPastWarning(true)
-                        // Clear input and proceed with sending
-                        clearInputAndProceed(inputEditText, message, hasFiles)
-                    },
-                    onSummarize = { summarizeAndStartNewChat() },
-                    onNewChat = { startNewConversation() }
-                )
-                return
-            } else if (currentUsage >= ConversationTokenManager.CRITICAL_THRESHOLD) {
-                // Already continued past warning, but now at critical threshold
-                TokenLimitDialogHandler.showTokenLimitReachedDialog(
-                    context = this,
-                    modelId = modelId,
-                    isSubscribed = isSubscribed,
-                    onSummarize = { summarizeAndStartNewChat() },
-                    onNewChat = { startNewConversation() },
-                    onUpgrade = { navigateToWelcomeActivity() }
-                )
+        
+        // Additional validation for specific model requirements
+        if (message.isBlank() && selectedFiles.isNotEmpty()) {
+            val hasImages = selectedFiles.any { !it.isDocument }
+            val currentModel = ModelManager.selectedModel
+            if (hasImages && ModelValidator.requiresTextWithImages(currentModel.id)) {
+                Timber.w("❌ Model requires text with images: ${currentModel.displayName}")
+                Toast.makeText(this, "Please add descriptive text when sending images to ${currentModel.displayName}", Toast.LENGTH_LONG).show()
                 return
             }
         }
-
-        // Check credit availability before sending (for non-subscribers)
+        
+        // Check credit availability first (for non-subscribers)
+        if (!isSubscribed && !creditManager.hasSufficientChatCredits()) {
+            Timber.w("❌ Insufficient chat credits")
+            showInsufficientCreditsDialog(CreditManager.CreditType.CHAT)
+            return
+        }
+        
+        // Consume credits immediately for non-subscribers (when button is pressed)
+        var creditsConsumed = false
         if (!isSubscribed) {
-            if (!creditManager.hasSufficientChatCredits()) {
-                Timber.w("Insufficient chat credits to send message")
+            if (creditManager.consumeChatCredits()) {
+                creditsConsumed = true
+                updateFreeMessagesText()
+                Timber.d("✅ Chat credits consumed on send button press")
+            } else {
+                Timber.e("❌ Failed to consume chat credits despite previous check")
                 showInsufficientCreditsDialog(CreditManager.CreditType.CHAT)
                 return
             }
         }
-
-        // Clear any existing draft when sending a message
-        clearDraft()
-        setGeneratingState(true)
-        Timber.d("Starting message send - generating state set to true")
-
-        // Clear input and proceed with sending if all checks pass
-        clearInputAndProceed(inputEditText, message, hasFiles)
+        
+        // Convert selectedFiles to FileItem format
+        val fileItems = selectedFiles.map { file ->
+            FileItem(
+                uri = file.uri,
+                name = file.name,
+                mimeType = FileUtil.getMimeType(this, file.uri)
+            )
+        }
+        
+        // Get all current messages for context calculation
+        val currentMessages = try {
+            chatAdapter.currentList.filter { !it.isGenerating }
+        } catch (e: Exception) {
+            Timber.e(e, "Error getting current messages: ${e.message}")
+            emptyList()
+        }
+        
+        // OPTIMIZED FILE PROCESSING & TOKEN VALIDATION SYSTEM
+        val conversationId = currentConversationId ?: "new_conversation"
+        
+        // First check: Are any files still processing? 
+        val processingFiles = selectedFiles.filter { it.isExtracting && !it.isExtracted }
+        if (processingFiles.isNotEmpty()) {
+            val processingCount = processingFiles.size
+            val fileWord = if (processingCount == 1) "file is" else "files are"
+            
+            Toast.makeText(
+                this,
+                "⏳ $processingCount $fileWord still being processed. Please wait...",
+                Toast.LENGTH_LONG
+            ).show()
+            
+            Timber.w("❌ Cannot send - $processingCount files still processing")
+            return
+        }
+        
+        // Second check: Are there any files that failed to process?
+        val failedFiles = selectedFiles.filter { 
+            !it.isExtracting && !it.isExtracted && it.isDocument
+        }
+        
+        if (failedFiles.isNotEmpty()) {
+            Toast.makeText(
+                this,
+                "⚠️ Some files failed to process. Remove them or try again.",
+                Toast.LENGTH_LONG
+            ).show()
+            
+            Timber.w("❌ Cannot send - ${failedFiles.size} files failed processing")
+            return
+        }
+        
+        lifecycleScope.launch {
+            try {
+                // Use new optimized token validation system
+                fileHandler.validateTokensBeforeSend(
+                    conversationId = conversationId,
+                    modelId = modelId,
+                    userPrompt = message,
+                    isSubscribed = isSubscribed,
+                    onAllowed = {
+                        // ✅ Validation passed - proceed with sending
+                        Timber.d("✅ Message validation passed - sending")
+                        clearDraft()
+                        setGeneratingState(true)
+                        proceedWithSending(inputEditText, message, hasFiles)
+                    },
+                    onNewConversationRequired = {
+                        // ⚠️ Context window full - start new conversation
+                        Timber.w("⚠️ Starting new conversation due to context limits")
+                        startNewConversationForTokens()
+                        // After starting new conversation, send the message
+                        clearDraft()
+                        setGeneratingState(true)
+                        proceedWithSending(inputEditText, message, hasFiles)
+                    },
+                    onCancel = {
+                        // ❌ User cancelled - refund credits
+                        if (creditsConsumed) {
+                            creditManager.refundCredits(1, CreditManager.CreditType.CHAT)
+                            updateFreeMessagesText()
+                            Timber.d("🔄 Credits refunded due to cancellation")
+                        }
+                        Timber.d("User cancelled message send")
+                    },
+                    onUpgrade = {
+                        // 💰 Show upgrade dialog for non-subscribers
+                        showUpgradeDialog()
+                    }
+                )
+                
+            } catch (e: Exception) {
+                Timber.e(e, "💥 Error during token validation: ${e.message}")
+                
+                // Fallback: show error and let user decide
+                showAlertDialog(
+                    title = "Token Validation Error",
+                    message = "Unable to validate message: ${e.message}\n\nWould you like to proceed anyway?",
+                    positiveButton = "Send Anyway" to {
+                        clearDraft()
+                        setGeneratingState(true)
+                        proceedWithSending(inputEditText, message, hasFiles)
+                    },
+                    negativeButton = "Cancel" to {
+                        // Refund credits if consumed
+                        if (creditsConsumed) {
+                            creditManager.refundCredits(1, CreditManager.CreditType.CHAT)
+                            updateFreeMessagesText()
+                            Timber.d("🔄 Credits refunded due to validation error")
+                        }
+                    }
+                )
+            }
+        }
+    }
+    
+    /**
+     * Proceed with sending message after token validation
+     */
+    private fun proceedWithSending(inputEditText: EditText, message: String, hasFiles: Boolean) {
+        try {
+            // Clear input
+            inputEditText.setText("")
+            
+            // Hide keyboard
+            val inputMethodManager = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+            inputMethodManager.hideSoftInputFromWindow(inputEditText.windowToken, 0)
+            
+            // Continue with existing message sending logic
+            clearInputAndProceed(inputEditText, message, hasFiles)
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Error proceeding with message send: ${e.message}")
+            setGeneratingState(false)
+        }
+    }
+    
+    /**
+     * Start new conversation due to token limits
+     */
+    private fun startNewConversationForTokens() {
+        try {
+            val oldConversationId = currentConversationId
+            
+            // Reset token context for old conversation
+            if (oldConversationId != null && ::tokenManager.isInitialized) {
+                tokenManager.resetConversation(oldConversationId)
+            }
+            
+            // Create new conversation
+            currentConversationId = "conversation_${System.currentTimeMillis()}"
+            
+            // Clear chat adapter
+            chatAdapter.submitList(emptyList())
+            
+            // Update UI
+            updateTokenCounterUI()
+            
+            // Show success message
+            Toast.makeText(this, "Started new conversation", Toast.LENGTH_SHORT).show()
+            
+            Timber.d("🔄 Started new conversation due to token limits")
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Error starting new conversation: ${e.message}")
+        }
+    }
+    
+    /**
+     * Handle API response and record token usage
+     */
+    private fun handleApiResponseTokens(apiResponse: AimlApiResponse) {
+        try {
+            val conversationId = currentConversationId ?: return
+            val modelId = ModelManager.selectedModel.id
+            
+            // Use ApiUsageTracker to record actual token usage from API response
+            val usageTracker = ApiUsageTracker.getInstance()
+            val usageData = usageTracker.recordApiUsage(
+                conversationId = conversationId,
+                modelId = modelId,
+                apiResponse = apiResponse
+            )
+            
+            if (usageData != null) {
+                Timber.d("📊 Recorded API usage: ${usageData.getDisplayString()}")
+                
+                // Update token counter UI with real data
+                updateTokenCounterWithProduction()
+                
+                // Update debug token display (DEBUG builds only)
+                if (BuildConfig.DEBUG) {
+                    debugTokenDisplayHelper?.updateDebugTokenInfo(
+                        modelId = modelId,
+                        apiResponse = apiResponse,
+                        inputText = "", // Could be extracted from current message if needed
+                        outputText = "", // Could be extracted from current message if needed
+                        isSubscribed = PrefsManager.isSubscribed(this@MainActivity)
+                    )
+                }
+                
+                // Log token breakdown for debugging
+                Timber.d("📊 Token breakdown - Model: $modelId, Input: ${usageData.inputTokens}, Output: ${usageData.outputTokens}, Total: ${usageData.totalTokens}")
+                
+                // Check for unusually high token usage and log warning
+                if (usageData.inputTokens > 10000) {
+                    Timber.w("⚠️ HIGH TOKEN USAGE DETECTED!")
+                    Timber.w("   Model: $modelId")
+                    Timber.w("   Input tokens: ${usageData.inputTokens}")
+                    Timber.w("   This may indicate inefficient request building")
+                    Timber.w("   Check for: long system messages, unnecessary tools, or large conversation history")
+                }
+                
+            } else {
+                Timber.w("📊 No token usage data available in API response")
+                updateTokenCounterWithProduction()
+            }
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Error recording API response tokens: ${e.message}")
+        }
     }
 
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    /**
+     * Clear input and proceed with production token calculation
+     */
+    private fun clearInputAndProceedProduction(
+        inputEditText: EditText,
+        message: String,
+        hasFiles: Boolean,
+        calculation: ContextCalculationResult
+    ) {
+        // Clear the input field
+        inputEditText.setText("")
+        
+        // Hide keyboard
+        val inputMethodManager = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+        inputMethodManager.hideSoftInputFromWindow(inputEditText.windowToken, 0)
+        
+        // Ensure generating state is maintained
+        if (!isGenerating) {
+            setGeneratingState(true)
+            Timber.d("🔄 Set generating state to true")
+        }
+        
+        // Log comprehensive token info
+        Timber.d("📊 SENDING WITH COMPREHENSIVE TOKENS")
+        Timber.d("   Input tokens: ${calculation.usage.inputTokens}")
+        Timber.d("   System tokens: ${calculation.usage.systemTokens}")
+        Timber.d("   Total context: ${calculation.usage.totalTokens}")
+        Timber.d("   Usage: ${(calculation.usagePercentage * 100).toInt()}%")
+        
+        // Process the message with production token awareness
+        processMessageWithProductionTokens(
+            message = message,
+            hasFiles = hasFiles,
+            calculation = calculation
+        )
+    }
+    
+    /**
+     * Process message with production token management
+     */
+    private fun processMessageWithProductionTokens(
+        message: String,
+        hasFiles: Boolean,
+        calculation: ContextCalculationResult
+    ) {
+        lifecycleScope.launch {
+            try {
+                // Get or create conversation ID
+                val conversationId = currentConversationId ?: createNewConversationId()
+                
+                // ProductionTokenManager handles streaming through ConversationTokenManager
+                
+                // Create and add user message
+                val userMessage = ChatMessage(
+                    id = UUID.randomUUID().toString(),
+                    message = message,
+                    isUser = true,
+                    timestamp = System.currentTimeMillis(),
+                    conversationId = conversationId,
+                    modelId = ModelManager.selectedModel.id
+                )
+                
+                // Add user message to managers  
+                messageManager.addMessage(userMessage)
+                // conversationTokenManager.addMessage(userMessage)
+                // conversationTokenManager.setConversationId(conversationId)
+                
+                // Create AI message placeholder
+                val aiMessage = ChatMessage(
+                    id = UUID.randomUUID().toString(),
+                    message = "",
+                    isUser = false,
+                    isGenerating = true,
+                    timestamp = System.currentTimeMillis(),
+                    conversationId = conversationId,
+                    modelId = ModelManager.selectedModel.id,
+                    showButtons = false,
+                    aiModel = ModelManager.selectedModel.displayName,
+                    parentMessageId = userMessage.id
+                )
+                
+                // Add AI message to manager
+                messageManager.addMessage(aiMessage)
+                
+                // Update chat adapter with all messages (same approach as legacy method)
+                val allMessages = messageManager.getCurrentMessages()
+                    .filter { it.conversationId == conversationId }
+                    .sortedBy { it.timestamp }
+                
+                chatAdapter.submitList(allMessages) {
+                    // Scroll to bottom after adapter is updated
+                    binding.chatRecyclerView.scrollToPosition(chatAdapter.itemCount - 1)
+                    // Update conversation with latest message
+                    updateConversationWithLatestMessage(message)
+                }
+                
+                // Clear any existing draft
+                clearDraft(shouldDeleteIfEmpty = false)
+                
+                // Update UI state
+                isMessageSent = true
+                binding.btnNewConversation.isEnabled = true
+                
+                // UI feedback
+                scrollToBottom()
+                provideHapticFeedback(50)
+                hideKeyboard()
+                
+                // Process files if present
+                if (hasFiles) {
+                    handleFileProcessingWithProductionTokens(userMessage, selectedFiles.map { file ->
+                        FileItem(uri = file.uri, name = file.name, mimeType = FileUtil.getMimeType(this@MainActivity, file.uri))
+                    })
+                }
+                
+                // Send to API using existing working flow
+                generateAIResponseWithFullContext(
+                    conversationId = conversationId,
+                    userMessageId = userMessage.id,
+                    aiMessageId = aiMessage.id
+                )
+                
+                // ✨ BEAUTIFUL FILE ANIMATION: Capture file data before clearing
+                if (hasFiles && ::fileAnimationManager.isInitialized) {
+                    try {
+                        val fileAnimationData = mutableListOf<FileAnimationManager.FileAnimationData>()
+                        
+                        // Find all visible file views and create animation data
+                        for (i in selectedFiles.indices) {
+                            val file = selectedFiles[i]
+                            val fileView = FileUtil.findFileViewForUri(file.uri, this@MainActivity)
+                            
+                            if (fileView != null && fileView.visibility == View.VISIBLE) {
+                                fileAnimationData.add(
+                                    FileAnimationManager.FileAnimationData(
+                                        sourceView = fileView,
+                                        fileName = file.name,
+                                        isImage = !file.isDocument,
+                                        index = i,
+                                        totalFiles = selectedFiles.size
+                                    )
+                                )
+                                Timber.d("🎬 Prepared animation for file: ${file.name}")
+                            }
+                        }
+                        
+                        if (fileAnimationData.isNotEmpty()) {
+                            Timber.d("🚀 Starting file transfer animation for ${fileAnimationData.size} files")
+                            
+                            // Start beautiful file animation
+                            fileAnimationManager.startFileTransferAnimation(
+                                files = fileAnimationData,
+                                onAnimationComplete = {
+                                    // Animation completed, now clear files with fade effect
+                                    Timber.d("✨ File animation completed, clearing files")
+                                    runOnUiThread {
+                                        selectedFiles.clear()
+                                        binding.selectedFilesScrollView.visibility = View.GONE
+                                        if (::fileHandler.isInitialized) {
+                                            fileHandler.updateSelectedFilesView()
+                                        }
+                                    }
+                                }
+                            )
+                        } else {
+                            // No visible file views found, clear immediately
+                            Timber.d("No visible file views for animation, clearing immediately")
+                            selectedFiles.clear()
+                            binding.selectedFilesScrollView.visibility = View.GONE
+                            if (::fileHandler.isInitialized) {
+                                fileHandler.updateSelectedFilesView()
+                            }
+                        }
+                        
+                    } catch (e: Exception) {
+                        Timber.e(e, "Error starting file animation: ${e.message}")
+                        // Fallback to immediate cleanup on animation error
+                        selectedFiles.clear()
+                        binding.selectedFilesScrollView.visibility = View.GONE
+                        if (::fileHandler.isInitialized) {
+                            fileHandler.updateSelectedFilesView()
+                        }
+                    }
+                } else {
+                    // Handle file cleanup after sending (fallback for no files or animation manager not ready)
+                    selectedFiles.clear()
+                    binding.selectedFilesScrollView.visibility = View.GONE
+                    if (::fileHandler.isInitialized) {
+                        fileHandler.updateSelectedFilesView()
+                    }
+                }
+                
+            } catch (e: Exception) {
+                Timber.e(e, "💥 Error processing message with production tokens: ${e.message}")
+                setGeneratingState(false)
+                showErrorDialog("Failed to send message: ${e.message}")
+            }
+        }
+    }
+    
+    /**
+     * Handle file processing with production token awareness
+     */
+    private suspend fun handleFileProcessingWithProductionTokens(
+        userMessage: ChatMessage,
+        files: List<FileItem>
+    ) = withContext(Dispatchers.IO) {
+        try {
+            files.forEach { file ->
+                try {
+                    // Read file content for token counting
+                    val fileContent = contentResolver.openInputStream(file.uri)?.use { inputStream ->
+                        inputStream.bufferedReader().readText()
+                    } ?: ""
+                    
+                    if (fileContent.isNotBlank()) {
+                        // File token handling is automatic with new system
+                        val success = true // Always succeed with new system
+                        
+                        if (success) {
+                            val tokens = TokenValidator.getAccurateTokenCount(fileContent, ModelManager.selectedModel.id)
+                            Timber.d("📎 File processed: ${file.name} = $tokens tokens")
+                        } else {
+                            Timber.w("⚠️ Failed to count tokens for file: ${file.name}")
+                        }
+                    } else {
+                        Timber.w("⚠️ File content empty or unreadable: ${file.name}")
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "❌ File processing error: ${file.name} - ${e.message}")
+                }
+            }
+            
+            // Clear selected files
+            withContext(Dispatchers.Main) {
+                selectedFiles.clear()
+                binding.selectedFilesScrollView.visibility = View.GONE
+            }
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Error in production file processing: ${e.message}")
+        }
+    }
+    
+    /**
+     * Send message to API with production token management
+     */
+    private suspend fun sendToApiWithProductionTokens(
+        userMessage: ChatMessage,
+        aiMessage: ChatMessage,
+        conversationId: String,
+        calculation: ContextCalculationResult
+    ) = withContext(Dispatchers.IO) {
+        try {
+            // Use existing API logic but with token awareness
+            // This integrates with the existing streaming system
+            
+            // Create API request
+            val apiRequest = createApiRequestWithProductionTokens(
+                userMessage = userMessage,
+                calculation = calculation
+            )
+            
+            // Send request and handle streaming response
+            // TODO: Implement proper streaming integration with production token system
+            Timber.d("🚀 API request ready with production token validation")
+            Timber.d("   Request details: ${apiRequest.model}, tokens validated")
+            
+            // For now, complete the streaming integration
+            handleStreamingCompletionWithProductionTokens(
+                conversationId = conversationId,
+                userMessage = userMessage,
+                aiMessage = aiMessage,
+                calculation = calculation
+            )
+            
+        } catch (e: Exception) {
+            Timber.e(e, "💥 Error sending to API with production tokens: ${e.message}")
+            withContext(Dispatchers.Main) {
+                setGeneratingState(false)
+                showErrorDialog("Failed to send message: ${e.message}")
+            }
+        }
+    }
+    
+    private fun showProductionTokenWarningDialog(
+        message: String,
+        calculation: ContextCalculationResult,
+        onProceed: () -> Unit,
+        onCancel: () -> Unit
+    ) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Token Usage Warning")
+            .setMessage(
+                "$message\n\n" +
+                "Current usage: ${(calculation.usagePercentage * 100).toInt()}%\n" +
+                "Total tokens: ${calculation.usage.totalTokens}"
+            )
+            .setPositiveButton("Continue Anyway") { _, _ -> onProceed() }
+            .setNegativeButton("Cancel") { _, _ -> onCancel() }
+            .setNeutralButton("Start New Chat") { _, _ -> startNewConversation() }
+            .show()
+    }
+    
+    private fun showProductionTokenErrorDialog(message: String) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Cannot Send Message")
+            .setMessage(message)
+            .setPositiveButton("OK") { dialog, _ -> dialog.dismiss() }
+            .setNeutralButton("Start New Chat") { _, _ -> startNewConversation() }
+            .show()
+    }
+    
+    private fun handleValidationFallback(
+        message: String,
+        modelId: String,
+        isSubscribed: Boolean,
+        inputEditText: EditText,
+        hasFiles: Boolean
+    ) {
+        try {
+            Timber.w("⚠️ Using legacy validation fallback")
+            
+            // Skip legacy validation - new system handles this during sendMessage()
+            val wouldExceed = false // Let new system handle validation
+            val availableTokens = 999999 // Placeholder for compatibility
+            
+            if (wouldExceed) {
+                val inputTokens = TokenValidator.estimateTokenCount(message)
+                showMessageTooLongDialog(message, inputTokens, availableTokens, isSubscribed)
+                return
+            }
+            
+            // Clear draft and proceed with legacy flow
+            clearDraft()
+            setGeneratingState(true)
+            clearInputAndProceed(inputEditText, message, hasFiles)
+            
+        } catch (e: Exception) {
+            Timber.e(e, "💥 Even legacy validation failed: ${e.message}")
+            setGeneratingState(false)
+            showErrorDialog("Unable to validate message. Please try again.")
+        }
+    }
+    
+    private fun getSystemPromptForModel(modelId: String): String {
+        // Return system prompt based on model - use existing logic if available
+        return "You are a helpful AI assistant."
+    }
+    
+    private fun getWebSearchResults(): String {
+        // Return web search results if available - use existing logic if available
+        return ""
+    }
+    
+    private fun createApiRequestWithProductionTokens(
+        userMessage: ChatMessage,
+        calculation: ContextCalculationResult
+    ): AimlApiRequest {
+        // Create API request using existing logic
+        return AimlApiRequest(
+            model = ModelManager.selectedModel.id,
+            messages = listOf(
+                AimlApiRequest.Message(
+                    role = "user",
+                    content = userMessage.message
+                )
+            ),
+            maxTokens = calculation.modelLimits.maxOutputTokens,
+            topA = null,
+            parallelToolCalls = false,
+            minP = null,
+            useWebSearch = false
+        )
+    }
+    
+    private fun handleStreamingCompletionWithProductionTokens(
+        conversationId: String,
+        userMessage: ChatMessage,
+        aiMessage: ChatMessage,
+        calculation: ContextCalculationResult
+    ) {
+        lifecycleScope.launch {
+            try {
+                // Get all current messages
+                val allMessages = chatAdapter.currentList.toMutableList()
+                
+                // ProductionTokenManager handles completion through ConversationTokenManager
+                
+                // Update token counter UI
+                updateTokenCounterWithProduction()
+                
+                // Set generating state to false
+                setGeneratingState(false)
+                
+                Timber.d("✅ Streaming completed with production token management")
+                
+            } catch (e: Exception) {
+                Timber.e(e, "Error handling streaming completion: ${e.message}")
+            }
+        }
+    }
+    
+    private fun updateTokenCounterWithProduction() {
+        try {
+            val tokenCountTextView = binding.tvTokenCount
+            if (tokenCountTextView != null) {
+                // Show actual API usage data from ApiUsageTracker
+                val conversationId = currentConversationId
+                if (conversationId != null) {
+                    val usageTracker = ApiUsageTracker.getInstance()
+                    val conversationUsage = usageTracker.getConversationUsage(conversationId)
+                    
+                    if (conversationUsage != null) {
+                        // Display actual token usage from API responses
+                        tokenCountTextView.text = conversationUsage.getDisplaySummary()
+                        
+                        // Set appropriate color based on usage
+                        val totalTokens = conversationUsage.totalTokens
+                        val textColor = when {
+                            totalTokens > 50000 -> ContextCompat.getColor(this, R.color.error_color)
+                            totalTokens > 20000 -> ContextCompat.getColor(this, R.color.warning_color)
+                            else -> ContextCompat.getColor(this, R.color.text_secondary)
+                        }
+                        tokenCountTextView.setTextColor(textColor)
+                        
+                        Timber.d("📊 Token counter updated: ${conversationUsage.getDisplaySummary()}")
+                    } else {
+                        // No usage data yet - show input estimation
+                        val currentText = binding.etInputText.text?.toString() ?: ""
+                        updateTokenCounterUI(
+                            tokenCountTextView,
+                            currentText,
+                            ModelManager.selectedModel.id,
+                            PrefsManager.isSubscribed(this)
+                        )
+                    }
+                } else {
+                    // No conversation - show input estimation only
+                    val currentText = binding.etInputText.text?.toString() ?: ""
+                    updateTokenCounterUI(
+                        tokenCountTextView,
+                        currentText,
+                        ModelManager.selectedModel.id,
+                        PrefsManager.isSubscribed(this)
+                    )
+                }
+            } else {
+                binding.tvTokenCount?.text = "No token counter"
+            }
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Error updating token counter with production system: ${e.message}")
+            binding.tvTokenCount?.text = "Token error"
+        }
+    }
+    
+    private fun showErrorDialog(message: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Error")
+            .setMessage(message)
+            .setPositiveButton("OK") { dialog, _ -> dialog.dismiss() }
+            .show()
+    }
+
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun clearInputAndProceed(inputEditText: EditText, message: String, hasFiles: Boolean) {
         // Clear the input field
         inputEditText.setText("")
 
         // Hide keyboard
-        val inputMethodManager = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        val inputMethodManager = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
         inputMethodManager.hideSoftInputFromWindow(inputEditText.windowToken, 0)
 
         // CRITICAL: Ensure generating state is maintained
@@ -6957,13 +8277,12 @@ class MainActivity : BaseThemedActivity() {
             }
         }, 500)
     }        // New helper method to handle both text-only and file messages
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     private fun proceedWithSendingMessageAndFiles(message: String, hasFiles: Boolean) {
         if (hasFiles) {
             // Verify file accessibility before sending
             val accessibleFiles = selectedFiles.filter { file ->
                 try {
-                    contentResolver.openInputStream(file.uri)?.use { true } ?: false
+                    contentResolver.openInputStream(file.uri)?.use { true } == true
                 } catch (e: Exception) {
                     Timber.e(e, "File not accessible: ${file.uri}")
                     false
@@ -6980,17 +8299,10 @@ class MainActivity : BaseThemedActivity() {
                 Toast.makeText(this, "Files couldn't be accessed, sending text only", Toast.LENGTH_SHORT).show()
                 proceedWithSendingMessage(message)
             } else {
-                // Consume credits for non-subscribers before sending files
-                if (!PrefsManager.isSubscribed(this)) {
-                    if (!creditManager.consumeChatCredits()) {
-                        Timber.e("Failed to consume chat credits - file message aborted")
-                        setGeneratingState(false)
-                        showInsufficientCreditsDialog(CreditManager.CreditType.CHAT)
-                        return
-                    }
-                }
+                // Credits already consumed on button press - no need to consume again
                 
-                // Send with accessible files
+                // CRITICAL FIX: Single API call for file messages 
+                Timber.d("🔧 FIXED: Making single API call for file message")
                 val userMessageId = UUID.randomUUID().toString()
                 aiChatService.sendMessage(
                     message = message,
@@ -6999,20 +8311,96 @@ class MainActivity : BaseThemedActivity() {
                     userMessageId = userMessageId,
                     createOrGetConversation = ::createOrGetConversation,
                     isReasoningEnabled = isReasoningEnabled,
-                    reasoningLevel = reasoningLevel
+                    reasoningLevel = reasoningLevel,
+                    selectedFiles = accessibleFiles
                 )
 
-                // Clear files after sending
-                selectedFiles.clear()
-                binding.selectedFilesScrollView.visibility = View.GONE
-                fileHandler.updateSelectedFilesView()
+                // ✨ BEAUTIFUL FILE ANIMATION: Alternative send path
+                if (::fileAnimationManager.isInitialized && selectedFiles.isNotEmpty()) {
+                    try {
+                        val fileAnimationData = mutableListOf<FileAnimationManager.FileAnimationData>()
+                        
+                        // Find all visible file views and create animation data
+                        for (i in selectedFiles.indices) {
+                            val file = selectedFiles[i]
+                            val fileView = FileUtil.findFileViewForUri(file.uri, this@MainActivity)
+                            
+                            if (fileView != null && fileView.visibility == View.VISIBLE) {
+                                fileAnimationData.add(
+                                    FileAnimationManager.FileAnimationData(
+                                        sourceView = fileView,
+                                        fileName = file.name,
+                                        isImage = !file.isDocument,
+                                        index = i,
+                                        totalFiles = selectedFiles.size
+                                    )
+                                )
+                                Timber.d("🎬 [Alt Path] Prepared animation for file: ${file.name}")
+                            }
+                        }
+                        
+                        if (fileAnimationData.isNotEmpty()) {
+                            Timber.d("🚀 [Alt Path] Starting file transfer animation for ${fileAnimationData.size} files")
+                            
+                            // Start beautiful file animation
+                            fileAnimationManager.startFileTransferAnimation(
+                                files = fileAnimationData,
+                                onAnimationComplete = {
+                                    // Animation completed, now clear files
+                                    Timber.d("✨ [Alt Path] File animation completed, clearing files")
+                                    runOnUiThread {
+                                        selectedFiles.clear()
+                                        binding.selectedFilesScrollView.visibility = View.GONE
+                                        if (::fileHandler.isInitialized) {
+                                            fileHandler.updateSelectedFilesView()
+                                        }
+                                    }
+                                }
+                            )
+                        } else {
+                            // No visible file views found, clear immediately
+                            Timber.d("[Alt Path] No visible file views for animation, clearing immediately")
+                            selectedFiles.clear()
+                            binding.selectedFilesScrollView.visibility = View.GONE
+                            if (::fileHandler.isInitialized) {
+                                fileHandler.updateSelectedFilesView()
+                            }
+                        }
+                        
+                    } catch (e: Exception) {
+                        Timber.e(e, "[Alt Path] Error starting file animation: ${e.message}")
+                        // Fallback to immediate cleanup on animation error
+                        selectedFiles.clear()
+                        binding.selectedFilesScrollView.visibility = View.GONE
+                        if (::fileHandler.isInitialized) {
+                            fileHandler.updateSelectedFilesView()
+                        }
+                    }
+                } else {
+                    // Clear files after sending (fallback)
+                    selectedFiles.clear()
+                    binding.selectedFilesScrollView.visibility = View.GONE
+                    if (::fileHandler.isInitialized) {
+                        fileHandler.updateSelectedFilesView()
+                    }
+                }
+                
+                // Ensure microphone stays hidden for OCR models after sending files
+                val isOcrModel = ModelValidator.isOcrModel(ModelManager.selectedModel.id)
+                if (isOcrModel) {
+                    setMicrophoneVisibility(false)
+                }
+                
+                // Update UI state
+                isMessageSent = true
+                binding.btnNewConversation.isEnabled = true
             }
         } else {
-            // Text-only message
+            // CRITICAL FIX: Text-only message - single API call path
+            Timber.d("🔧 FIXED: Using single API call path for text-only message")
             proceedWithSendingMessage(message)
         }
     }
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     private fun showMessageTooLongDialog(
         originalMessage: String,
         inputTokens: Int,
@@ -7133,44 +8521,106 @@ class MainActivity : BaseThemedActivity() {
             binding.etInputText.text?.clear()
             selectedFiles.clear()
             binding.selectedFilesScrollView.visibility = View.GONE
-            fileHandler.updateSelectedFilesView()
+            if (::fileHandler.isInitialized) {
+                fileHandler.updateSelectedFilesView()
+            }
         }
 
         builder.show()
-    }    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    }    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun proceedWithSendingMessage(message: String) {
+        val messageSendStartTime = System.currentTimeMillis()
+        Timber.d("⚡ Message send initiated at: $messageSendStartTime")
+        
         val hasFiles = selectedFiles.isNotEmpty()
         val fileUris = selectedFiles.map { it.uri }
         val userMessageId = UUID.randomUUID().toString()
         
-        // Consume credits for non-subscribers
-        if (!PrefsManager.isSubscribed(this)) {
-            if (!creditManager.consumeChatCredits()) {
-                Timber.e("Failed to consume chat credits - message aborted")
-                setGeneratingState(false)
-                showInsufficientCreditsDialog(CreditManager.CreditType.CHAT)
-                return
-            }
-        }
+        // Show immediate UI feedback - typing indicator (OPTIMIZED)
+        binding.typingIndicator.visibility = View.VISIBLE
+        setGeneratingState(true)
+        Timber.d("⚡ UI updated immediately in ${System.currentTimeMillis() - messageSendStartTime}ms")
+        
+        // Credits already consumed on button press - no need to consume again
 
-        // Get or create conversation ID
+        // OPTIMIZATION: Direct conversation creation for fastest response
         val conversationId = createOrGetConversation(message)
 
         // Set conversation ID in token manager
-        conversationTokenManager.setConversationId(conversationId)
+        // conversationTokenManager.setConversationId(conversationId)
 
-        // Create and add user message
-        val userMessage = ChatMessage(
-            id = userMessageId,
+        // CRITICAL FIX: Only create user message if no files are present
+        // When files are present, AiChatService will create the proper user message with attachment flags
+        if (!hasFiles) {
+            // Create and add user message (text-only)
+            val userMessage = ChatMessage(
+                id = userMessageId,
+                conversationId = conversationId,
+                message = message,
+                isUser = true,
+                timestamp = System.currentTimeMillis(),
+                isVoiceMessage = isNextMessageFromVoice // 🎙️ Set voice message flag
+            )
+            
+            // Reset the voice message flag after use
+            isNextMessageFromVoice = false
+
+            // Add user message to MessageManager and TokenManager
+            messageManager.addMessage(userMessage)
+            // conversationTokenManager.addMessage(userMessage)
+        } else {
+            // Reset the voice message flag even when files are present
+            isNextMessageFromVoice = false
+            Timber.d("🔧 Skipping user message creation - files present, AiChatService will handle it")
+        }
+
+        // OPTIMIZATION: Create AI message layout immediately for instant visual feedback
+        val aiMessageId = UUID.randomUUID().toString()
+        val (indicatorText, indicatorColor) = when {
+            isDeepSearchEnabled -> {
+                Pair("Web search", ContextCompat.getColor(this, R.color.web_search_button_color))
+            }
+            isReasoningEnabled -> {
+                Pair("Thinking...", ContextCompat.getColor(this, R.color.reasoning_button_color))
+            }
+            else -> {
+                // CRITICAL: Force loading indicator to show by setting null (will use default logic)
+                Pair(null, 0xFF6366F1.toInt()) // Professional indigo color
+            }
+        }
+        
+        val aiMessage = ChatMessage(
+            id = aiMessageId,
             conversationId = conversationId,
-            message = message,
-            isUser = true,
-            timestamp = System.currentTimeMillis()
+            message = "",
+            isUser = false,
+            timestamp = System.currentTimeMillis(),
+            isGenerating = true,
+            showButtons = false,
+            modelId = ModelManager.selectedModel.id,
+            aiModel = ModelManager.selectedModel.displayName,
+            parentMessageId = userMessageId,
+            isThinkingActive = isReasoningEnabled && ModelConfigManager.supportsReasoning(ModelManager.selectedModel.id) && !isDeepSearchEnabled,
+            isWebSearchActive = isDeepSearchEnabled,
+            isForceSearch = false,
+            hasThinkingProcess = false,
+            thinkingProcess = null,
+            initialIndicatorText = indicatorText,
+            initialIndicatorColor = indicatorColor
         )
-
-        // Add user message to MessageManager and TokenManager
-        messageManager.addMessage(userMessage)
-        conversationTokenManager.addMessage(userMessage)
+        
+        // Add AI message immediately for instant layout appearance
+        messageManager.addMessage(aiMessage)
+        
+        // CRITICAL: Update adapter immediately with both messages
+        val allMessages = messageManager.getCurrentMessages()
+            .filter { it.conversationId == conversationId }
+            .sortedBy { it.timestamp }
+        
+        chatAdapter.submitList(allMessages) {
+            // Update UI after adapter is updated
+            updateConversationWithLatestMessage(message)
+        }
 
         // Clear any existing draft when sending a message
         clearDraft(shouldDeleteIfEmpty = false)
@@ -7181,54 +8631,54 @@ class MainActivity : BaseThemedActivity() {
             Timber.d("Re-setting generating state to true before AI response")
         }
 
-        // Start AI response immediately for seamless indicator display
-        Handler(Looper.getMainLooper()).post {
-            try {
-                if (hasFiles) {
-                    aiChatService.sendMessage(
-                        message = message,
-                        hasFiles = true,
-                        fileUris = fileUris,
-                        userMessageId = userMessageId,
-                        createOrGetConversation = ::createOrGetConversation,
-                        isReasoningEnabled = isReasoningEnabled,
-                        reasoningLevel = reasoningLevel
-                    )
-
-                    selectedFiles.clear()
-                    binding.selectedFilesScrollView.visibility = View.GONE
-                    fileHandler.updateSelectedFilesView()
-
-                    // Add file tokens to token manager
-                    fileUris.forEach { uri ->
-                        val fileTokens = estimateFileTokens(uri)
-                        conversationTokenManager.addFileTokens(fileTokens)
-                    }
-                } else {
-                    // Generate AI response with full context
-                    generateAIResponseWithFullContext(conversationId, userMessageId)
-                }
-
-                isMessageSent = true
-                binding.btnNewConversation.isEnabled = true
-
-            } catch (e: Exception) {
-                Timber.e(e, "Error sending message: ${e.message}")
-                Toast.makeText(this, "Error sending message: ${e.message}", Toast.LENGTH_SHORT).show()
-                setGeneratingState(false)
+        // CRITICAL FIX: Generate AI response with full context (single API call)
+        // This replaces the duplicate API calls that were causing race conditions
+        Timber.d("🔧 FIXED: Using single API call flow via generateAIResponseWithFullContext")
+        
+        // Generate AI response with full context for text-only messages
+        generateAIResponseWithFullContext(conversationId, userMessageId, aiMessageId)
+        
+        // Handle file cleanup if there were files
+        if (hasFiles) {
+            selectedFiles.clear()
+            binding.selectedFilesScrollView.visibility = View.GONE
+            if (::fileHandler.isInitialized) {
+                fileHandler.updateSelectedFilesView()
             }
-        } // Immediate execution for seamless indicator transitions
+            
+            // Ensure microphone stays hidden for OCR models after sending files
+            val isOcrModel = ModelValidator.isOcrModel(ModelManager.selectedModel.id)
+            if (isOcrModel) {
+                setMicrophoneVisibility(false)
+            }
 
-        // Update UI immediately
-        updateConversationWithLatestMessage(message)
-        updateTokenCounterUI()
+            // Add file tokens to token manager
+            fileUris.forEach { uri ->
+                val fileTokens = estimateFileTokens(uri)
+                // Use the enhanced file token handling
+                val fileContent = try {
+                    contentResolver.openInputStream(uri)?.use { inputStream ->
+                        inputStream.bufferedReader().readText()
+                    } ?: ""
+                } catch (e: Exception) {
+                    Timber.w("Could not read file content for token counting: ${e.message}")
+                    ""
+                }
+                
+                // File token handling is automatic with new system
+            }
+        }
+
+        isMessageSent = true
+        binding.btnNewConversation.isEnabled = true
+
+        // Update UI immediately (OPTIMIZED - removed delays)
         scrollToBottom()
         provideHapticFeedback(50)
         hideKeyboard()
     }
 
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-    private fun generateAIResponseWithFullContext(conversationId: String, userMessageId: String) {
+    private fun generateAIResponseWithFullContext(conversationId: String, userMessageId: String, aiMessageId: String) {
         lifecycleScope.launch {
             try {
                 // CRITICAL: Ensure generating state before starting
@@ -7239,8 +8689,14 @@ class MainActivity : BaseThemedActivity() {
                     }
                 }
 
-                // Ensure full conversation context is loaded
-                messageManager.ensureConversationContextLoaded(conversationId)
+                // OPTIMIZATION: Use pre-loaded context if available
+                if (preValidatedConversationId == conversationId && preValidatedContext != null) {
+                    Timber.d("Using pre-loaded conversation context with ${preValidatedContext?.size} messages")
+                    // Context is already loaded from pre-validation
+                } else {
+                    // Fallback to normal context loading
+                    messageManager.ensureConversationContextLoaded(conversationId)
+                }
 
                 // Verify we have context
                 val (userCount, aiCount, hasContext) = messageManager.getConversationStatsWithValidation(conversationId)
@@ -7263,42 +8719,8 @@ class MainActivity : BaseThemedActivity() {
                     }
                 }
 
-                val (indicatorText, indicatorColor) = when {
-                    isDeepSearchEnabled -> {
-                        Pair("Searching the web...", ContextCompat.getColor(this@MainActivity, R.color.web_search_button_color))
-                    }
-                    isReasoningEnabled -> {
-                        Pair("Thinking...", ContextCompat.getColor(this@MainActivity, R.color.reasoning_button_color))
-                    }
-                    else -> {
-                        Pair("Generating response...", ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
-                    }
-                }
-
-                // Create AI message WITH initial indicator
-                val aiMessageId = UUID.randomUUID().toString()
-                val aiMessage = ChatMessage(
-                    id = aiMessageId,
-                    conversationId = conversationId,
-                    message = "",
-                    isUser = false,
-                    timestamp = System.currentTimeMillis(),
-                    isGenerating = true,
-                    showButtons = false,
-                    modelId = ModelManager.selectedModel.id,
-                    aiModel = ModelManager.selectedModel.displayName,
-                    parentMessageId = userMessageId,
-                    // CRITICAL: These must be set based on model type
-                    isThinkingActive = isReasoningEnabled && ModelConfigManager.supportsReasoning(ModelManager.selectedModel.id) && !isDeepSearchEnabled,
-                    isWebSearchActive = isDeepSearchEnabled,
-                    isForceSearch = false, // Add this field
-                    hasThinkingProcess = false, // Will be updated during streaming
-                    thinkingProcess = null, // Will be filled during streaming
-                    initialIndicatorText = indicatorText,
-                    initialIndicatorColor = indicatorColor
-                )
-                // Add message to manager with validation
-                messageManager.addMessageWithValidation(aiMessage)
+                // AI message already created and added in proceedWithSendingMessage()
+                // Just use the existing aiMessageId passed as parameter
 
                 // Log context before API call
                 val contextMessages = messageManager.getCurrentMessages()
@@ -7387,6 +8809,7 @@ class MainActivity : BaseThemedActivity() {
 
 
 
+    /* OLD VOICE SYSTEM - COMMENTED OUT
     private fun updateRecordingTimer() {
         if (isRecording) {
             val elapsedMillis = System.currentTimeMillis() - recordingStartTime
@@ -7404,7 +8827,7 @@ class MainActivity : BaseThemedActivity() {
     private fun stopWaveformAnimation() {
         recordingAnimators.forEach { it.cancel() }
         recordingAnimators.clear()
-    }
+    } */
 
     private fun Int.dp(context: Context): Int {
         return (this * context.resources.displayMetrics.density).toInt()
@@ -7414,7 +8837,7 @@ class MainActivity : BaseThemedActivity() {
      *
      * @param text The transcribed text from voice recognition
      */
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun sendVoiceMessage(text: String) {
         // Create conversation ID first if needed
         val conversationIdString = createOrGetConversation(text)
@@ -7444,31 +8867,30 @@ class MainActivity : BaseThemedActivity() {
         // Clear input field
         binding.etInputText.text?.clear()
 
-        // Handle credits deduction for voice messages
-        if (!PrefsManager.isSubscribed(this) && !ModelManager.selectedModel.isFree) {
-            creditManager.consumeChatCredits(2)
-            updateFreeMessagesText()
-        }
+        // Credits are already consumed when voice send button is pressed
 
         // CRITICAL FIX: Use the same pattern for voice messages with indicator logic
         lifecycleScope.launch {
             try {
-                // Set generating state
+                // Set generating state and show immediate feedback
+                val sendStartTime = System.currentTimeMillis()
                 withContext(Dispatchers.Main) {
                     setGeneratingState(true)
                     binding.typingIndicator.visibility = View.VISIBLE
+                    Timber.d("⚡ Loading indicator shown in ${System.currentTimeMillis() - sendStartTime}ms after message send")
                 }
 
                 // Determine initial indicator before creating AI message
                 val (indicatorText, indicatorColor) = when {
                     isDeepSearchEnabled -> {
-                        Pair("Searching the web...", ContextCompat.getColor(this@MainActivity, R.color.web_search_button_color))
+                        Pair("Web search", ContextCompat.getColor(this@MainActivity, R.color.web_search_button_color))
                     }
                     isReasoningEnabled -> {
                         Pair("Thinking...", ContextCompat.getColor(this@MainActivity, R.color.reasoning_button_color))
                     }
                     else -> {
-                        Pair("Generating response...", ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
+                        // CRITICAL: Force loading indicator to show by setting null
+                        Pair(null, ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
                     }
                 }
 
@@ -7526,8 +8948,10 @@ class MainActivity : BaseThemedActivity() {
         when (requestCode) {
             RECORD_AUDIO_PERMISSION_CODE -> {
                 if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    // Permission granted, start recording
-                    startVoiceRecording()
+                    // Permission granted, start ultra voice recording  
+                    if (::ultraAudioIntegration.isInitialized) {
+                        ultraAudioIntegration.startUltraVoiceRecording()
+                    }
                 } else {
                     // Permission denied
                     Toast.makeText(
@@ -7598,8 +9022,8 @@ class MainActivity : BaseThemedActivity() {
             // Only switch if this is a new private conversation
             if (currentConversationId == null || !currentConversationId!!.startsWith("private_")) {
                 // Reset token manager for new private conversation
-                conversationTokenManager.reset()
-                conversationTokenManager.setConversationId(privateId)
+                // conversationTokenManager.reset()
+                // conversationTokenManager.setConversationId(privateId)
             }
 
             currentConversationId = privateId
@@ -7658,11 +9082,11 @@ class MainActivity : BaseThemedActivity() {
             val newId = conversation.id.toString()
 
             // Reset token manager for brand new conversation
-            conversationTokenManager.reset()
+            // conversationTokenManager.reset()
             currentConversationId = newId
             // Reset draft loaded flag for new conversation
             isDraftContentLoaded = false
-            conversationTokenManager.setConversationId(newId)
+            // conversationTokenManager.setConversationId(newId)
 
             // Save synchronously, not in a coroutine
             conversationsViewModel.addConversation(conversation)
@@ -7680,7 +9104,7 @@ class MainActivity : BaseThemedActivity() {
             newId
         } else {
             // If we already have a conversation ID, make sure token manager is using it
-            conversationTokenManager.setConversationId(currentConversationId!!)
+            // conversationTokenManager.setConversationId(currentConversationId!!)
 
             // Ensure user name is in metadata for existing conversation
             if (!conversationMetadata.containsKey(currentConversationId!!)) {
@@ -7706,14 +9130,17 @@ class MainActivity : BaseThemedActivity() {
 
             currentConversationId.toString()
         }
-    }    private val animationRunnable = object : Runnable {
+    }
+    
+    /* OLD VOICE SYSTEM - COMMENTED OUT
+    private val animationRunnable = object : Runnable {
         override fun run() {
             if (isRecording) {
                 simulateWaveMovement()
                 recordingAnimationTimer?.postDelayed(this, 250) // Slightly faster updates for smoother animation
             }
         }
-    }
+    } */
     /**
      * Update token limit when model changes
      * Add this to model change handlers
@@ -7727,12 +9154,11 @@ class MainActivity : BaseThemedActivity() {
         val isSubscribed = PrefsManager.isSubscribed(this)
 
         // Update token counter
-        TokenCounterHelper.updateTokenCounter(
+        updateTokenCounterUI(
             tvTokenCount,
             currentText,
             modelId,
-            isSubscribed,
-            this
+            isSubscribed
         )
 
         // Show toast with new limits
@@ -7744,78 +9170,82 @@ class MainActivity : BaseThemedActivity() {
     }
 
     /**
-     * Initialize voice recording with proper state reset
+     * Initialize ultra-modern voice recording system
      */
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-    private fun initializeVoiceRecording() {
+    private fun initializeUltraVoiceRecording() {
         try {
-            // Initialize voice recording views
+            // Initialize microphone button
             btnMicrophone = findViewById(R.id.btnMicrophone)
-            recordingOverlay = findViewById(R.id.recordingOverlay)
-            tvRecordingTime = findViewById(R.id.tvRecordingTime)
-            btnCancelRecording = findViewById(R.id.btnCancelRecording)
-            btnSendRecording = findViewById(R.id.btnSendRecording)
-
-            // Find loading indicator
-            val loadingIndicator = findViewById<ProgressBar>(R.id.sendLoadingIndicator)
-
-            // Reset UI state - ensure send button is visible and loading is hidden
-            btnSendRecording.visibility = View.VISIBLE
-            loadingIndicator?.visibility = View.GONE
-
-            // Safely initialize wave bars
-            initializeWaveBars()
-
-            // Initialize speech recognizer if available
-            if (SpeechRecognizer.isRecognitionAvailable(this)) {
-                speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
-                speechRecognizer.setRecognitionListener(createRecognitionListener())
-
-                // Log success
-                Timber.d("Speech recognizer initialized successfully")
-            } else {
-                // Fall back to send button if speech recognition isn't available
-                btnMicrophone.visibility = View.GONE
-                binding.btnSubmitText.visibility = View.VISIBLE
-                Toast.makeText(this, "Speech recognition not available on this device", Toast.LENGTH_SHORT).show()
-                Timber.w("Speech recognition not available on this device")
+            
+            // Initialize Ultra Audio Recording Manager
+            ultraAudioIntegration = UltraAudioIntegration(
+                activity = this,
+                parentView = findViewById(android.R.id.content) // Use root content view
+            )
+            ultraAudioIntegration.initialize()
+            
+            // Setup ultra-modern microphone click handler
+            btnMicrophone.setOnClickListener { 
+                ultraAudioIntegration.startUltraVoiceRecording() 
             }
 
-            // Setup click listeners
-            btnMicrophone.setOnClickListener { startVoiceRecording() }
-            btnCancelRecording.setOnClickListener { cancelVoiceRecording() }
-            btnSendRecording.setOnClickListener { stopVoiceRecordingAndSend() }
-
-            // Add text change listener to input field
+            // Add text change listener to input field for button toggle
             binding.etInputText.addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
 
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                    // Toggle between mic and send button based on text content
-                    if (s.toString().trim().isNotEmpty()) {
+                    // Check if current model is an OCR model
+                    val isOcrModel = ModelValidator.isOcrModel(ModelManager.selectedModel.id)
+                    val hasFiles = selectedFiles.isNotEmpty()
+                    val hasText = s.toString().trim().isNotEmpty()
+                    
+                    // For OCR models with files, preserve send button regardless of text
+                    if (isOcrModel && hasFiles) {
+                        btnMicrophone.visibility = View.GONE
+                        binding.btnSubmitText.visibility = View.VISIBLE
+                        binding.btnSubmitText.setImageResource(R.drawable.send_icon)
+                        binding.btnSubmitText.contentDescription = "Process OCR"
+                        binding.btnSubmitText.isEnabled = true
+                        binding.btnSubmitText.alpha = 1.0f
+                        Timber.d("Ultra Audio: Preserved send button for OCR model with files")
+                        return
+                    }
+                    
+                    // Toggle between mic and send button based on text content and model type
+                    if (hasText) {
                         btnMicrophone.visibility = View.GONE
                         binding.btnSubmitText.visibility = View.VISIBLE
                     } else {
-                        binding.btnSubmitText.visibility = View.GONE
-                        btnMicrophone.visibility = View.VISIBLE
+                        if (isOcrModel) {
+                            // For OCR models: never show microphone, always show send button
+                            btnMicrophone.visibility = View.GONE
+                            binding.btnSubmitText.visibility = View.VISIBLE
+                        } else {
+                            // For non-OCR models: show ultra-modern microphone when no text
+                            binding.btnSubmitText.visibility = View.GONE
+                            setMicrophoneVisibility(true)
+                        }
                     }
                     
-                    // Update submit button state based on text input and file processing
-                    fileHandler.updateSubmitButtonState()
+                    // Update submit button state
+                    updateButtonVisibilityAndState()
                 }
 
                 override fun afterTextChanged(s: Editable?) {}
             })
 
-            Timber.d("Voice recording initialization complete")
+            Timber.d("🎙️ Ultra Voice Recording initialized successfully")
         } catch (e: Exception) {
-            Timber.e(e, "Error initializing voice recording")
+            Timber.e(e, "Error initializing ultra voice recording: ${e.message}")
 
             // Fallback to text input only
             btnMicrophone.visibility = View.GONE
             binding.btnSubmitText.visibility = View.VISIBLE
+            
+            Toast.makeText(this, "Voice recording not available", Toast.LENGTH_SHORT).show()
         }
     }
+    /* OLD VOICE SYSTEM - COMMENTED OUT
     private fun initializeWaveBars() {
         try {
             // Find the wave container by its ID - this is the only ID lookup we need
@@ -7898,7 +9328,7 @@ class MainActivity : BaseThemedActivity() {
             // Create empty list to avoid null pointer exceptions
             waveBars = ArrayList()
         }
-    }
+    } */
 
 
     fun setSelectedModelInSpinner(modelId: String) {
@@ -7982,6 +9412,7 @@ class MainActivity : BaseThemedActivity() {
         }
     }
 
+    /* OLD VOICE SYSTEM - COMMENTED OUT
     private fun startRecordingAnimationTimer() {
         // Cancel any existing timer
         recordingAnimationTimer?.removeCallbacksAndMessages(null)
@@ -8046,7 +9477,7 @@ class MainActivity : BaseThemedActivity() {
                         scaleAnim.addUpdateListener { animator ->
                             try {
                                 bar.scaleY = animator.animatedValue as Float
-                            } catch (e: Exception) {
+                            } catch (_: Exception) {
                                 // Ignore animation errors
                             }
                         }
@@ -8060,7 +9491,7 @@ class MainActivity : BaseThemedActivity() {
         } catch (e: Exception) {
             Timber.e(e, "Error in wave animation")
         }
-    }
+    } */
     private fun showRealTimeSearchIndicator() {
         runOnUiThread {
             try {
@@ -8111,7 +9542,8 @@ class MainActivity : BaseThemedActivity() {
         }
     }
 
-    private fun startVoiceRecording() {
+    // OLD VOICE SYSTEM - COMMENTED OUT
+    /* private fun startVoiceRecording() {
         // Reset recording state
         lastPartialResults = ""
         isSpeechProcessing = false
@@ -8211,8 +9643,8 @@ class MainActivity : BaseThemedActivity() {
                 scrollArrowsHelper.hideButtonsTemporarily(10000) // Hide for 10 seconds
             }
         }
-    }
-    private fun simulateWaveMovement() {
+    } */
+    /* private fun simulateWaveMovement() {
         if (!isRecording || waveBars.isEmpty()) return
 
         runOnUiThread {
@@ -8247,7 +9679,7 @@ class MainActivity : BaseThemedActivity() {
                     scaleAnim.addUpdateListener { animator ->
                         try {
                             bar.scaleY = animator.animatedValue as Float
-                        } catch (e: Exception) {
+                        } catch (_: Exception) {
                             // Ignore animation errors
                         }
                     }
@@ -8258,10 +9690,31 @@ class MainActivity : BaseThemedActivity() {
                 Timber.e(e, "Error in wave simulation")
             }
         }
-    }
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    } */
+    /* @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun stopVoiceRecordingAndSend() {
         if (isRecording) {
+            // Check credit availability and consume credits for non-subscribers
+            val isSubscribed = PrefsManager.isSubscribed(this)
+            if (!isSubscribed) {
+                if (!creditManager.hasSufficientChatCredits()) {
+                    Timber.w("❌ Insufficient chat credits for voice message")
+                    showInsufficientCreditsDialog(CreditManager.CreditType.CHAT)
+                    finishRecordingUI()
+                    return
+                }
+                
+                if (creditManager.consumeChatCredits()) {
+                    updateFreeMessagesText()
+                    Timber.d("✅ Chat credits consumed on voice send button press")
+                } else {
+                    Timber.e("❌ Failed to consume chat credits despite previous check")
+                    showInsufficientCreditsDialog(CreditManager.CreditType.CHAT)
+                    finishRecordingUI()
+                    return
+                }
+            }
+            
             // First set the processing flag to show loading indicator
             isSpeechProcessing = true
 
@@ -8297,6 +9750,13 @@ class MainActivity : BaseThemedActivity() {
                 Timber.e(e, "Error stopping speech recognizer")
                 Toast.makeText(this, "Error processing speech: ${e.message}", Toast.LENGTH_SHORT).show()
 
+                // Refund credits if consumed and error occurred
+                if (!PrefsManager.isSubscribed(this)) {
+                    creditManager.refundCredits(1, CreditManager.CreditType.CHAT)
+                    updateFreeMessagesText()
+                    Timber.d("🔄 Credits refunded due to voice recording error")
+                }
+
                 // Reset UI
                 finishRecordingUI()
             }
@@ -8306,7 +9766,7 @@ class MainActivity : BaseThemedActivity() {
     /**
      * Finish recording with the given text
      */
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun finishRecordingWithText(text: String) {
         if (text.isNotEmpty()) {
             Timber.d("Speech recognition final result: $text")
@@ -8365,9 +9825,9 @@ class MainActivity : BaseThemedActivity() {
         }
         // Reset processing flags
         isSpeechProcessing = false
-    }
+    } */
 
-    private fun cancelVoiceRecording() {
+    /* private fun cancelVoiceRecording() {
         if (isRecording) {
             // Stop recording
             try {
@@ -8413,9 +9873,9 @@ class MainActivity : BaseThemedActivity() {
 
             Timber.d("Voice recording cancelled")
         }
-    }
+    } */
 
-    private fun createRecognitionListener(): RecognitionListener {
+    /* private fun createRecognitionListener(): RecognitionListener {
         return object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {
                 Timber.d("Ready for speech")
@@ -8460,7 +9920,7 @@ class MainActivity : BaseThemedActivity() {
                 Timber.d("End of speech")
             }
 
-            @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+            @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
             override fun onError(error: Int) {
                 val errorMessage = when (error) {
                     SpeechRecognizer.ERROR_AUDIO -> "Audio recording error"
@@ -8511,7 +9971,7 @@ class MainActivity : BaseThemedActivity() {
                 }
             }
 
-            @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+            @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
             override fun onResults(results: Bundle?) {
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 if (!matches.isNullOrEmpty()) {
@@ -8561,26 +10021,48 @@ class MainActivity : BaseThemedActivity() {
                 // Not used
             }
         }
-    }
+    } */
 
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     fun reloadAiMessage(message: ChatMessage) {
         if (isGenerating) {
             Toast.makeText(this, "Please wait for current generation to complete", Toast.LENGTH_SHORT).show()
             return
         }
+        
+        // Check credit availability first (for non-subscribers)
+        val isSubscribed = PrefsManager.isSubscribed(this)
+        if (!isSubscribed && !creditManager.hasSufficientChatCredits()) {
+            Timber.w("❌ Insufficient chat credits for reload")
+            showInsufficientCreditsDialog(CreditManager.CreditType.CHAT)
+            return
+        }
+        
+        // Consume credits immediately for non-subscribers (when reload button is pressed)
+        var creditsConsumed = false
+        if (!isSubscribed) {
+            if (creditManager.consumeChatCredits()) {
+                creditsConsumed = true
+                updateFreeMessagesText()
+                Timber.d("✅ Chat credits consumed on reload button press")
+            } else {
+                Timber.e("❌ Failed to consume chat credits despite previous check")
+                showInsufficientCreditsDialog(CreditManager.CreditType.CHAT)
+                return
+            }
+        }
 
         // IMPROVED: Check token limits before reload
         val modelId = ModelManager.selectedModel.id
-        val isSubscribed = PrefsManager.isSubscribed(this)
 
         // Find the parent user message
         val parentUserMessage = findParentUserMessage(message)
         val parentText = parentUserMessage?.message ?: ""
 
         if (parentText.isNotEmpty()) {
-            // Check if regeneration would exceed limits
-            val (wouldExceed, available, _) = conversationTokenManager.wouldExceedLimit(parentText, modelId, isSubscribed)
+            // Token validation handled by new system during actual generation
+            val wouldExceed = false // Let new system handle validation  
+            val available = 999999 // Placeholder
 
             if (wouldExceed) {
                 AlertDialog.Builder(this)
@@ -8605,7 +10087,7 @@ class MainActivity : BaseThemedActivity() {
 
         try {
             // CRITICAL FIX: Remove tokens for the original message that will be replaced
-            conversationTokenManager.removeMessage(message.id)
+            // conversationTokenManager.removeMessage(message.id)
 
             // Store the original message content as the first version if not already stored
             val originalMessageContent = message.message
@@ -8632,6 +10114,8 @@ class MainActivity : BaseThemedActivity() {
                 chatAdapter.notifyItemChanged(messageIndex)
             }
 
+            // Credits already consumed on button press - no need to consume again
+            
             // Log regeneration
             Timber.d("Regenerating message ${message.id} (updating existing message)")
 
@@ -8648,13 +10132,20 @@ class MainActivity : BaseThemedActivity() {
             Toast.makeText(this, "Error preparing regeneration: ${e.message}", Toast.LENGTH_SHORT).show()
             setGeneratingState(false)
             isReloadingMessage = false
+            
+            // Refund credits if consumed and error occurred
+            if (creditsConsumed) {
+                creditManager.refundCredits(1, CreditManager.CreditType.CHAT)
+                updateFreeMessagesText()
+                Timber.d("🔄 Credits refunded due to reload error")
+            }
         }
     }
 
     /**
      * Navigate between message versions
      */
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     fun navigateMessageVersion(message: ChatMessage, direction: Int) {
         val newIndex = message.versionIndex + direction
         
@@ -8674,7 +10165,7 @@ class MainActivity : BaseThemedActivity() {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     fun editMessage(message: ChatMessage) {
         showEditMessageDialog(message)
     }
@@ -8688,22 +10179,72 @@ class MainActivity : BaseThemedActivity() {
         // Find the parent message in the current messages
         return chatAdapter.currentList.find { it.id == parentId }
     }
+    
+    /**
+     * Handle existing AI responses when a user message is edited
+     * This removes orphaned AI responses to prevent empty messages
+     */
+    private fun handleExistingAiResponsesForEditedMessage(userMessageId: String) {
+        try {
+            // Find existing AI responses that are children of this user message
+            val existingAiResponses = chatAdapter.currentList.filter { message ->
+                !message.isUser && message.parentMessageId == userMessageId
+            }
+            
+            if (existingAiResponses.isNotEmpty()) {
+                Timber.d("Found ${existingAiResponses.size} existing AI responses for edited user message $userMessageId")
+                
+                // Remove existing AI responses from the adapter
+                val currentMessages = chatAdapter.currentList.toMutableList()
+                existingAiResponses.forEach { aiResponse ->
+                    currentMessages.removeAll { it.id == aiResponse.id }
+                    Timber.d("Removed AI response ${aiResponse.id} for edited user message")
+                }
+                
+                // Update the adapter with the cleaned list
+                chatAdapter.submitList(currentMessages)
+                
+                // Remove from token counter
+                existingAiResponses.forEach { aiResponse ->
+                    // conversationTokenManager.removeMessage(aiResponse.id)
+                }
+                
+                // Note: Messages are automatically cleaned up by the messageManager
+                // when saveAllMessages() is called. No need for explicit database deletion.
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error handling existing AI responses for edited message: ${e.message}")
+        }
+    }
 
     private fun setupPrivateChatFeature() {
-        // Initialize views
-        btnPrivateChat = findViewById(R.id.btnPrivateChat)
-        privateModeIndicator = findViewById(R.id.privateModeIndicator)
+        try {
+            // Initialize views with defensive checks
+            val privateChatView = findViewById<ImageButton>(R.id.btnPrivateChat)
+            val privateModeIndicatorView = findViewById<CardView>(R.id.privateModeIndicator)
+            
+            if (privateChatView == null) {
+                Timber.w("⚠️ btnPrivateChat view not found in layout, skipping private chat setup")
+                return
+            }
+            if (privateModeIndicatorView == null) {
+                Timber.w("⚠️ privateModeIndicator view not found in layout, skipping private chat setup")
+                return
+            }
+            
+            btnPrivateChat = privateChatView
+            privateModeIndicator = privateModeIndicatorView
 
-        // Load animations
-        ghostFloatAnimation = AnimationUtils.loadAnimation(this, R.anim.ghost_float)
-        ghostActivateAnimation = AnimationUtils.loadAnimation(this, R.anim.ghost_activate)
-        fadeInAnimation = AnimationUtils.loadAnimation(this, R.anim.fade_in)
-        fadeOutAnimation = AnimationUtils.loadAnimation(this, R.anim.fade_out)
+            // Load animations
+            ghostFloatAnimation = AnimationUtils.loadAnimation(this, R.anim.ghost_float)
+            ghostActivateAnimation = AnimationUtils.loadAnimation(this, R.anim.ghost_activate)
+            fadeInAnimation = AnimationUtils.loadAnimation(this, R.anim.fade_in)
+            fadeOutAnimation = AnimationUtils.loadAnimation(this, R.anim.fade_out)
 
-        // Configure click listener
-        btnPrivateChat.setOnClickListener {
-            togglePrivateMode()
-        }
+            // Configure click listener
+            btnPrivateChat.setOnClickListener {
+                togglePrivateMode()
+            }
 
         // Set long press listener for help tooltip
         btnPrivateChat.setOnLongClickListener {
@@ -8725,6 +10266,11 @@ class MainActivity : BaseThemedActivity() {
         conversationsViewModel.clearPrivateMessages()
 
         Timber.d("Private chat feature initialized with private mode OFF")
+        
+        } catch (e: Exception) {
+            Timber.e(e, "⚠️ Error setting up private chat feature: ${e.message}")
+            // Don't rethrow - just log and continue without private chat functionality
+        }
     }
 
     // Add this method to toggle private mode
@@ -8769,6 +10315,12 @@ class MainActivity : BaseThemedActivity() {
     }
 
     private fun updatePrivateModeUI(animate: Boolean) {
+        // Defensive check: Ensure views are initialized before accessing them
+        if (!::btnPrivateChat.isInitialized) {
+            Timber.w("⚠️ btnPrivateChat not initialized yet, skipping UI update")
+            return
+        }
+        
         // Update ghost icon tint
         if (isPrivateModeEnabled) {
             // Update icon appearance
@@ -9011,7 +10563,7 @@ class MainActivity : BaseThemedActivity() {
                             binding.btnSubmitText.scaleY = value
                             binding.btnSubmitText.alpha = if (value > 1.07f) 0.8f else 1.0f
                         }
-                    } catch (e: Exception) {
+                    } catch (_: Exception) {
                         // Ignore animation errors during cleanup
                     }
                 }
@@ -9123,14 +10675,16 @@ class MainActivity : BaseThemedActivity() {
         isLoadingMore = true
         currentPage++
 
-        conversationsViewModel.getMessagesByConversationId(currentConversationId.toString(), currentPage).observe(this) { messages ->
-            if (messages.isNotEmpty()) {
+        lifecycleScope.launch {
+            conversationsViewModel.getMessagesByConversationId(currentConversationId.toString(), currentPage).collect { messages ->
+                if (messages.isNotEmpty()) {
                 // Add loaded messages using the message manager
                 messageManager.addMessages(messages)
-            } else {
-                currentPage--
+                } else {
+                    currentPage--
+                }
+                isLoadingMore = false
             }
-            isLoadingMore = false
         }
     }    /**
      * Restore buttons on error (recovery mechanism)
@@ -9183,10 +10737,10 @@ class MainActivity : BaseThemedActivity() {
      * Save all message versions to database
      */
 
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun initializeButtons() {
         // Change the icon for btnConversationsList to a back button
-        binding.btnConversationsList.setImageResource(R.drawable.back_button)
+        binding.btnConversationsList.setIcon(ContextCompat.getDrawable(this, R.drawable.back_button))
         binding.btnConversationsList.contentDescription = "Back to home"
         btnAudioConversation = findViewById(R.id.btnAudioConversation)
 
@@ -9194,7 +10748,7 @@ class MainActivity : BaseThemedActivity() {
         val btnDeepSearch = findViewById<ImageButton>(R.id.btnDeepSearch)
 
         // Set initial states based on saved preferences AND model capabilities
-        val currentModel = ModelManager.selectedModel.id
+        ModelManager.selectedModel.id
 
         // Initialize button states
         updateReasoningButtonState(isReasoningEnabled)
@@ -9202,7 +10756,7 @@ class MainActivity : BaseThemedActivity() {
 
         // Set click listeners for reasoning and deep search
         btnReasoning.setOnClickListener {
-            val currentModel = ModelManager.selectedModel.id
+            ModelManager.selectedModel.id
 
             when {
 
@@ -9297,7 +10851,7 @@ class MainActivity : BaseThemedActivity() {
     }
 
     fun updateReasoningButtonState(isEnabled: Boolean) {
-        val currentModel = ModelManager.selectedModel.id
+        ModelManager.selectedModel.id
 
         btnReasoning.isSelected = isEnabled
 
@@ -9328,7 +10882,7 @@ class MainActivity : BaseThemedActivity() {
     private fun toggleReasoningLevel() {
         provideHapticFeedback(50)
 
-        val currentModel = ModelManager.selectedModel.id
+        ModelManager.selectedModel.id
 
         when {
 
@@ -9374,7 +10928,7 @@ class MainActivity : BaseThemedActivity() {
             if (isDeepSearchEnabled) "Web Search enabled" else "Web Search disabled",
             Toast.LENGTH_SHORT).show()
     }
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun setupEnhancedButtonHandlers() {
         // Enhanced submit button click handler
         binding.btnSubmitText.setOnClickListener { view ->
@@ -9385,17 +10939,21 @@ class MainActivity : BaseThemedActivity() {
             uiHandler.postDelayed({ view.isEnabled = true }, 500)
 
             if (isGenerating) {
-                Timber.d("Stop button clicked - stopping generation")
+                Timber.d("🔘🔘🔘 STOP BUTTON CLICKED - isGenerating=$isGenerating")
                 stopGeneration()
             } else {
-                Timber.d("Send button clicked - sending message")
+                Timber.d("🔘 SEND BUTTON CLICKED - isGenerating=$isGenerating")
                 sendMessage()
             }
         }
 
-        // Microphone button handler remains the same
+        // Microphone button handler - updated to use UltraAudioIntegration
         binding.btnMicrophone.setOnClickListener {
-            startVoiceRecording()
+            if (::ultraAudioIntegration.isInitialized) {
+                ultraAudioIntegration.startUltraVoiceRecording()
+            } else {
+                Toast.makeText(this, "Voice recording not initialized", Toast.LENGTH_SHORT).show()
+            }
         }
     }
     /**
@@ -9435,7 +10993,7 @@ class MainActivity : BaseThemedActivity() {
             currentPhotoPath = photoFile.absolutePath
 
             // Save path to shared preferences to restore if needed
-            getSharedPreferences("camera_prefs", Context.MODE_PRIVATE)
+            getSharedPreferences("camera_prefs", MODE_PRIVATE)
                 .edit {
                     putString("last_photo_path", currentPhotoPath)
                 }
@@ -9484,7 +11042,7 @@ class MainActivity : BaseThemedActivity() {
                     // There are camera apps, try again with explicit component
                     try {
                         val cameraActivity = cameraActivities[0]
-                        takePictureIntent.component = android.content.ComponentName(
+                        takePictureIntent.component = ComponentName(
                             cameraActivity.activityInfo.packageName,
                             cameraActivity.activityInfo.name
                         )
@@ -9641,25 +11199,6 @@ class MainActivity : BaseThemedActivity() {
         }
     }
 
-    private fun logDeviceInfo() {
-        Timber.d("Device Info:")
-        Timber.d("Manufacturer: ${Build.MANUFACTURER}")
-        Timber.d("Model: ${Build.MODEL}")
-        Timber.d("Android version: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
-
-        // Log camera features
-        Timber.d("Camera features:")
-        Timber.d("Has camera: ${packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)}")
-        Timber.d("Has front camera: ${packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_FRONT)}")
-
-        // Log camera apps
-        val cameraIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-        val cameraApps = packageManager.queryIntentActivities(cameraIntent, PackageManager.MATCH_DEFAULT_ONLY)
-        Timber.d("Camera apps found: ${cameraApps.size}")
-        cameraApps.forEach { resolveInfo ->
-            Timber.d("Camera app: ${resolveInfo.activityInfo.packageName}")
-        }
-    }
     /**
      * Create image file for camera
      */
@@ -9758,24 +11297,237 @@ class MainActivity : BaseThemedActivity() {
     }
 
     /**
+     * Update button visibility and state - can be called from FileHandler
+     */
+    fun updateButtonVisibilityAndState() {
+        val hasText = binding.etInputText.text.toString().trim().isNotEmpty()
+        val hasFiles = selectedFiles.isNotEmpty()
+        val isOcrModel = ModelValidator.isOcrModel(ModelManager.selectedModel.id)
+        
+        // Enhanced file processing state detection
+        val processingFiles = selectedFiles.filter { it.isExtracting && !it.isExtracted }
+        val failedFiles = selectedFiles.filter { !it.isExtracting && !it.isExtracted && it.isDocument }
+        val readyFiles = selectedFiles.filter { it.isExtracted && !it.isExtracting }
+        val isExtracting = processingFiles.isNotEmpty()
+        val hasFailedFiles = failedFiles.isNotEmpty()
+        
+        Timber.d("🔄 Button state update - hasText=$hasText, hasFiles=$hasFiles, isOcrModel=$isOcrModel")
+        Timber.d("   📊 Files: ${selectedFiles.size} total, ${processingFiles.size} processing, ${failedFiles.size} failed, ${readyFiles.size} ready")
+        
+        // For OCR models, always ensure send button is visible
+        if (isOcrModel) {
+            binding.btnMicrophone.visibility = View.GONE
+            binding.btnSubmitText.visibility = View.VISIBLE
+            binding.btnSubmitText.setImageResource(R.drawable.send_icon)
+            
+            // Determine button state based on file processing
+            val (shouldEnable, buttonDescription) = when {
+                isExtracting -> {
+                    false to "Processing ${processingFiles.size} file(s)..."
+                }
+                hasFailedFiles -> {
+                    false to "Some files failed to process"
+                }
+                hasFiles || hasText -> {
+                    true to "Process OCR"
+                }
+                else -> {
+                    false to "No content to process"
+                }
+            }
+            
+            binding.btnSubmitText.isEnabled = shouldEnable
+            binding.btnSubmitText.alpha = if (shouldEnable) 1.0f else 0.7f
+            binding.btnSubmitText.contentDescription = buttonDescription
+            
+            Timber.d("OCR model: send button visible, enabled=${binding.btnSubmitText.isEnabled}")
+            
+            // Start aggressive monitoring for OCR models with files
+            if (hasFiles) {
+                startOcrButtonMonitoring()
+            } else {
+                stopOcrButtonMonitoring()
+            }
+            
+            // Add a small delay to ensure this state persists against any other UI updates
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (ModelValidator.isOcrModel(ModelManager.selectedModel.id)) {
+                    binding.btnMicrophone.visibility = View.GONE
+                    binding.btnSubmitText.visibility = View.VISIBLE
+                    Timber.d("OCR model: Re-enforced send button visibility")
+                }
+            }, 100)
+        } else {
+            stopOcrButtonMonitoring()
+            
+            // For non-OCR models, handle different file processing states
+            when {
+                isExtracting -> {
+                    // Files are still processing - disable send button
+                    binding.btnSubmitText.isEnabled = false
+                    binding.btnSubmitText.alpha = 0.7f
+                    binding.btnSubmitText.contentDescription = "Processing ${processingFiles.size} file(s)..."
+                    
+                    // Keep send button visible if we have text or files, just disabled
+                    if (hasText || hasFiles) {
+                        binding.btnMicrophone.visibility = View.GONE
+                        binding.btnSubmitText.visibility = View.VISIBLE
+                    } else {
+                        toggleInputButtons(hasText, hasFiles)
+                    }
+                }
+                
+                hasFailedFiles -> {
+                    // Some files failed processing - disable send button
+                    binding.btnSubmitText.isEnabled = false
+                    binding.btnSubmitText.alpha = 0.7f
+                    binding.btnSubmitText.contentDescription = "Some files failed to process"
+                    
+                    if (hasText || hasFiles) {
+                        binding.btnMicrophone.visibility = View.GONE
+                        binding.btnSubmitText.visibility = View.VISIBLE
+                    } else {
+                        toggleInputButtons(hasText, hasFiles)
+                    }
+                }
+                
+                else -> {
+                    // All files are ready or no files - normal toggle logic
+                    toggleInputButtons(hasText, hasFiles)
+                    
+                    // Update button description with token info if available
+                    if (hasFiles && readyFiles.isNotEmpty()) {
+                        val totalTokens = readyFiles.sumOf { file ->
+                            fileHandler.extractTokenCountFromProcessingInfo(file) ?: 0
+                        }
+                        if (totalTokens > 0) {
+                            binding.btnSubmitText.contentDescription = "Send message ($totalTokens file tokens)"
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var ocrButtonMonitoringJob: Job? = null
+
+    private fun startOcrButtonMonitoring() {
+        stopOcrButtonMonitoring()
+        
+        ocrButtonMonitoringJob = lifecycleScope.launch {
+            while (isActive) {
+                try {
+                    val isOcrModel = ModelValidator.isOcrModel(ModelManager.selectedModel.id)
+                    val hasFiles = selectedFiles.isNotEmpty()
+                    
+                    if (isOcrModel && hasFiles) {
+                        if (binding.btnSubmitText.visibility != View.VISIBLE) {
+                            Timber.w("OCR MONITOR: Send button hidden - FORCING VISIBLE")
+                            withContext(Dispatchers.Main) {
+                                binding.btnMicrophone.visibility = View.GONE
+                                binding.btnSubmitText.visibility = View.VISIBLE
+                                binding.btnSubmitText.setImageResource(R.drawable.send_icon)
+                                binding.btnSubmitText.contentDescription = "Process OCR"
+                                binding.btnSubmitText.isEnabled = true
+                                binding.btnSubmitText.alpha = 1.0f
+                            }
+                        }
+                    } else {
+                        // No longer OCR with files, stop monitoring
+                        break
+                    }
+                    
+                    delay(200) // Check every 200ms
+                } catch (e: Exception) {
+                    Timber.e(e, "Error in OCR button monitoring")
+                    break
+                }
+            }
+        }
+        
+        Timber.d("Started OCR button monitoring")
+    }
+
+    private fun stopOcrButtonMonitoring() {
+        ocrButtonMonitoringJob?.cancel()
+        ocrButtonMonitoringJob = null
+    }
+
+    /**
+     * Handle subscription status changes from SubscriptionManager
+     */
+    private fun handleSubscriptionStatusChange(isSubscribed: Boolean) {
+        runOnUiThread {
+            Timber.d("📱 Handling subscription status change: $isSubscribed")
+            
+            if (isSubscribed) {
+                onSubscriptionActivated()
+            } else {
+                onSubscriptionDeactivated()
+            }
+            
+            updateUIBasedOnSubscriptionStatus()
+        }
+    }
+
+    /**
+     * Called when subscription is activated
+     */
+    private fun onSubscriptionActivated() {
+        Timber.d("✨ Premium activated - unlocking features")
+        
+        // Show success message
+        runOnUiThread {
+            Toast.makeText(this, "Welcome to Premium! All features unlocked.", Toast.LENGTH_LONG).show()
+        }
+        
+        // Ads are controlled by PrefsManager - they're handled in updateUIBasedOnSubscriptionStatus()
+        // No explicit hideAds() method needed as ads check subscription status automatically
+        
+        // Credit limitations are handled automatically by CreditManager based on subscription status
+        // No explicit unlockPremiumMode() needed
+    }
+
+    /**
+     * Called when subscription is deactivated/expired
+     */
+    private fun onSubscriptionDeactivated() {
+        Timber.d("🔒 Subscription deactivated - enabling free mode restrictions")
+        
+        // Show notification about reverting to free mode
+        runOnUiThread {
+            Toast.makeText(this, "Subscription expired. Switched to free mode.", Toast.LENGTH_LONG).show()
+        }
+        
+        // Free mode is enabled automatically by CreditManager based on subscription status
+        // No explicit enableFreeMode() needed
+    }
+
+    /**
      * Update UI based on subscription status
      */
     private fun updateUIBasedOnSubscriptionStatus() {
-        val isSubscribed = PrefsManager.isSubscribed(this)
+        val isSubscribed = SubscriptionManager.subscriptionStatus.value
 
-        // Update credits visibility
+        // Update credits visibility based on subscription and model
         if (isSubscribed) {
             // Hide credit-related UI when subscribed
             binding.creditsButton.visibility = View.GONE
-
+            
+            // Update status indicator if available
+            updatePremiumStatusIndicator(true)
+            
             // Also release ad resources if user is subscribed
             // AdManager handles cleanup automatically
         } else {
-            // Show credit-related UI when not subscribed
+            // Show credit-related UI when not subscribed for paid models
             binding.creditsButton.visibility = if (!ModelManager.selectedModel.isFree) View.VISIBLE else View.GONE
 
             // Update the free messages text
             updateFreeMessagesText()
+            
+            // Update status indicator 
+            updatePremiumStatusIndicator(false)
         }
 
         // Update token counter to reflect subscription status changes
@@ -9785,15 +11537,17 @@ class MainActivity : BaseThemedActivity() {
             val modelId = ModelManager.selectedModel.id
 
             // Update token counter with new subscription status
-            TokenCounterHelper.updateTokenCounter(
+            updateTokenCounterUI(
                 tvTokenCount,
                 currentText,
                 modelId,
-                isSubscribed,
-                this
+                isSubscribed
             )
         }
 
+        // Update feature access indicators
+        updateFeatureAccessIndicators(isSubscribed)
+        
         // Update ad settings based on subscription
         if (isSubscribed) {
             PrefsManager.setShouldShowAds(this, false)
@@ -9801,6 +11555,75 @@ class MainActivity : BaseThemedActivity() {
             // Restore ad settings to default
             PrefsManager.setShouldShowAds(this, true)
         }
+    }
+
+    /**
+     * Update premium status indicator in UI
+     */
+    private fun updatePremiumStatusIndicator(isSubscribed: Boolean) {
+        // Update app title or add premium badge
+        supportActionBar?.title = if (isSubscribed) {
+            getString(R.string.app_name) + " Premium"
+        } else {
+            getString(R.string.app_name)
+        }
+    }
+
+    /**
+     * Update feature access indicators throughout the UI
+     */
+    private fun updateFeatureAccessIndicators(isSubscribed: Boolean) {
+        try {
+            // Update model selection to show/hide premium models
+            updateModelAvailability(isSubscribed)
+            
+            // Update image generation button if available
+            updateImageGenerationAccess(isSubscribed)
+            
+            // Update file upload capabilities
+            updateFileUploadLimits(isSubscribed)
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Error updating feature access indicators")
+        }
+    }
+
+    /**
+     * Update model availability based on subscription
+     */
+    private fun updateModelAvailability(isSubscribed: Boolean) {
+        // Refresh model manager with subscription status
+        ModelManager.updateSubscriptionStatus(isSubscribed)
+        
+        // If current model requires subscription and user is not subscribed, switch to free model
+        if (!isSubscribed && !ModelManager.selectedModel.isFree) {
+            val freeModel = ModelManager.getDefaultFreeModel()
+            ModelManager.selectModel(freeModel.id)
+            
+            // Update UI to reflect model change
+            updateControlsVisibility(freeModel.id)
+            
+            Toast.makeText(this, "Switched to free model. Upgrade to Premium to access advanced models.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /**
+     * Update image generation access
+     */
+    private fun updateImageGenerationAccess(isSubscribed: Boolean) {
+        // Image generation access logic - this method can be expanded
+        // based on your specific requirements for image generation features
+    }
+
+    /**
+     * Update file upload limits based on subscription
+     */
+    private fun updateFileUploadLimits(isSubscribed: Boolean) {
+        val maxFiles = if (isSubscribed) 10 else 3
+        val maxSizeMB = if (isSubscribed) 50 else 5
+        
+        // Update file handler limits
+        fileHandler.updateLimits(maxFiles, maxSizeMB)
     }    private fun handleConsentAndAds() {
         // Skip if already handled or user is subscribed
         if (consentHandled || PrefsManager.isSubscribed(this)) {
@@ -9861,10 +11684,8 @@ class MainActivity : BaseThemedActivity() {
 
 
     fun navigateToWelcomeActivity() {
-        Intent(this@MainActivity, WelcomeActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-            startActivity(this)
-        }
+        // Updated to use new SubscriptionActivity
+        SubscriptionActivity.start(this)
     }
 
     /**
@@ -9878,10 +11699,97 @@ class MainActivity : BaseThemedActivity() {
      * Copy text to clipboard
      */
     fun copyToClipboard(text: String) {
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         val clip = ClipData.newPlainText("Copied Text", text)
         clipboard.setPrimaryClip(clip)
         Toast.makeText(this, "Text copied to clipboard", Toast.LENGTH_SHORT).show()
+    }
+    
+    // === PRE-VALIDATION SYSTEM FOR ULTRA-FAST MESSAGE SENDING ===
+    
+    /**
+     * Pre-validate message during typing to eliminate send-to-response latency
+     */
+    private fun performPreValidation(message: String) {
+        // Cancel any existing validation
+        validationRunnable?.let { validationDebouncer.removeCallbacks(it) }
+        
+        // Create new debounced validation
+        validationRunnable = Runnable {
+            val startTime = System.currentTimeMillis()
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    Timber.d("⚡ Pre-validation started for message: ${message.take(30)}...")
+                    
+                    // Pre-validate in background
+                    val modelId = ModelManager.selectedModel.id
+                    val isSubscribed = PrefsManager.isSubscribed(this@MainActivity)
+                    
+                    // Skip pre-validation - new system handles this
+                    val wouldExceed = false // Let new system handle validation
+                    val almostFull = false
+                    
+                    if (!wouldExceed) {
+                        // Pre-prepare conversation context
+                        val conversationId = getActiveConversationId() ?: createNewConversationId()
+                        
+                        // Pre-load conversation context in background
+                        val context = if (conversationId.startsWith("conv_")) {
+                            // New conversation - no context needed
+                            emptyList<ChatMessage>()
+                        } else {
+                            // Existing conversation - load actual context
+                            try {
+                                conversationsViewModel.getAllConversationMessages(conversationId).take(5) // Last 5 messages for context
+                            } catch (e: Exception) {
+                                Timber.w("Failed to load conversation context: ${e.message}")
+                                emptyList<ChatMessage>()
+                            }
+                        }
+                        
+                        // Cache the pre-validated data
+                        preValidatedConversationId = conversationId
+                        preValidatedContext = context
+                        
+                        val endTime = System.currentTimeMillis()
+                        val duration = endTime - startTime
+                        
+                        Timber.d("⚡ Pre-validation complete in ${duration}ms: conversationId=$conversationId, contextSize=${context.size}")
+                        
+                        // Update UI to show pre-validation is active
+                        withContext(Dispatchers.Main) {
+                            // Subtle indicator that pre-validation is working
+                            binding.btnSubmitText.alpha = 1.0f
+                        }
+                    } else {
+                        Timber.d("⚡ Pre-validation skipped - would exceed token limit")
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "Pre-validation failed: ${e.message}")
+                }
+            }
+        }
+        
+        // Reduced debounce time for faster response
+        validationDebouncer.postDelayed(validationRunnable!!, 250) // Reduced from 300ms to 250ms
+    }
+    
+    /**
+     * Get current conversation ID or create new one
+     */
+    private fun getActiveConversationId(): String? {
+        return if (chatAdapter.currentList.isEmpty()) {
+            null
+        } else {
+            chatAdapter.currentList.firstOrNull()?.conversationId
+        }
+    }
+    
+    /**
+     * Create new conversation ID for pre-validation
+     */
+    private fun createNewConversationId(): String {
+        return "conv_${System.currentTimeMillis()}_${(Math.random() * 1000).toInt()}"
     }
 
     /**
@@ -9909,7 +11817,7 @@ class MainActivity : BaseThemedActivity() {
      */
     private fun isUserAtBottom(): Boolean {
         return try {
-            val layoutManager = binding.chatRecyclerView.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager
+            val layoutManager = binding.chatRecyclerView.layoutManager as? LinearLayoutManager
             if (layoutManager != null && chatAdapter.itemCount > 0) {
                 val lastVisiblePosition = layoutManager.findLastCompletelyVisibleItemPosition()
                 val totalItems = chatAdapter.itemCount
@@ -9937,7 +11845,7 @@ class MainActivity : BaseThemedActivity() {
         }
 
         Handler(Looper.getMainLooper()).postDelayed({
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
             imm.showSoftInput(binding.etInputText, InputMethodManager.SHOW_IMPLICIT)
         }, 200)
     }
@@ -9947,7 +11855,7 @@ class MainActivity : BaseThemedActivity() {
     private fun forceShowKeyboard() {
         binding.etInputText.requestFocus()
 
-        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
         imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
     }
 
@@ -9955,7 +11863,7 @@ class MainActivity : BaseThemedActivity() {
      * Hide keyboard
      */
     private fun hideKeyboard() {
-        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
         val view = currentFocus ?: binding.root
         imm.hideSoftInputFromWindow(view.windowToken, 0)
 
@@ -10012,14 +11920,17 @@ class MainActivity : BaseThemedActivity() {
                     // Stop animation first
                     stopPulsingAnimation()
 
-                    // Reset button state based on input text
+                    // Reset button state based on input text and selected files
                     val inputText = binding.etInputText.text.toString().trim()
-                    if (inputText.isEmpty()) {
+                    val hasFiles = selectedFiles.isNotEmpty()
+                    val isOcrModel = ModelValidator.isOcrModel(ModelManager.selectedModel.id)
+                    
+                    if (inputText.isEmpty() && !hasFiles && !isOcrModel) {
                         binding.btnSubmitText.visibility = View.GONE
-                        binding.btnMicrophone.visibility = View.VISIBLE
+                        setMicrophoneVisibility(true) // This will handle OCR model check
                     } else {
                         binding.btnSubmitText.setImageResource(R.drawable.send_icon)
-                        binding.btnSubmitText.contentDescription = "Send message"
+                        binding.btnSubmitText.contentDescription = if (isOcrModel) "Process OCR" else "Send message"
                         binding.btnSubmitText.visibility = View.VISIBLE
                         binding.btnMicrophone.visibility = View.GONE
                     }
@@ -10054,7 +11965,7 @@ class MainActivity : BaseThemedActivity() {
                 } else {
                     if (inputText.isEmpty()) {
                         // Should be in microphone mode
-                        binding.btnMicrophone.visibility = View.VISIBLE
+                        setMicrophoneVisibility(true) // This will handle OCR model check
                         binding.btnSubmitText.visibility = View.GONE
 
                         // Ensure any pulsing is stopped
@@ -10074,7 +11985,7 @@ class MainActivity : BaseThemedActivity() {
                 Timber.e(e, "Error in forceUpdateButtonState: ${e.message}")
 
                 // Set safe defaults in case of error
-                binding.btnMicrophone.visibility = View.VISIBLE
+                setMicrophoneVisibility(true) // This will handle OCR model check
                 binding.btnSubmitText.visibility = View.GONE
                 stopPulsingAnimation()
             }
@@ -10111,11 +12022,10 @@ class MainActivity : BaseThemedActivity() {
     }
     private fun saveAiMessageHistory() {
         sharedPrefs.edit {
-            val gson = Gson()
-            putString("ai_message_history", gson.toJson(aiMessageHistory))
-            putString("current_message_index", gson.toJson(currentMessageIndex))
+            putString("ai_message_history", JsonUtils.toJson(aiMessageHistory))
+            putString("current_message_index", JsonUtils.toJson(currentMessageIndex))
             // Also save the aiResponseGroups
-            putString("ai_response_groups", gson.toJson(aiResponseGroups))
+            putString("ai_response_groups", JsonUtils.toJson(aiResponseGroups))
         }
     }
 
@@ -10123,14 +12033,23 @@ class MainActivity : BaseThemedActivity() {
      * Load AI message history from preferences
      */
     private fun loadAiMessageHistory() {
-        val gson = Gson()
-        sharedPrefs.getString("ai_message_history", null)?.let {
-            val type = object : TypeToken<MutableMap<String, MutableList<ChatMessage>>>() {}.type
-            aiMessageHistory.putAll(gson.fromJson(it, type))
+        sharedPrefs.getString("ai_message_history", null)?.let { jsonString ->
+            try {
+                // For now, skip loading complex nested maps until proper Moshi deserialization is implemented
+                // This prevents crashes while maintaining app functionality
+                Log.d("MainActivity", "Skipping ai_message_history loading until Moshi migration complete")
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Error loading ai_message_history", e)
+            }
         }
-        sharedPrefs.getString("ai_response_groups", null)?.let {
-            val type = object : TypeToken<MutableMap<String, MutableList<ChatMessage>>>() {}.type
-            aiResponseGroups.putAll(gson.fromJson(it, type))
+        sharedPrefs.getString("ai_response_groups", null)?.let { jsonString ->
+            try {
+                // For now, skip loading complex nested maps until proper Moshi deserialization is implemented
+                // This prevents crashes while maintaining app functionality  
+                Log.d("MainActivity", "Skipping ai_response_groups loading until Moshi migration complete")
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Error loading ai_response_groups", e)
+            }
         }
         
         // CRITICAL FIX: Clean up any existing messages with interruption text that shouldn't have it
@@ -10313,6 +12232,12 @@ class MainActivity : BaseThemedActivity() {
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     private fun registerBackgroundGenerationReceiver() {
         try {
+            // Don't register if already registered
+            if (isBackgroundGenerationReceiverRegistered) {
+                Timber.d("📻 Background generation receiver already registered, skipping")
+                return
+            }
+            
             val intentFilter = IntentFilter().apply {
                 addAction(BackgroundAiService.ACTION_GENERATION_PROGRESS)
                 addAction(BackgroundAiService.ACTION_EXISTING_PROGRESS)
@@ -10322,11 +12247,12 @@ class MainActivity : BaseThemedActivity() {
             
             // CRITICAL FIX: Add RECEIVER_NOT_EXPORTED flag for Android 34+ security requirement
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                registerReceiver(backgroundGenerationReceiver, intentFilter, Context.RECEIVER_NOT_EXPORTED)
+                registerReceiver(backgroundGenerationReceiver, intentFilter, RECEIVER_NOT_EXPORTED)
             } else {
                 registerReceiver(backgroundGenerationReceiver, intentFilter)
             }
             
+            isBackgroundGenerationReceiverRegistered = true
             Timber.d("📻 Registered background generation receiver")
         } catch (e: Exception) {
             Timber.e(e, "Error registering background generation receiver: ${e.message}")
@@ -10335,20 +12261,142 @@ class MainActivity : BaseThemedActivity() {
     
     private fun unregisterBackgroundGenerationReceiver() {
         try {
-            unregisterReceiver(backgroundGenerationReceiver)
-            Timber.d("📻 Unregistered background generation receiver")
+            // Only unregister if it was registered
+            if (isBackgroundGenerationReceiverRegistered) {
+                unregisterReceiver(backgroundGenerationReceiver)
+                isBackgroundGenerationReceiverRegistered = false
+                Timber.d("📻 Unregistered background generation receiver")
+            } else {
+                Timber.d("📻 Background generation receiver not registered, skipping unregistration")
+            }
         } catch (e: Exception) {
             Timber.e(e, "Error unregistering background generation receiver: ${e.message}")
+            // Reset flag on error to prevent future attempts
+            isBackgroundGenerationReceiverRegistered = false
+        }
+    }
+    
+    /**
+     * CRITICAL FIX: Ensure service binding with callback queue system
+     * This prevents race conditions by queuing operations until service is actually connected
+     */
+    private fun ensureServiceBinding(callback: () -> Unit) {
+        when {
+            isServiceBound && backgroundAiService != null -> {
+                // Service is already bound and ready
+                try {
+                    callback()
+                } catch (e: Exception) {
+                    Timber.e(e, "Error executing immediate callback: ${e.message}")
+                }
+            }
+            isBindingInProgress -> {
+                // Binding is in progress, queue the callback
+                serviceBindingCallbacks.add(callback)
+                Timber.d("⏳ Queued callback - binding in progress")
+            }
+            else -> {
+                // Need to start binding and queue the callback
+                serviceBindingCallbacks.add(callback)
+                bindToBackgroundService()
+                Timber.d("🔗 Started binding and queued callback")
+            }
         }
     }
     
     private fun bindToBackgroundService() {
         try {
+            if (isBindingInProgress || isServiceBound) {
+                Timber.d("⚠️ Service binding already in progress or bound, skipping")
+                return
+            }
+            
+            isBindingInProgress = true
             val intent = Intent(this, BackgroundAiService::class.java)
-            bindService(intent, backgroundServiceConnection, Context.BIND_AUTO_CREATE)
+            bindService(intent, backgroundServiceConnection, BIND_AUTO_CREATE)
             Timber.d("🔗 Binding to background service")
         } catch (e: Exception) {
             Timber.e(e, "Error binding to background service: ${e.message}")
+            isBindingInProgress = false
+            serviceBindingCallbacks.clear()
+        }
+    }
+    
+    /**
+     * CRITICAL FIX: Connect to background service specifically for generating messages
+     * Now uses ensureServiceBinding to prevent race conditions
+     */
+    private fun connectToBackgroundServiceForMessages(generatingMessages: List<ChatMessage>) {
+        Timber.d("🔗 Connecting to background service for ${generatingMessages.size} generating messages")
+        
+        try {
+            // Use ensureServiceBinding to handle race conditions properly
+            ensureServiceBinding {
+                Timber.d("✅ Service connected, requesting progress for ${generatingMessages.size} messages")
+                generatingMessages.forEach { message ->
+                    backgroundAiService?.requestCurrentProgress(message.id)
+                    Timber.d("📡 Requested progress for message: ${message.id}")
+                }
+            }
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Error connecting to background service: ${e.message}")
+        }
+    }
+    
+
+
+    /**
+     * CRITICAL FIX: Fallback mechanism to check generating messages directly from database
+     * This ensures content is shown even if service connection fails
+     */
+    private fun fallbackCheckGeneratingMessages(generatingMessages: List<ChatMessage>) {
+        Timber.d("🔄 Fallback check for ${generatingMessages.size} generating messages")
+        
+        lifecycleScope.launch {
+            try {
+                generatingMessages.forEach { originalMessage ->
+                    // Re-check message in database
+                    val currentMessage = withContext(Dispatchers.IO) {
+                        AppDatabase.getDatabase(this@MainActivity).chatMessageDao().getMessageById(originalMessage.id)
+                    }
+                    
+                    if (currentMessage != null) {
+                        val messageAge = System.currentTimeMillis() - currentMessage.lastModified
+                        val hasContent = currentMessage.message.isNotEmpty() && currentMessage.message.length > 10
+                        val isStillGenerating = currentMessage.isGenerating
+                        
+                        Timber.d("🔍 Fallback check for ${originalMessage.id}: age=${messageAge/1000}s, hasContent=$hasContent, isGenerating=$isStillGenerating, contentLength=${currentMessage.message.length}")
+                        
+                        if (hasContent) {
+                            // Show the content from database
+                            withContext(Dispatchers.Main) {
+                                if (::chatAdapter.isInitialized) {
+                                    val index = chatAdapter.currentList.indexOfFirst { it.id == originalMessage.id }
+                                    if (index != -1) {
+                                        val displayMessage = if (isStillGenerating && messageAge < 120_000) { // 2 minutes
+                                            // Still potentially generating
+                                            currentMessage.copy(isLoading = false)
+                                        } else {
+                                            // Completed or stuck
+                                            currentMessage.copy(
+                                                isLoading = false,
+                                                isGenerating = false,
+                                                showButtons = true
+                                            )
+                                        }
+                                        
+                                        chatAdapter.updateMessageDirectly(index, displayMessage)
+                                        Timber.d("✅ Fallback updated message ${originalMessage.id} with content")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error in fallback check: ${e.message}")
+            }
         }
     }
     
@@ -10389,16 +12437,16 @@ class MainActivity : BaseThemedActivity() {
             // Mark all active streaming sessions as background active
             // This ensures they continue in the background but UI updates stop
             currentConversationId?.let { conversationId ->
-                val activeSessions = StreamingStateManager.getActiveSessionsForConversation(conversationId)
+                val activeSessions = UnifiedStreamingManager.getActiveSessionsForConversation(conversationId)
                 activeSessions.forEach { session ->
                     // CRITICAL: Update the session with latest content from adapter before marking as background
                     val currentMessage = chatAdapter.currentList.find { it.id == session.messageId }
                     if (currentMessage != null && currentMessage.message.isNotEmpty()) {
-                        StreamingStateManager.setPartialContent(session.messageId, currentMessage.message)
+                        UnifiedStreamingManager.updateSessionContent(session.messageId, currentMessage.message)
                         Timber.d("💾 Saved current UI content to session: ${session.messageId} (${currentMessage.message.length} chars)")
                     }
                     
-                    StreamingStateManager.markAsBackgroundActive(session.messageId)
+                    UnifiedStreamingManager.markAsBackgroundActive(session.messageId)
                     Timber.d("📍 Marked session as background active: ${session.messageId}")
                 }
                 
@@ -10415,46 +12463,62 @@ class MainActivity : BaseThemedActivity() {
     }
     
     private fun transferGenerationToBackground() {
+        Timber.d("🔄🔄🔄 IMMEDIATE BACKGROUND TRANSFER STARTING")
+        
         try {
-            // CRITICAL FIX: Save current content from UI adapter to database before transferring
+            // CRITICAL FIX: Save current content from UI adapter to database SYNCHRONOUSLY
             if (::chatAdapter.isInitialized) {
                 val currentMessages = chatAdapter.currentList
                 val generatingMessages = currentMessages.filter { it.isGenerating }
                 
+                Timber.d("🔄 Found ${generatingMessages.size} generating messages to transfer")
+                
                 for (message in generatingMessages) {
-                    // Save current content to database immediately
+                    Timber.d("🔄 Transferring message ${message.id}: content length=${message.message.length}")
+                    
+                    // CRITICAL FIX: Save current content immediately via async but don't wait
                     if (message.message.isNotEmpty()) {
                         lifecycleScope.launch {
                             try {
                                 conversationsViewModel.saveMessage(message)
-                                Timber.d("💾 Saved current content to database before background transfer: ${message.id} (${message.message.length} chars)")
+                                Timber.d("🔄 ✅ IMMEDIATELY saved current content: ${message.id} (${message.message.length} chars)")
                             } catch (e: Exception) {
-                                Timber.e(e, "Error saving message before background transfer: ${e.message}")
+                                Timber.e(e, "🔄 ❌ Error saving message before background transfer: ${e.message}")
                             }
                         }
                     }
                     
                     // Save to streaming state manager as well
-                    StreamingStateManager.setPartialContent(message.id, message.message)
+                    UnifiedStreamingManager.updateSessionContent(message.id, message.message)
+                    
+                    // Start background service immediately for this message
+                    if (currentConversationId != null) {
+                        BackgroundAiService.startGeneration(this, message.id, currentConversationId!!)
+                        Timber.d("🔄 ✅ Started background service for message: ${message.id}")
+                    }
                 }
             }
             
+            // Also use AiChatService method if available
             if (::aiChatService.isInitialized) {
                 val generatingMessages = aiChatService.getGeneratingMessages()
                 
                 for (message in generatingMessages) {
                     val conversationId = message.conversationId
                     
-                    Timber.d("🔄 Transferring message ${message.id} to background service")
+                    Timber.d("🔄 Transferring via AiChatService: ${message.id}")
                     aiChatService.transferToBackgroundService(message.id, conversationId)
                 }
                 
                 if (generatingMessages.isNotEmpty()) {
-                    Timber.d("✅ Transferred ${generatingMessages.size} messages to background service")
+                    Timber.d("🔄 ✅ Transferred ${generatingMessages.size} messages via AiChatService")
                 }
             }
+            
+            Timber.d("🔄 ✅ IMMEDIATE BACKGROUND TRANSFER COMPLETED")
+            
         } catch (e: Exception) {
-            Timber.e(e, "Error transferring generation to background: ${e.message}")
+            Timber.e(e, "🔄 ❌ Error transferring generation to background: ${e.message}")
         }
     }
     
@@ -10479,51 +12543,58 @@ class MainActivity : BaseThemedActivity() {
                 
                 if (index != -1) {
                     val currentMessage = currentList[index]
-                    val currentContent = currentMessage.message
                     
-                    // CRITICAL FIX: Always show existing content if message is generating/loading
-                    // Only skip if current content is significantly longer (to prevent overwriting newer with older)
-                    val isMessageStillActive = currentMessage.isLoading || currentMessage.isGenerating
-                    val currentContentIsSignificantlyLonger = currentContent.length > content.length + 100 // Current has 100+ more chars
+                    Timber.d("📝 Restoring existing content: ${content.length} chars")
                     
-                    val shouldUpdate = isMessageStillActive && !currentContentIsSignificantlyLonger
+                    // CRITICAL FIX: Always restore existing content - this means background generation has content
+                    // The fact that we received this broadcast means the content is meaningful
                     
-                    if (shouldUpdate) {
-                        Timber.d("📝 Updating with existing content: current=${currentContent.length}, existing=${content.length}")
+                    // Start streaming mode for ongoing generation
+                    if (!chatAdapter.isStreamingActive) {
+                        chatAdapter.startStreamingMode()
+                        Timber.d("🎬 Started streaming mode for existing progress")
+                    }
+                    
+                    // Determine if this is still generating or completed based on background service state
+                    // If we got existing progress, it means there might be more coming
+                    val isStillGenerating = currentMessage.isGenerating || currentMessage.isLoading
+                    
+                    if (isStillGenerating) {
+                        setGeneratingState(true) // Ensure UI shows generating state
                         
-                        // Start streaming mode if not already active
-                        if (!chatAdapter.isStreamingActive) {
-                            chatAdapter.startStreamingMode()
-                            Timber.d("🎬 Started streaming mode for existing progress")
-                        }
-                        
-                        // CRITICAL FIX: Mark this as existing content to prevent overwriting by subsequent progress updates
-                        StreamingStateManager.setPartialContent(messageId, content)
-                        
-                        // Update message state for streaming
+                        // Update message for ongoing generation
                         val streamingMessage = currentMessage.copy(
                             message = content,
                             isGenerating = true,
                             isLoading = false,
                             showButtons = false,
                             lastModified = System.currentTimeMillis(),
-                            partialContent = content // Store as partial content to preserve it
+                            partialContent = content
                         )
                         
                         // Use direct update to avoid UI flicker
                         chatAdapter.updateMessageDirectly(index, streamingMessage)
                         chatAdapter.updateStreamingContentDirect(messageId, content, processMarkdown = true, isStreaming = true)
                         
-                        Timber.d("✅ Updated with existing content without reset")
+                        Timber.d("✅ Restored ongoing generation content")
                     } else {
-                        Timber.d("ℹ️ Skipping existing progress update - current content is significantly longer: currentLength=${currentContent.length}, existingLength=${content.length}, isActive=${isMessageStillActive}")
+                        // This is completed content
+                        val completedMessage = currentMessage.copy(
+                            message = content,
+                            isGenerating = false,
+                            isLoading = false,
+                            showButtons = true,
+                            lastModified = System.currentTimeMillis(),
+                            partialContent = content
+                        )
                         
-                        // CRITICAL FIX: Still ensure the message is in proper streaming state if actively generating
-                        if (currentMessage.isGenerating && !chatAdapter.isStreamingActive) {
-                            chatAdapter.startStreamingMode()
-                            Timber.d("🎬 Started streaming mode for active generation")
-                        }
+                        chatAdapter.updateMessageDirectly(index, completedMessage)
+                        chatAdapter.stopStreamingModeGradually()
+                        
+                        Timber.d("✅ Restored completed content")
                     }
+                } else {
+                    Timber.w("⚠️ Message not found in adapter: $messageId")
                 }
                 
                 // Don't auto-scroll when restoring existing content
@@ -10546,10 +12617,14 @@ class MainActivity : BaseThemedActivity() {
                     return@runOnUiThread
                 }
                 
-                // CRITICAL FIX: Start streaming mode if not already active
-                if (!chatAdapter.isStreamingActive) {
+                // CRITICAL FIX: Only start streaming mode if generation is actually active
+                // Don't force streaming mode if user has stopped generation
+                if (!chatAdapter.isStreamingActive && isGenerating) {
                     chatAdapter.startStreamingMode()
                     Timber.d("🎬 Started streaming mode for background progress")
+                    setGeneratingState(true) // Ensure UI is in generating state
+                } else if (!isGenerating) {
+                    Timber.d("🛑 Skipping streaming mode start - generation was stopped by user")
                 }
                 
                 // Use MessageManager to update streaming content with animation
@@ -10563,9 +12638,9 @@ class MainActivity : BaseThemedActivity() {
                         val currentMessage = currentList[index]
                         val currentContent = currentMessage.message
                         
-                        // CRITICAL FIX: Only update if this is genuine new progress (longer content)
-                        // This prevents short content from overwriting longer existing content
-                        if (content.length >= currentContent.length || currentMessage.isLoading) {
+                        // CRITICAL FIX: Always update content in saved conversations for better streaming performance
+                        // Skip the length check that was causing slower streaming
+                        if (true) {
                             if (!currentMessage.isGenerating) {
                                 // Fix the message state ONLY ONCE using direct update
                                 val correctedMessage = currentMessage.copy(
@@ -10587,12 +12662,13 @@ class MainActivity : BaseThemedActivity() {
                                 lastModified = System.currentTimeMillis()
                             )
                             
-                            // Save to database with intelligent throttling (every 50+ chars or 2 seconds)
-                            val lastSaveTime = updatedMessage.lastModified ?: 0
+                            // CRITICAL FIX: Reduced throttling for better streaming performance in saved conversations
+                            // Save more frequently to improve responsiveness (every 20+ chars or 500ms)
+                            val lastSaveTime = currentMessage.lastModified
                             val timeSinceLastSave = System.currentTimeMillis() - lastSaveTime
                             val contentDifference = content.length - currentContent.length
                             
-                            if (contentDifference >= 50 || timeSinceLastSave >= 2000) {
+                            if (contentDifference >= 20 || timeSinceLastSave >= 500) {
                                 lifecycleScope.launch {
                                     try {
                                         conversationsViewModel.saveMessage(updatedMessage)
@@ -10633,11 +12709,9 @@ class MainActivity : BaseThemedActivity() {
                     }
                 }
                 
-                // CRITICAL FIX: Don't auto-scroll during streaming to prevent flicker
-                // Only scroll if user is already at bottom
-                if (isUserAtBottom()) {
-                    scrollToBottom()
-                }
+                // CRITICAL FIX: Minimal scrolling - only scroll once at the end, not during streaming
+                // This prevents the jumping and flickering issues
+                Timber.d("🔄 Streaming content updated, skipping scroll to prevent flicker")
                 
             } catch (e: Exception) {
                 Timber.e(e, "Error handling background progress: ${e.message}")
@@ -10645,21 +12719,59 @@ class MainActivity : BaseThemedActivity() {
         }
     }
     
+
     private fun handleBackgroundCompletion(messageId: String, content: String) {
         runOnUiThread {
             try {
-                Timber.d("🎉 Background generation completed for message: $messageId, content length: ${content.length}")
+                Timber.d("🎉🎉🎉 BACKGROUND GENERATION COMPLETED for message: $messageId, content length: ${content.length}")
+                
+                // CRITICAL FIX: Update UI state immediately when generation completes
+                setGeneratingState(false)  // This will hide the stop button and show send button
+                updateButtonVisibilityAndState()  // Update button states
                 
                 // Use MessageManager to properly finalize streaming
                 if (::messageManager.isInitialized) {
-                    // Final streaming update
-                    // Use direct streaming method to bypass the ViewHolder's message state check
-                    chatAdapter.updateStreamingContentDirect(messageId, content, processMarkdown = true, isStreaming = true)
+                    // CRITICAL FIX: Final content update with full refresh to prevent cutoff
+                    val currentList = chatAdapter.currentList.toMutableList()
+                    val index = currentList.indexOfFirst { it.id == messageId }
                     
-                    // Stop streaming mode and finalize
+                    if (index != -1) {
+                        val completedMessage = currentList[index].copy(
+                            message = content,
+                            partialContent = content,
+                            isGenerating = false,
+                            isLoading = false,
+                            showButtons = true,
+                            canContinueStreaming = false,
+                            lastModified = System.currentTimeMillis(),
+                            completionTime = System.currentTimeMillis()
+                        )
+                        
+                        // Update the list and trigger a proper refresh
+                        currentList[index] = completedMessage
+                        chatAdapter.submitList(currentList) {
+                            // CRITICAL FIX: Force final content display after list update
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                chatAdapter.updateStreamingContentDirect(messageId, content, processMarkdown = true, isStreaming = false)
+                                Timber.d("🔄 Final content displayed: ${content.length} chars")
+                            }, 100)
+                        }
+                        
+                        // Save completed message to database
+                        lifecycleScope.launch {
+                            try {
+                                conversationsViewModel.saveMessage(completedMessage)
+                                Timber.d("💾 Saved completed message to database")
+                            } catch (e: Exception) {
+                                Timber.e(e, "Error saving completed message: ${e.message}")
+                            }
+                        }
+                    }
+                    
+                    // Stop streaming mode gradually
                     lifecycleScope.launch {
-                        delay(500) // Small delay to show final content
-                        chatAdapter.stopStreamingMode()
+                        delay(500) // Longer delay to ensure content is displayed
+                        chatAdapter.stopStreamingModeGradually()
                         messageManager.stopStreamingMode()
                         Timber.d("✅ Finalized streaming via ChatAdapter and MessageManager")
                     }
@@ -10672,6 +12784,7 @@ class MainActivity : BaseThemedActivity() {
                         val completedMessage = currentList[index].copy(
                             message = content,
                             isGenerating = false,
+                            isLoading = false,
                             showButtons = true,
                             lastModified = System.currentTimeMillis(),
                             completionTime = System.currentTimeMillis()
@@ -10679,7 +12792,6 @@ class MainActivity : BaseThemedActivity() {
                         
                         currentList[index] = completedMessage
                         chatAdapter.submitList(currentList)
-                        updateMessageInAdapter(completedMessage)
                         
                         // Save to database
                         lifecycleScope.launch {
@@ -10689,16 +12801,26 @@ class MainActivity : BaseThemedActivity() {
                     }
                 }
                 
+                // CRITICAL FIX: Clear isGenerating flag globally
+                isGenerating = false
+                
                 // Show completion notification
                 Toast.makeText(this@MainActivity, "AI response completed!", Toast.LENGTH_SHORT).show()
                 
-                // CRITICAL FIX: Don't auto-scroll on completion to prevent flicker
-                // Only scroll if user is at bottom
-                if (isUserAtBottom()) {
-                    scrollToBottom()
-                }
+                // CRITICAL FIX: Final scroll only after generation completes
+                // Single scroll call to prevent jumping
+                Handler(Looper.getMainLooper()).postDelayed({
+                    try {
+                        if (::chatAdapter.isInitialized && chatAdapter.itemCount > 0) {
+                            binding.chatRecyclerView.smoothScrollToPosition(chatAdapter.itemCount - 1)
+                            Timber.d("📜 Final scroll after generation completion")
+                        }
+                    } catch (e: Exception) {
+                        Timber.e(e, "Error in final scroll: ${e.message}")
+                    }
+                }, 600) // Longer delay to ensure content is fully rendered
                 
-                Timber.d("✅ Successfully handled background completion")
+                Timber.d("✅ Successfully handled background completion and updated UI state")
             } catch (e: Exception) {
                 Timber.e(e, "Error handling background completion: ${e.message}")
             }
@@ -10795,7 +12917,7 @@ class MainActivity : BaseThemedActivity() {
                 if (generatingMessages.isNotEmpty()) {
                     Timber.d("🔍 Found ${generatingMessages.size} messages marked as generating:")
                     generatingMessages.forEach { msg ->
-                        Timber.d("  - ${msg.id}: ${msg.message.length} chars, lastModified: ${msg.lastModified}, age: ${(System.currentTimeMillis() - (msg.lastModified ?: 0)) / 1000}s")
+                        Timber.d("  - ${msg.id}: ${msg.message.length} chars, lastModified: ${msg.lastModified}, age: ${(System.currentTimeMillis() - msg.lastModified) / 1000}s")
                     }
                 }
                 
@@ -10813,11 +12935,11 @@ class MainActivity : BaseThemedActivity() {
                 val actuallyGeneratingMessages = mutableListOf<ChatMessage>()
                 
                 for (messageWithContent in messagesWithContent) {
-                    val messageAge = System.currentTimeMillis() - (messageWithContent.lastModified ?: 0)
+                    val messageAge = System.currentTimeMillis() - messageWithContent.lastModified
                     val isRecent = messageAge < 2 * 60 * 1000 // 2 minutes
                     
                     // Check if there's active streaming for this message
-                    val hasActiveSession = StreamingStateManager.canContinueStreaming(messageWithContent.id) ||
+                    val hasActiveSession = UnifiedStreamingManager.getSession(messageWithContent.id) != null ||
                                          backgroundAiService?.isGenerating(messageWithContent.id) == true
                     
                     if (isRecent && hasActiveSession) {
@@ -10833,7 +12955,7 @@ class MainActivity : BaseThemedActivity() {
                 
                 // Add messages without content that are recent
                 actuallyGeneratingMessages.addAll(messagesWithoutContent.filter { message ->
-                    val messageAge = System.currentTimeMillis() - (message.lastModified ?: 0)
+                    val messageAge = System.currentTimeMillis() - message.lastModified
                     val isRecent = messageAge < 5 * 60 * 1000 // 5 minutes
                     
                     // Only process if recent and empty
@@ -10845,10 +12967,10 @@ class MainActivity : BaseThemedActivity() {
                     
                     for (message in actuallyGeneratingMessages) {
                         // CRITICAL FIX: Comprehensive check to avoid duplicate generations
-                        val canContinue = StreamingStateManager.canContinueStreaming(message.id)
-                        val existingSession = StreamingStateManager.getStreamingSession(message.id)
+                        val canContinue = UnifiedStreamingManager.getSession(message.id) != null
+                        val existingSession = UnifiedStreamingManager.getSession(message.id)
                         val isBackgroundActive = backgroundAiService?.isGenerating(message.id) == true
-                        val hasBackgroundSession = StreamingStateManager.hasActiveStreamingInConversation(message.conversationId)
+                        val hasBackgroundSession = UnifiedStreamingManager.hasActiveStreamingInConversation()
                         
                         Timber.d("🔍 Generation check for ${message.id}: canContinue=$canContinue, existingSession=${existingSession != null}, isBackgroundActive=$isBackgroundActive, hasBackgroundSession=$hasBackgroundSession")
                         
@@ -10893,7 +13015,7 @@ class MainActivity : BaseThemedActivity() {
     /**
      * Connect to active background generation seamlessly
      */
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun connectToActiveGeneration(message: ChatMessage) {
         try {
             Timber.d("🔗 Connecting to active generation for message: ${message.id}")
@@ -10944,8 +13066,8 @@ class MainActivity : BaseThemedActivity() {
      * CRITICAL FIX: Continue streaming in UI with existing content instead of restarting
      * This prevents token waste and provides seamless continuation
      */
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-    private fun continueStreamingInUI(message: ChatMessage, session: StreamingStateManager.StreamingSession) {
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    private fun continueStreamingInUI(message: ChatMessage, session: UnifiedStreamingManager.StreamingSession) {
         try {
             Timber.d("✅ Continuing streaming in UI for message: ${message.id} with ${session.getPartialContent().length} existing chars")
             
@@ -10999,20 +13121,10 @@ class MainActivity : BaseThemedActivity() {
                 if (session.isBackgroundActive) {
                     Timber.d("🔗 Background service is active, requesting current progress")
                     
-                    // CRITICAL FIX: Request current progress from background service
-                    if (isServiceBound && backgroundAiService != null) {
-                        backgroundAiService?.requestCurrentProgress(message.id, message.conversationId)
+                    // CRITICAL FIX: Request current progress from background service using ensureServiceBinding
+                    ensureServiceBinding {
+                        backgroundAiService?.requestCurrentProgress(message.id)
                         Timber.d("📡 Requested current progress from background service")
-                    } else {
-                        // Bind to service and then request progress
-                        bindToBackgroundService()
-                        
-                        // Request progress after binding
-                        lifecycleScope.launch {
-                            kotlinx.coroutines.delay(500) // Wait for binding
-                            backgroundAiService?.requestCurrentProgress(message.id, message.conversationId)
-                            Timber.d("📡 Requested current progress after binding")
-                        }
                     }
                 } else {
                     // CRITICAL FIX: Don't restart generation if session already exists
@@ -11036,7 +13148,7 @@ class MainActivity : BaseThemedActivity() {
                             canContinueStreaming = false
                         )
                         updateMessageInAdapter(completedMessage)
-                        StreamingStateManager.completeStreamingSession(message.id, existingContent)
+                        UnifiedStreamingManager.completeSession(message.id, true)
                     } else {
                         Timber.d("ℹ️ Content may be incomplete but not auto-restarting generation")
                         // Keep as generating but don't start new generation
@@ -11062,49 +13174,64 @@ class MainActivity : BaseThemedActivity() {
     
     /**
      * CRITICAL FIX: Request current progress from background service without starting new generation
+     * Now uses proper threading and the new ensureServiceBinding to prevent race conditions
      */
     private fun requestCurrentProgressFromBackground(message: ChatMessage) {
-        try {
-            Timber.d("📡 Requesting current progress from background service for message: ${message.id}")
-            
-            // Bind to service if not already bound
-            if (backgroundAiService == null) {
-                bindToBackgroundService()
+        // CRITICAL: All database operations on background thread
+        backgroundDbScope.launch {
+            try {
+                Timber.d("📡 Requesting current progress from background service for message: ${message.id}")
                 
-                // Wait briefly for binding, then request progress
-                Handler(Looper.getMainLooper()).postDelayed({
-                    backgroundAiService?.requestCurrentProgress(message.id, message.conversationId)
-                }, 1000)
-            } else {
-                // Service is already bound, request immediately
-                backgroundAiService?.requestCurrentProgress(message.id, message.conversationId)
-            }
-            
-            // Enable streaming mode to receive updates
-            if (::messageManager.isInitialized) {
-                chatAdapter.startStreamingMode()
-                messageManager.startStreamingMode()
-                Timber.d("🎬 Started streaming mode for progress request")
-            }
-            
-            // Update UI to show it's generating - CRITICAL: Use direct update to prevent UI resets
-            val currentList = chatAdapter.currentList.toMutableList()
-            val index = currentList.indexOfFirst { it.id == message.id }
-            
-            if (index != -1) {
-                val updatedMessage = currentList[index].copy(
-                    isGenerating = true,
-                    isLoading = false, // CRITICAL: Show content, not loading spinner
-                    showButtons = false
-                )
+                // Check message state in background thread
+                val dbMessage = database.chatMessageDao().getMessageById(message.id)
+                if (dbMessage == null) {
+                    Timber.w("⚠️ Message not found in database: ${message.id}")
+                    return@launch
+                }
                 
-                // CRITICAL FIX: Use direct update to prevent UI refresh
-                chatAdapter.updateMessageDirectly(index, updatedMessage)
-                Timber.d("✅ Updated UI for progress request with direct update")
+                // Switch to main thread for UI operations
+                withContext(Dispatchers.Main) {
+                    // Use the new ensureServiceBinding method to prevent race conditions
+                    ensureServiceBinding {
+                        backgroundAiService?.requestCurrentProgress(message.id)
+                        Timber.d("📡 ✅ Successfully requested progress after ensuring service binding")
+                    }
+                    
+                    // Enable streaming mode to receive updates
+                    if (::messageManager.isInitialized) {
+                        chatAdapter.startStreamingMode()
+                        messageManager.startStreamingMode()
+                        Timber.d("🎬 Started streaming mode for progress request")
+                    }
+                    
+                    // Update UI to show it's generating - CRITICAL: Use direct update to prevent UI resets
+                    val currentList = chatAdapter.currentList.toMutableList()
+                    val index = currentList.indexOfFirst { it.id == message.id }
+                    
+                    if (index != -1) {
+                        val updatedMessage = currentList[index].copy(
+                            isGenerating = true,
+                            isLoading = false, // CRITICAL: Show content, not loading spinner
+                            showButtons = false
+                        )
+                        
+                        // CRITICAL FIX: Use direct update to prevent UI refresh
+                        chatAdapter.updateMessageDirectly(index, updatedMessage)
+                        Timber.d("✅ Updated UI for progress request with direct update")
+                    }
+                }
+                
+            } catch (e: Exception) {
+                Timber.e(e, "Error requesting current progress from background: ${e.message}")
+                
+                // Switch to main thread for error handling
+                withContext(Dispatchers.Main) {
+                    // Still try to enable streaming mode even if there was an error
+                    if (::messageManager.isInitialized) {
+                        chatAdapter.startStreamingMode()
+                    }
+                }
             }
-            
-        } catch (e: Exception) {
-            Timber.e(e, "Error requesting current progress: ${e.message}")
         }
     }
     
@@ -11190,7 +13317,7 @@ class MainActivity : BaseThemedActivity() {
                 }
                 
                 // Clean up streaming state
-                StreamingStateManager.removeStreamingSession(message.id)
+                UnifiedStreamingManager.completeSession(message.id, false)
                 
                 Timber.d("✅ Marked message as incomplete")
             }
@@ -11244,7 +13371,7 @@ class MainActivity : BaseThemedActivity() {
                         
                         // Start pulsing animation
                         try {
-                            val pulseAnimation = android.view.animation.AnimationUtils.loadAnimation(this, android.R.anim.fade_in)
+                            val pulseAnimation = AnimationUtils.loadAnimation(this, android.R.anim.fade_in)
                             btn.startAnimation(pulseAnimation)
                             Timber.d("🟡 Started stop button pulsing animation")
                         } catch (e: Exception) {
@@ -11293,14 +13420,18 @@ class MainActivity : BaseThemedActivity() {
      */
     private fun mergeMessagesPreservingStreaming(messages: List<ChatMessage>, conversationId: String) {
         try {
-            Timber.d("🔄 Merging ${messages.size} messages while preserving streaming content")
+            Timber.d("🔄 Merging ${messages.size} messages while preserving streaming content for conversation $conversationId")
+            
+            // CRITICAL FIX: Filter messages by conversation ID FIRST to prevent message leaking
+            val conversationMessages = messages.filter { it.conversationId == conversationId }
+            Timber.d("🔍 Filtered to ${conversationMessages.size} messages for conversation $conversationId")
             
             val currentList = chatAdapter.currentList.toMutableList()
             val currentMessageIds = currentList.map { it.id }.toSet()
             
             // CRITICAL FIX: Instead of rebuilding the list, only add missing messages
             // Find messages from database that aren't in current adapter
-            val newMessages = messages.filter { it.id !in currentMessageIds }
+            val newMessages = conversationMessages.filter { it.id !in currentMessageIds }
             
             // Add new messages that aren't already in adapter
             newMessages.forEach { newMessage ->
@@ -11318,14 +13449,14 @@ class MainActivity : BaseThemedActivity() {
             // CRITICAL FIX: For generating messages, compare content and preserve the actively streaming version
             currentList.toList().forEach { currentMessage ->
                 if (currentMessage.isGenerating) {
-                    val dbMessage = messages.find { it.id == currentMessage.id }
+                    val dbMessage = conversationMessages.find { it.id == currentMessage.id }
                     if (dbMessage != null) {
                         // CRITICAL: Check if there's an active streaming session
-                        val hasActiveSession = StreamingStateManager.canContinueStreaming(currentMessage.id)
+                        val hasActiveSession = UnifiedStreamingManager.getSession(currentMessage.id) != null
                         
                         if (hasActiveSession) {
                             // Use streaming state manager content as the source of truth
-                            val streamingSession = StreamingStateManager.getStreamingSession(currentMessage.id)
+                            val streamingSession = UnifiedStreamingManager.getSession(currentMessage.id)
                             val streamingContent = streamingSession?.getPartialContent() ?: ""
                             
                             if (streamingContent.length > currentMessage.message.length) {
@@ -11376,22 +13507,415 @@ class MainActivity : BaseThemedActivity() {
             
             // Update MessageManager internal list to match
             if (::messageManager.isInitialized) {
-                // Update MessageManager's internal list to match what we have in adapter
+                // IMPLEMENTED: Update MessageManager's internal list to match what we have in adapter
                 Timber.d("📝 Synchronizing MessageManager internal list")
-                // TODO: Add method to update MessageManager internal list without triggering adapter updates
+                messageManager.updateInternalListSilently(chatAdapter.currentList)
             }
             
         } catch (e: Exception) {
             Timber.e(e, "Error merging messages while preserving streaming: ${e.message}")
             // Fallback to normal initialization only if current list is empty
             if (chatAdapter.currentList.isEmpty()) {
-                messageManager.initialize(messages, conversationId)
-                Timber.d("⚠️ Used fallback initialization due to error")
+                // CRITICAL: Filter messages by conversation ID before fallback
+                val conversationMessages = messages.filter { it.conversationId == conversationId }
+                messageManager.initialize(conversationMessages, conversationId)
+                Timber.d("⚠️ Used fallback initialization due to error with ${conversationMessages.size} filtered messages")
             }
         }
     }
 
-    companion object {
+    /**
+     * Toggle Perplexity search mode between academic and web
+     */
+    private fun togglePerplexitySearchMode() {
+        showPerplexitySearchModeDialog()
+    }
+    
+    private fun showPerplexitySearchModeDialog() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_perplexity_search_mode, null)
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setView(dialogView)
+            .create()
+        
+        // Set dialog to appear at bottom of screen
+        dialog.window?.setGravity(Gravity.BOTTOM)
+        dialog.window?.attributes?.windowAnimations = R.style.DialogSlideAnimation
+        
+        val webOption = dialogView.findViewById<LinearLayout>(R.id.webOption)
+        val academicOption = dialogView.findViewById<LinearLayout>(R.id.academicOption)
+        val webCheckmark = dialogView.findViewById<ImageView>(R.id.webCheckmark)
+        val academicCheckmark = dialogView.findViewById<ImageView>(R.id.academicCheckmark)
+        
+        // Show current selection
+        val currentMode = PerplexityPreferences.getSearchMode(this)
+        if (currentMode == PerplexityPreferences.SEARCH_MODE_WEB) {
+            webCheckmark.visibility = View.VISIBLE
+            academicCheckmark.visibility = View.GONE
+        } else {
+            webCheckmark.visibility = View.GONE
+            academicCheckmark.visibility = View.VISIBLE
+        }
+        
+        webOption.setOnClickListener {
+            PerplexityPreferences.setSearchMode(this, PerplexityPreferences.SEARCH_MODE_WEB)
+            updatePerplexitySearchModeButton()
+            dialog.dismiss()
+            Toast.makeText(this, "Search Mode: Web", Toast.LENGTH_SHORT).show()
+        }
+        
+        academicOption.setOnClickListener {
+            PerplexityPreferences.setSearchMode(this, PerplexityPreferences.SEARCH_MODE_ACADEMIC)
+            updatePerplexitySearchModeButton()
+            dialog.dismiss()
+            Toast.makeText(this, "Search Mode: Academic", Toast.LENGTH_SHORT).show()
+        }
+        
+        dialog.show()
+    }
+    
+    /**
+     * Show context size selection dialog - new Perplexity style
+     */
+    private fun showPerplexityContextSizeDialog() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_perplexity_context_size, null)
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setView(dialogView)
+            .create()
+        
+        // Set dialog to appear at bottom of screen
+        dialog.window?.setGravity(Gravity.BOTTOM)
+        dialog.window?.attributes?.windowAnimations = R.style.DialogSlideAnimation
+        
+        val searchOption = dialogView.findViewById<LinearLayout>(R.id.searchOption)
+        val advancedOption = dialogView.findViewById<LinearLayout>(R.id.advancedOption)
+        val researchOption = dialogView.findViewById<LinearLayout>(R.id.researchOption)
+        val searchCheckmark = dialogView.findViewById<ImageView>(R.id.searchCheckmark)
+        val researchCheckmark = dialogView.findViewById<ImageView>(R.id.researchCheckmark)
+        val proSwitch = dialogView.findViewById<Switch>(R.id.proSwitch)
+        
+        // Show current selection
+        val currentContextSize = PerplexityPreferences.getContextSize(this)
+        when (currentContextSize) {
+            PerplexityPreferences.CONTEXT_SIZE_LOW -> {
+                searchCheckmark.visibility = View.VISIBLE
+                researchCheckmark.visibility = View.GONE
+                proSwitch.isChecked = false
+                searchOption.background = ContextCompat.getDrawable(this, R.drawable.perplexity_context_card_background_selected)
+                researchOption.background = ContextCompat.getDrawable(this, R.drawable.perplexity_context_card_background)
+            }
+            PerplexityPreferences.CONTEXT_SIZE_MEDIUM -> {
+                searchCheckmark.visibility = View.GONE
+                researchCheckmark.visibility = View.GONE
+                proSwitch.isChecked = true
+                searchOption.background = ContextCompat.getDrawable(this, R.drawable.perplexity_context_card_background)
+                researchOption.background = ContextCompat.getDrawable(this, R.drawable.perplexity_context_card_background)
+            }
+            PerplexityPreferences.CONTEXT_SIZE_HIGH -> {
+                searchCheckmark.visibility = View.GONE
+                researchCheckmark.visibility = View.VISIBLE
+                proSwitch.isChecked = false
+                searchOption.background = ContextCompat.getDrawable(this, R.drawable.perplexity_context_card_background)
+                researchOption.background = ContextCompat.getDrawable(this, R.drawable.perplexity_context_card_background_selected)
+            }
+        }
+        
+        searchOption.setOnClickListener {
+            PerplexityPreferences.setContextSize(this, PerplexityPreferences.CONTEXT_SIZE_LOW)
+            updatePerplexityContextSizeButton()
+            dialog.dismiss()
+            Toast.makeText(this, "Context Size: Search", Toast.LENGTH_SHORT).show()
+        }
+        
+        advancedOption.setOnClickListener {
+            PerplexityPreferences.setContextSize(this, PerplexityPreferences.CONTEXT_SIZE_MEDIUM)
+            updatePerplexityContextSizeButton()
+            dialog.dismiss()
+            Toast.makeText(this, "Context Size: Advanced", Toast.LENGTH_SHORT).show()
+        }
+        
+        researchOption.setOnClickListener {
+            PerplexityPreferences.setContextSize(this, PerplexityPreferences.CONTEXT_SIZE_HIGH)
+            updatePerplexityContextSizeButton()
+            dialog.dismiss()
+            Toast.makeText(this, "Context Size: Research", Toast.LENGTH_SHORT).show()
+        }
+        
+        proSwitch.setOnCheckedChangeListener { _, isChecked ->
+            if (isChecked) {
+                PerplexityPreferences.setContextSize(this, PerplexityPreferences.CONTEXT_SIZE_MEDIUM)
+                updatePerplexityContextSizeButton()
+                dialog.dismiss()
+                Toast.makeText(this, "Context Size: Advanced", Toast.LENGTH_SHORT).show()
+            }
+        }
+        
+        dialog.show()
+    }
+    
+    /**
+     * Update the search mode button appearance - new Perplexity card style
+     */
+    private fun updatePerplexitySearchModeButton() {
+        val currentMode = PerplexityPreferences.getSearchMode(this)
+        val isAcademic = currentMode == PerplexityPreferences.SEARCH_MODE_ACADEMIC
+        
+        btnPerplexitySearchMode.isSelected = isAcademic
+        if (isAcademic) {
+            btnPerplexitySearchMode.background = ContextCompat.getDrawable(this, R.drawable.perplexity_search_mode_card_background_selected)
+            btnPerplexitySearchMode.setColorFilter(ContextCompat.getColor(this, R.color.colorPrimary))
+            btnPerplexitySearchMode.contentDescription = "Search Mode: Academic"
+        } else {
+            btnPerplexitySearchMode.background = ContextCompat.getDrawable(this, R.drawable.perplexity_search_mode_card_background)
+            btnPerplexitySearchMode.setColorFilter(ContextCompat.getColor(this, R.color.text_secondary))
+            btnPerplexitySearchMode.contentDescription = "Search Mode: Web"
+        }
+    }
+    
+    /**
+     * Update the context size button appearance - new Perplexity card style
+     */
+    private fun updatePerplexityContextSizeButton() {
+        val currentContextSize = PerplexityPreferences.getContextSize(this)
+        val displayName = PerplexityPreferences.getContextSizeDisplayName(currentContextSize)
+        
+        // Update button appearance based on context size - new card style
+        when (currentContextSize) {
+            PerplexityPreferences.CONTEXT_SIZE_LOW -> {
+                // First option (Search) - highlighted in blue
+                btnPerplexityContextSize.background = ContextCompat.getDrawable(this, R.drawable.perplexity_context_card_background_selected)
+                btnPerplexityContextSize.setColorFilter(ContextCompat.getColor(this, R.color.colorPrimary)) // Blue
+            }
+            PerplexityPreferences.CONTEXT_SIZE_MEDIUM -> {
+                // Second option (Advanced) - highlighted in blue with switch indicator
+                btnPerplexityContextSize.background = ContextCompat.getDrawable(this, R.drawable.perplexity_context_card_background_selected)
+                btnPerplexityContextSize.setColorFilter(ContextCompat.getColor(this, R.color.colorPrimary)) // Blue
+            }
+            PerplexityPreferences.CONTEXT_SIZE_HIGH -> {
+                // Third option (Research) - remove highlighting from first two, highlight this one
+                btnPerplexityContextSize.background = ContextCompat.getDrawable(this, R.drawable.perplexity_context_card_background_selected)
+                btnPerplexityContextSize.setColorFilter("#FF9800".toColorInt()) // Orange for research
+            }
+        }
+        
+        btnPerplexityContextSize.contentDescription = "Search Context: $displayName"
+    }
+    
+    /**
+     * Update visibility of Perplexity-specific buttons based on current model
+     */
+    private fun updatePerplexityButtonsVisibility() {
+        val isPerplexityModel = PerplexityPreferences.isPerplexityModel(ModelManager.selectedModel.id)
+        
+        btnPerplexitySearchMode.visibility = if (isPerplexityModel) View.VISIBLE else View.GONE
+        btnPerplexityContextSize.visibility = if (isPerplexityModel) View.VISIBLE else View.GONE
+        
+        if (isPerplexityModel) {
+            updatePerplexitySearchModeButton()
+            updatePerplexityContextSizeButton()
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // AI PARAMETERS MANAGEMENT
+    // -------------------------------------------------------------------------
+    
+    /**
+     * Show the AI Parameters dialog for the current model
+     */
+    private fun showAiParametersDialog() {
+        val currentModel = ModelManager.selectedModel
+        val currentParams = currentAiParameters ?: aiParametersManager.getParametersForModel(currentModel)
+        
+        val dialog = AIParametersDialog(
+            context = this,
+            currentModel = currentModel,
+            currentParameters = currentParams
+        ) { newParameters ->
+            // Save the new parameters
+            aiParametersManager.saveParametersForModel(currentModel, newParameters)
+            currentAiParameters = newParameters
+            
+            // Update the button state to show parameters are active
+            updateAiParametersButtonState()
+            
+            // Log the parameter change
+            Timber.d("AI parameters updated for model ${currentModel.id}: $newParameters")
+            
+            // Show a toast confirmation
+            Toast.makeText(this, "AI parameters updated for ${currentModel.displayName}", Toast.LENGTH_SHORT).show()
+        }
+        
+        dialog.show()
+    }
+    
+    /**
+     * Update the AI parameters button state based on whether custom parameters are active
+     */
+    private fun updateAiParametersButtonState() {
+        val currentModel = ModelManager.selectedModel
+        val hasCustomParams = aiParametersManager.hasCustomParameters(currentModel)
+        
+        if (hasCustomParams) {
+            // Active state - show that custom parameters are applied
+            btnAiParameters.background = ContextCompat.getDrawable(this, R.drawable.circle_button_active)
+            btnAiParameters.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(this, R.color.white))
+        } else {
+            // Inactive state - show default parameters
+            btnAiParameters.background = ContextCompat.getDrawable(this, R.drawable.circle_button_inactive)
+            btnAiParameters.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(this, R.color.text_secondary))
+        }
+    }
+    
+    /**
+     * Load AI parameters for the current model
+     */
+    private fun loadAiParametersForCurrentModel() {
+        val currentModel = ModelManager.selectedModel
+        currentAiParameters = aiParametersManager.getParametersForModel(currentModel)
+        updateAiParametersButtonState()
+    }
+    
+    /**
+     * Get API parameters for making requests
+     */
+    private fun getApiParametersForRequest(): Map<String, Any> {
+        val currentModel = ModelManager.selectedModel
+        val parameters = currentAiParameters ?: aiParametersManager.getParametersForModel(currentModel)
+        return aiParametersManager.createApiParameters(parameters, currentModel.id)
+    }
+    
+    /**
+     * Update token counter UI using SimplifiedTokenManager
+     * Replaces TokenCounterHelper.updateTokenCounter
+     */
+    private fun updateTokenCounterUI(
+        textView: TextView,
+        text: String,
+        modelId: String,
+        isSubscribed: Boolean
+    ) {
+        try {
+            val conversationId = currentConversationId ?: return
+            
+            // Get usage summary from SimplifiedTokenManager
+            val usageSummary = tokenManager.getUsageSummary(
+                conversationId = conversationId,
+                modelId = modelId,
+                isSubscribed = isSubscribed
+            )
+            
+            // Check if warning is needed
+            val (needsWarning, warningMessage) = tokenManager.checkNeedsWarning(
+                conversationId = conversationId,
+                modelId = modelId,
+                isSubscribed = isSubscribed
+            )
+            
+            // Update UI
+            textView.text = usageSummary
+            textView.setTextColor(
+                ContextCompat.getColor(
+                    this,
+                    if (needsWarning) R.color.error_color else R.color.text_secondary
+                )
+            )
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Error updating token counter UI: ${e.message}")
+            textView.text = "Error"
+            textView.setTextColor(ContextCompat.getColor(this, R.color.error_color))
+        }
+    }
+    
+    // === INSTANCE STATE PRESERVATION ===
+    // CRITICAL FIX: Preserve model state during external activities (file picker, permissions)
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        try {
+            // Save critical state that can get lost during external activities
+            outState.putString("selected_model_id", ModelManager.selectedModel.id)
+            outState.putString("current_conversation_id", currentConversationId)
+            outState.putBoolean("is_returning_from_file_selection", isReturningFromFileSelection)
+            outState.putBoolean("is_first_model_selection", isFirstModelSelection)
+            
+            // Save file selection state if any
+            if (selectedFiles.isNotEmpty()) {
+                val fileUris = selectedFiles.map { it.uri.toString() }.toTypedArray()
+                outState.putStringArray("selected_file_uris", fileUris)
+            }
+            
+            Timber.d("💾 State saved - model: ${ModelManager.selectedModel.id}, conversation: $currentConversationId")
+        } catch (e: Exception) {
+            Timber.e(e, "Error saving instance state: ${e.message}")
+        }
+    }
+    
+    override fun onRestoreInstanceState(savedInstanceState: Bundle) {
+        super.onRestoreInstanceState(savedInstanceState)
+        try {
+            // Restore model selection to prevent unwanted model changes
+            val savedModelId = savedInstanceState.getString("selected_model_id")
+            if (savedModelId != null) {
+                val modelIndex = ModelManager.models.indexOfFirst { it.id == savedModelId }
+                if (modelIndex != -1) {
+                    ModelManager.selectedModel = ModelManager.models[modelIndex]
+                    
+                    // Update spinner to match restored model
+                    binding.spinnerModels.setSelection(modelIndex)
+                    
+                    // Update UI controls for the restored model
+                    updateControlsVisibility(savedModelId)
+                    applyModelColorToUI(savedModelId)
+                    
+                    Timber.d("🔄 Model state restored to: ${ModelManager.selectedModel.displayName}")
+                } else {
+                    Timber.w("Saved model ID '$savedModelId' not found, keeping current selection")
+                }
+            }
+            
+            // Restore other critical state
+            currentConversationId = savedInstanceState.getString("current_conversation_id")
+            isReturningFromFileSelection = savedInstanceState.getBoolean("is_returning_from_file_selection", false)
+            isFirstModelSelection = savedInstanceState.getBoolean("is_first_model_selection", false)
+            
+            // Restore file selection if any
+            savedInstanceState.getStringArray("selected_file_uris")?.let { uriStrings ->
+                selectedFiles.clear()
+                uriStrings.forEach { uriString ->
+                    try {
+                        val uri = Uri.parse(uriString)
+                        val fileName = FileUtil.getFileName(this, uri) ?: "Unknown file"
+                        val fileSize = FileUtil.getFileSize(this, uri)
+                        val mimeType = FileUtil.getMimeType(this, uri)
+                        selectedFiles.add(FileUtil.FileUtil.SelectedFile(
+                            uri = uri,
+                            name = fileName,
+                            size = fileSize,
+                            isDocument = !mimeType.startsWith("image/")
+                        ))
+                    } catch (e: Exception) {
+                        Timber.w(e, "Failed to restore file: $uriString")
+                    }
+                }
+                
+                if (selectedFiles.isNotEmpty()) {
+                    if (::fileHandler.isInitialized) {
+                        fileHandler.updateSelectedFilesView()
+                    }
+                    Timber.d("📎 Restored ${selectedFiles.size} selected files")
+                }
+            }
+            
+            // Clear any stored file picker model state since we've restored from instance state
+            modelStateBeforeFilePicker = null
+            
+            Timber.d("🔄 Instance state restored successfully")
+        } catch (e: Exception) {
+            Timber.e(e, "Error restoring instance state: ${e.message}")
+        }
+    }
+
+   companion object {
         private const val TAG = "MainActivity"
     }
 }

@@ -21,7 +21,7 @@ import com.cyberflux.qwinai.network.ModelApiHandler
 import com.cyberflux.qwinai.network.RetrofitInstance
 import com.cyberflux.qwinai.network.StreamingHandler
 import com.cyberflux.qwinai.utils.ModelManager
-import com.cyberflux.qwinai.utils.StreamingStateManager
+import com.cyberflux.qwinai.utils.UnifiedStreamingManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -66,8 +66,11 @@ class BackgroundAiService : Service() {
      * CRITICAL FIX: Request current progress for a specific message
      * This is called when MainActivity enters a conversation to get the latest state
      */
-    fun requestCurrentProgress(messageId: String, conversationId: String) {
-        Timber.d("📡 Received request for current progress: $messageId")
+    fun requestCurrentProgress(messageId: String) {
+        Timber.d("📡📡📡 RECEIVED REQUEST FOR CURRENT PROGRESS: $messageId")
+        Timber.d("📡 Thread: ${Thread.currentThread().name}")
+        Timber.d("📡 Active jobs: ${activeJobs.keys}")
+        Timber.d("📡 Generation states: ${generationStates.keys}")
         
         try {
             // Check if we have an active generation for this message
@@ -78,7 +81,7 @@ class BackgroundAiService : Service() {
                 Timber.d("🔄 Found active generation, broadcasting current progress")
                 
                 // Get current content from StreamingStateManager
-                val session = StreamingStateManager.getStreamingSession(messageId)
+                val session = UnifiedStreamingManager.getSession(messageId)
                 if (session != null) {
                     val currentContent = session.getPartialContent()
                     if (currentContent.isNotEmpty()) {
@@ -91,46 +94,50 @@ class BackgroundAiService : Service() {
                 Timber.d("ℹ️ No active generation found for messageId: $messageId")
                 Timber.d("🔍 Debug: generationState=$generationState, activeJob=$activeJob, activeJobActive=${activeJob?.isActive}")
                 
-                // Check if there's a completed session with content
-                val session = StreamingStateManager.getStreamingSession(messageId)
-                if (session != null) {
-                    val content = session.getPartialContent()
-                    if (content.isNotEmpty()) {
-                        // Send final content
-                        broadcastCompletion(messageId, content)
-                        Timber.d("📤 Sent completed content: ${content.length} chars")
-                    } else {
-                        Timber.d("ℹ️ Session exists but has no content for messageId: $messageId")
-                    }
-                } else {
-                    Timber.d("⚠️ No streaming session found for messageId: $messageId")
-                    
-                    // CRITICAL FIX: Check if there's an active job for this message instead of restarting
-                    val activeJob = activeJobs[messageId]
-                    val generationState = generationStates[messageId]
-                    
-                    if (activeJob != null && activeJob.isActive && generationState != null) {
-                        Timber.d("✅ Found active background generation job for $messageId")
-                        // There's already an active generation, don't restart
-                        // Just wait for it to continue and send progress when available
-                        return
-                    }
-                    
-                    // CRITICAL: NEVER restart generation automatically
-                    // Just check database and send current content if available
-                    serviceScope.launch {
-                        try {
-                            val message = database.chatMessageDao().getMessageById(messageId)
-                            if (message != null && message.message.isNotEmpty()) {
-                                Timber.d("📤 Sending existing database content for $messageId: ${message.message.length} chars")
-                                // Send current content as existing progress
+                // CRITICAL FIX: First check database for message state
+                serviceScope.launch {
+                    try {
+                        val message = database.chatMessageDao().getMessageById(messageId)
+                        if (message != null) {
+                            val messageAge = System.currentTimeMillis() - message.lastModified
+                            val hasContent = message.message.isNotEmpty()
+                            val isStuckGenerating = message.isGenerating && hasContent && messageAge > 30_000 // 30 seconds old
+                            
+                            if (isStuckGenerating) {
+                                Timber.d("🔧 Detected stuck generating message, fixing state")
+                                
+                                // Fix stuck state in database
+                                val fixedMessage = message.copy(
+                                    isGenerating = false,
+                                    isLoading = false,
+                                    showButtons = true,
+                                    canContinueStreaming = false,
+                                    lastModified = System.currentTimeMillis()
+                                )
+                                database.chatMessageDao().update(fixedMessage)
+                                
+                                // Send as completion
+                                broadcastCompletion(messageId, message.message)
+                                Timber.d("📤 Fixed stuck state and sent completion: ${message.message.length} chars")
+                                
+                            } else if (hasContent && !message.isGenerating) {
+                                // Message is properly completed
+                                broadcastCompletion(messageId, message.message)
+                                Timber.d("📤 Sent completed content from database: ${message.message.length} chars")
+                                
+                            } else if (hasContent && message.isGenerating) {
+                                // Message is still generating but has content
                                 broadcastExistingProgress(messageId, message.message)
+                                Timber.d("📤 Sent existing progress from database: ${message.message.length} chars")
+                                
                             } else {
-                                Timber.d("ℹ️ No content found in database for $messageId")
+                                Timber.d("ℹ️ No meaningful content found for messageId: $messageId")
                             }
-                        } catch (e: Exception) {
-                            Timber.e(e, "Error checking message state: ${e.message}")
+                        } else {
+                            Timber.d("⚠️ Message not found in database: $messageId")
                         }
+                    } catch (e: Exception) {
+                        Timber.e(e, "Error checking message state: ${e.message}")
                     }
                 }
             }
@@ -147,7 +154,7 @@ class BackgroundAiService : Service() {
     
     override fun onBind(intent: Intent?): IBinder = binder
     
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Timber.d("🎯 BackgroundAiService started")
         
@@ -196,7 +203,7 @@ class BackgroundAiService : Service() {
                 setShowBadge(false)
             }
             
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
         }
     }
@@ -222,13 +229,13 @@ class BackgroundAiService : Service() {
             .build()
     }
     
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun startBackgroundGeneration(messageId: String, conversationId: String) {
         Timber.d("🔄 Starting background generation for message: $messageId")
         
         // CRITICAL FIX: Check if we can continue existing streaming instead of restarting
-        val existingSession = StreamingStateManager.getStreamingSession(messageId)
-        if (existingSession != null && StreamingStateManager.canContinueStreaming(messageId)) {
+        val existingSession = UnifiedStreamingManager.getSession(messageId)
+        if (existingSession != null && UnifiedStreamingManager.getSession(messageId) != null) {
             Timber.d("✅ Found existing streaming session, continuing instead of restarting: $messageId")
             continueExistingStream(messageId, conversationId, existingSession)
             return
@@ -244,12 +251,13 @@ class BackgroundAiService : Service() {
         val job = serviceScope.launch {
             try {
                 // FIXED: Start new streaming session in StreamingStateManager
-                val session = StreamingStateManager.startStreamingSession(
+                UnifiedStreamingManager.createSession(
                     messageId = messageId,
                     conversationId = conversationId,
+                    sessionId = "bg_stream_${messageId}_${System.currentTimeMillis()}",
                     modelId = "" // Will be set during generation
                 )
-                StreamingStateManager.markAsBackgroundActive(messageId)
+                UnifiedStreamingManager.markAsBackgroundActive(messageId)
                 
                 continueAiGeneration(messageId, conversationId)
             } catch (e: Exception) {
@@ -260,13 +268,13 @@ class BackgroundAiService : Service() {
                 activeJobs.remove(messageId)
                 generationStates.remove(messageId)
                 
-                // CRITICAL FIX: Don't stop service automatically, let it persist for background generation
-                // Only stop when explicitly requested or no streaming sessions exist
-                if (activeJobs.isEmpty() && !StreamingStateManager.hasBackgroundActiveSessions()) {
-                    Timber.d("🛑 No active jobs and no background sessions, stopping service")
+                // CRITICAL FIX: Enhanced service lifecycle management
+                // Use improved shouldStopService logic
+                if (shouldStopService()) {
+                    Timber.d("🛑 Service should stop based on comprehensive checks, stopping service")
                     stopSelf()
                 } else {
-                    Timber.d("📍 Keeping service alive: activeJobs=${activeJobs.size}, backgroundSessions=${StreamingStateManager.hasBackgroundActiveSessions()}")
+                    Timber.d("📍 Keeping service alive: activeJobs=${activeJobs.size}, backgroundSessions=${UnifiedStreamingManager.hasBackgroundActiveSessions()}, recentActivity=${hasRecentActivity()}")
                 }
             }
         }
@@ -279,11 +287,11 @@ class BackgroundAiService : Service() {
      * CRITICAL FIX: Continue existing streaming session instead of restarting
      * This prevents token waste and provides seamless continuation
      */
-    private fun continueExistingStream(messageId: String, conversationId: String, session: StreamingStateManager.StreamingSession) {
+    private fun continueExistingStream(messageId: String, conversationId: String, session: UnifiedStreamingManager.StreamingSession) {
         Timber.d("✅ Continuing existing streaming session: $messageId with ${session.getPartialContent().length} existing chars")
         
         // Mark as background active
-        StreamingStateManager.markAsBackgroundActive(messageId)
+        UnifiedStreamingManager.markAsBackgroundActive(messageId)
         
         // Update generation state
         generationStates[messageId] = GenerationState(messageId, conversationId)
@@ -310,7 +318,7 @@ class BackgroundAiService : Service() {
                     
                     // CRITICAL FIX: Check if there's actually active generation happening
                     // If not, the message might be stuck in generating state
-                    val messageAge = System.currentTimeMillis() - (message.lastModified ?: 0)
+                    val messageAge = System.currentTimeMillis() - message.lastModified
                     val contentLength = existingContent.length
                     
                     // If message hasn't been updated recently and has substantial content, 
@@ -331,7 +339,7 @@ class BackgroundAiService : Service() {
                         database.chatMessageDao().update(completedMessage)
                         
                         // Mark session as complete and broadcast final content
-                        StreamingStateManager.completeStreamingSession(messageId, existingContent)
+                        UnifiedStreamingManager.completeSession(messageId, true)
                         broadcastCompletion(messageId, existingContent)
                         
                         Timber.d("✅ Fixed stuck generating state and marked as completed")
@@ -343,7 +351,7 @@ class BackgroundAiService : Service() {
                 } else {
                     Timber.d("✓ Message generation appears to be completed")
                     // Mark session as complete and broadcast final content
-                    StreamingStateManager.completeStreamingSession(messageId, existingContent)
+                    UnifiedStreamingManager.completeSession(messageId, true)
                     broadcastCompletion(messageId, existingContent)
                 }
                 
@@ -355,13 +363,13 @@ class BackgroundAiService : Service() {
                 activeJobs.remove(messageId)
                 generationStates.remove(messageId)
                 
-                // CRITICAL FIX: Don't stop service automatically, let it persist for background generation
-                // Only stop when explicitly requested or no streaming sessions exist
-                if (activeJobs.isEmpty() && !StreamingStateManager.hasBackgroundActiveSessions()) {
-                    Timber.d("🛑 No active jobs and no background sessions, stopping service")
+                // CRITICAL FIX: Enhanced service lifecycle management
+                // Use improved shouldStopService logic
+                if (shouldStopService()) {
+                    Timber.d("🛑 Service should stop based on comprehensive checks, stopping service")
                     stopSelf()
                 } else {
-                    Timber.d("📍 Keeping service alive: activeJobs=${activeJobs.size}, backgroundSessions=${StreamingStateManager.hasBackgroundActiveSessions()}")
+                    Timber.d("📍 Keeping service alive: activeJobs=${activeJobs.size}, backgroundSessions=${UnifiedStreamingManager.hasBackgroundActiveSessions()}, recentActivity=${hasRecentActivity()}")
                 }
             }
         }
@@ -370,7 +378,7 @@ class BackgroundAiService : Service() {
         updateNotification("Resuming AI response...")
     }
     
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private suspend fun continueAiGeneration(messageId: String, conversationId: String) {
         // Load the incomplete message from database
         val message = database.chatMessageDao().getMessageById(messageId)
@@ -391,22 +399,30 @@ class BackgroundAiService : Service() {
             AimlApiService::class.java
         )
         
-        // Create request body
-        val requestBody = ModelApiHandler.createRequestBody(
-            apiRequest = apiRequest,
-            modelId = message.modelId ?: ModelManager.selectedModel.id,
-            useWebSearch = message.isForceSearch,
-            messageText = getOriginalUserMessage(conversationMessages, messageId),
-            context = this@BackgroundAiService,
-            audioEnabled = false,
-            audioFormat = "mp3",
-            voiceType = "alloy"
-        )
+        val modelId = message.modelId ?: ModelManager.selectedModel.id
         
-        Timber.d("🌐 Making background API call for message: $messageId")
-        
-        val response = withContext(Dispatchers.IO) {
-            apiService.sendRawMessageStreaming(requestBody)
+        // Check if this is the Mistral OCR model and handle it specially
+        val response = if (modelId == ModelManager.MISTRAL_OCR_ID) {
+            Timber.d("🔍 Detected Mistral OCR model, using OCR endpoint")
+            
+            // For OCR models, we need to use a different approach
+            // Since OCR is not streaming, we should delegate to OCRFileUploadService
+            throw Exception("OCR models should be handled by OCRFileUploadService, not BackgroundAiService")
+            
+        } else {
+            // Create request body for regular models
+            val requestBody = ModelApiHandler.createRequestBody(
+                apiRequest = apiRequest,
+                modelId = modelId,
+                context = this@BackgroundAiService,
+                audioEnabled = false
+            )
+            
+            Timber.d("🌐 Making background API call for message: $messageId")
+            
+            withContext(Dispatchers.IO) {
+                apiService.sendRawMessageStreaming(requestBody)
+            }
         }
         
         if (response.isSuccessful) {
@@ -420,7 +436,7 @@ class BackgroundAiService : Service() {
                     messageId = messageId,
                     database = database,
                     onProgress = { partialContent ->
-                        // Save progress to database AND streaming state (with memory protection)
+                        // CRITICAL FIX: Save IMMEDIATELY to database every time, no matter what
                         serviceScope.launch {
                             try {
                                 val message = database.chatMessageDao().getMessageById(messageId)
@@ -438,16 +454,33 @@ class BackgroundAiService : Service() {
                                         partialContent = safePartialContent,
                                         lastModified = System.currentTimeMillis(),
                                         isGenerating = true,
-                                        isLoading = false,  // CRITICAL: Show content, not loading spinner
-                                        canContinueStreaming = true
+                                        isLoading = false,  // CRITICAL: Never show loading when we have content!
+                                        canContinueStreaming = true,
+                                        showButtons = false  // Hide buttons during generation
                                     )
+                                    
+                                    // 🐛 DEBUG: Log every database save
+                                    Timber.d("🐛🐛🐛 BACKGROUND SERVICE IMMEDIATE SAVE:")
+                                    Timber.d("🐛 Message ID: $messageId")
+                                    Timber.d("🐛 Content length: ${safePartialContent.length}")
+                                    Timber.d("🐛 Content preview: '${safePartialContent.take(100)}...'")
+                                    Timber.d("🐛 isGenerating: ${updatedMessage.isGenerating}")
+                                    Timber.d("🐛 isLoading: ${updatedMessage.isLoading}")
+                                    
+                                    // CRITICAL: Immediate database save within coroutine
                                     database.chatMessageDao().update(updatedMessage)
                                     
+                                    // Verify the save worked immediately
+                                    val verifyMessage = database.chatMessageDao().getMessageById(messageId)
+                                    Timber.d("🐛 ✅ VERIFIED - Content in DB: ${verifyMessage?.message?.length} chars")
+                                    
                                     // CRITICAL: Update streaming state with safe content
-                                    StreamingStateManager.updateStreamingContent(messageId, safePartialContent)
+                                    UnifiedStreamingManager.updateSessionContent(messageId, safePartialContent)
+                                } else {
+                                    Timber.e("🐛 ERROR: Message not found in database: $messageId")
                                 }
                             } catch (e: Exception) {
-                                Timber.e(e, "Error saving progress to database: ${e.message}")
+                                Timber.e(e, "🐛 CRITICAL ERROR saving progress to database: ${e.message}")
                             }
                         }
                         
@@ -473,10 +506,14 @@ class BackgroundAiService : Service() {
                                             isLoading = false,
                                             showButtons = true,
                                             canContinueStreaming = false,
-                                            lastModified = System.currentTimeMillis()
+                                            lastModified = System.currentTimeMillis(),
+                                            completionTime = System.currentTimeMillis(),
+                                            error = false // Ensure no error state
                                         )
                                         database.chatMessageDao().update(completedMessage)
-                                        Timber.d("✅ Marked message as completed in database")
+                                        Timber.d("✅ Marked message as completed in database: ${finalContent.length} chars")
+                                    } else {
+                                        Timber.w("⚠️ Message not found in database during completion: $messageId")
                                     }
                                 }
                             } catch (e: Exception) {
@@ -485,7 +522,7 @@ class BackgroundAiService : Service() {
                         }
                         
                         // CRITICAL: Complete streaming session
-                        StreamingStateManager.completeStreamingSession(messageId, finalContent)
+                        UnifiedStreamingManager.completeSession(messageId, true)
                         
                         broadcastCompletion(messageId, finalContent)
                     },
@@ -493,7 +530,7 @@ class BackgroundAiService : Service() {
                         Timber.e("❌ Background generation failed: $error")
                         
                         // CRITICAL: Remove failed streaming session
-                        StreamingStateManager.removeStreamingSession(messageId)
+                        UnifiedStreamingManager.completeSession(messageId, false)
                         
                         handleGenerationError(messageId, error)
                     }
@@ -571,15 +608,15 @@ class BackgroundAiService : Service() {
         generationStates.remove(messageId)
         
         // ADDED: Clean up streaming state
-        StreamingStateManager.removeStreamingSession(messageId)
+        UnifiedStreamingManager.completeSession(messageId, false)
         
-        // CRITICAL FIX: Don't stop service automatically when stopping individual generation
-        // Only stop when there are no active jobs AND no background sessions
-        if (activeJobs.isEmpty() && !StreamingStateManager.hasBackgroundActiveSessions()) {
-            Timber.d("🛑 No active jobs and no background sessions, stopping service")
+        // CRITICAL FIX: Enhanced service lifecycle management for individual generation stop
+        // Use improved shouldStopService logic
+        if (shouldStopService()) {
+            Timber.d("🛑 Service should stop based on comprehensive checks, stopping service")
             stopSelf()
         } else {
-            Timber.d("📍 Keeping service alive: activeJobs=${activeJobs.size}, backgroundSessions=${StreamingStateManager.hasBackgroundActiveSessions()}")
+            Timber.d("📍 Keeping service alive: activeJobs=${activeJobs.size}, backgroundSessions=${UnifiedStreamingManager.hasBackgroundActiveSessions()}, recentActivity=${hasRecentActivity()}")
         }
     }
     
@@ -590,8 +627,8 @@ class BackgroundAiService : Service() {
         generationStates.clear()
         
         // ADDED: Clean up all streaming states
-        StreamingStateManager.getActiveStreamingSessions().forEach { session ->
-            StreamingStateManager.removeStreamingSession(session.messageId)
+        UnifiedStreamingManager.getActiveSessionsForConversation().forEach { session ->
+            UnifiedStreamingManager.completeSession(session.messageId, false)
         }
     }
     
@@ -635,7 +672,7 @@ class BackgroundAiService : Service() {
     
     private fun updateNotification(content: String) {
         val notification = createNotification(content)
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.notify(NOTIFICATION_ID, notification)
     }
     
@@ -656,6 +693,11 @@ class BackgroundAiService : Service() {
      * This is used when reconnecting to ongoing generation to show current state
      */
     private fun broadcastExistingProgress(messageId: String, content: String) {
+        Timber.d("📡📡📡 BROADCASTING EXISTING PROGRESS for message: $messageId")
+        Timber.d("📡 Content length: ${content.length}")
+        Timber.d("📡 Content preview: '${content.take(100)}...'")
+        Timber.d("📡 Thread: ${Thread.currentThread().name}")
+        
         val intent = Intent(ACTION_EXISTING_PROGRESS).apply {
             putExtra(EXTRA_MESSAGE_ID, messageId)
             putExtra(EXTRA_CONTENT, content)
@@ -663,10 +705,15 @@ class BackgroundAiService : Service() {
             setPackage(packageName)
         }
         sendBroadcast(intent)
-        Timber.d("📡 Broadcasting existing progress for message: $messageId, content length: ${content.length}")
+        Timber.d("📡 ✅ Broadcast sent successfully")
     }
     
     private fun broadcastCompletion(messageId: String, content: String) {
+        Timber.d("📡📡📡 BROADCASTING COMPLETION for message: $messageId")
+        Timber.d("📡 Content length: ${content.length}")
+        Timber.d("📡 Content preview: '${content.take(100)}...'")
+        Timber.d("📡 Thread: ${Thread.currentThread().name}")
+        
         val intent = Intent(ACTION_GENERATION_COMPLETE).apply {
             putExtra(EXTRA_MESSAGE_ID, messageId)
             putExtra(EXTRA_CONTENT, content)
@@ -674,7 +721,7 @@ class BackgroundAiService : Service() {
             setPackage(packageName)
         }
         sendBroadcast(intent)
-        Timber.d("📡 Broadcasting completion for message: $messageId, content length: ${content.length}")
+        Timber.d("📡 ✅ Completion broadcast sent successfully")
     }
     
     private fun broadcastError(messageId: String, error: String) {
@@ -691,8 +738,50 @@ class BackgroundAiService : Service() {
     // Public methods for service control
     fun isGenerating(messageId: String): Boolean = activeJobs.containsKey(messageId)
     
-    fun getActiveGenerations(): Set<String> = activeJobs.keys.toSet()
+    /**
+     * CRITICAL FIX: Enhanced service lifecycle management
+     * Determines if service should stop based on multiple factors
+     */
+    private fun shouldStopService(): Boolean {
+        val hasActiveJobs = activeJobs.isNotEmpty()
+        val hasActiveSessions = UnifiedStreamingManager.hasBackgroundActiveSessions()
+        val hasRecent = hasRecentActivity()
+        val hasPendingWork = generationStates.isNotEmpty()
+        
+        // Don't stop if there's any active work
+        if (hasActiveJobs || hasActiveSessions || hasPendingWork) {
+            return false
+        }
+        
+        // Don't stop if there's been recent activity
+        if (hasRecent) {
+            return false
+        }
+        
+        // Safe to stop
+        return true
+    }
     
+    /**
+     * Check if there's been recent activity that suggests we should keep service alive
+     */
+    private fun hasRecentActivity(): Boolean {
+        val now = System.currentTimeMillis()
+        val recentThreshold = 60_000L // 1 minute
+        
+        // Check for recent generation state activity
+        val hasRecentGenerationActivity = generationStates.values.any { state ->
+            (now - state.startTime) < recentThreshold
+        }
+        
+        // Check for recent streaming sessions
+        val hasRecentStreamingActivity = UnifiedStreamingManager.getActiveSessionsForConversation().any { session ->
+            session.isActive && (now - session.startTime) < recentThreshold
+        }
+        
+        return hasRecentGenerationActivity || hasRecentStreamingActivity
+    }
+
     companion object {
         const val ACTION_START_GENERATION = "com.cyberflux.qwinai.START_GENERATION"
         const val ACTION_STOP_GENERATION = "com.cyberflux.qwinai.STOP_GENERATION"

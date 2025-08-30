@@ -45,11 +45,6 @@ class HomeFragment : Fragment() {
     private lateinit var recentModelsAdapter: RecentModelsAdapter
     private lateinit var trendingPromptsAdapter: TrendingPromptsAdapter
 
-    // Weather update tracking
-    private var weatherUpdateHandler: Handler? = null
-    private var weatherUpdateRunnable: Runnable? = null
-    private val WEATHER_UPDATE_INTERVAL = 30 * 60 * 1000L // 30 minutes in milliseconds
-    private var lastWeatherUpdateTime = 0L
 
     private lateinit var creativePromptsRecyclerView: RecyclerView
     private lateinit var productivityPromptsRecyclerView: RecyclerView
@@ -164,7 +159,7 @@ class HomeFragment : Fragment() {
 
         setupGreeting()
         setupAiTipOfTheDay()
-        setupWeatherAssistant()
+        setupImageGenerationCard()
         setupRecentModels()
         setupTrendingPrompts()
         setupFeatureCards()
@@ -177,8 +172,6 @@ class HomeFragment : Fragment() {
         // Check for updates and notifications
         checkForUpdatesAndNotifications()
 
-        // Start periodic weather updates
-        startWeatherUpdates()
 
         // Start greeting updates
         scheduleGreetingUpdates()
@@ -354,7 +347,7 @@ class HomeFragment : Fragment() {
         // 2. Fade in cards with staggered delay
         listOf(
             binding.tipCardView,
-            binding.weatherCardView,
+            binding.imageGenerationCardView,
             binding.recentModelsLabel,
             binding.recentModelsRecyclerView,
             binding.featuresTitle,
@@ -551,98 +544,28 @@ class HomeFragment : Fragment() {
         }
     }
 
-    private fun setupWeatherAssistant() {
-        // Show loading state initially
-        binding.weatherTextView.text = "Loading weather..."
-
-        // Update weather (this will track the update time)
-        updateWeather()
-    }
-
-    private fun updateWeather() {
-        // Use lifecycleScope to perform network request
-        lifecycleScope.launch {
+    private fun setupImageGenerationCard() {
+        // Set up image generation card with beautiful content
+        binding.imageGenTextView.text = "Create Images"
+        
+        // Add click action to open ImageGenerationActivity
+        binding.imageGenerationCardView.setOnClickListener {
             try {
-                // First get user's location using existing LocationService
-                val location = withContext(Dispatchers.IO) {
-                    LocationService.getApproximateLocation(requireContext())
-                }
-
-                // Then fetch weather data using the location
-                val weatherData = withContext(Dispatchers.IO) {
-                    WeatherService.getWeatherForLocation(
-                        location.approximate.city,
-                        location.approximate.country
-                    )
-                }
-
-                // Update UI with real weather data
-                binding.weatherTextView.text = "${weatherData.temperature}°C, ${weatherData.condition}"
-
-                // Set weather icon based on actual condition
-                binding.weatherIcon.setImageResource(
-                    when (weatherData.condition.lowercase(Locale.getDefault())) {
-                        "clear", "sunny" -> R.drawable.ic_weather_sunny
-                        "clouds", "cloudy", "partly cloudy" -> R.drawable.ic_weather_cloudy
-                        "rain", "drizzle", "showers" -> R.drawable.ic_weather_rainy
-                        "snow", "snowy" -> R.drawable.ic_weather_snowy
-                        "storm", "thunderstorm" -> R.drawable.ic_weather_stormy
-                        else -> R.drawable.ic_weather_windy
-                    }
-                )
-
-                // Add click action for weather-related prompts
-                binding.weatherCardView.setOnClickListener {
-                    val prompt = "What activities are good for ${weatherData.condition} weather at ${weatherData.temperature}°C in ${location.approximate.city}?"
-                    (activity as? StartActivity)?.startChatWithPrompt(prompt)
-                }
-
-                // Record the update time
-                lastWeatherUpdateTime = System.currentTimeMillis()
-
+                val intent = android.content.Intent(requireContext(), ImageGenerationActivity::class.java)
+                startActivity(intent)
+                
+                // Add transition animation
+                requireActivity().overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+                
+                Timber.d("Opened ImageGenerationActivity from home card")
             } catch (e: Exception) {
-                // Handle errors gracefully
-                binding.weatherTextView.text = "Weather unavailable"
-                Timber.e(e, "Error fetching weather: ${e.message}")
-
-                // Set a default click action even when weather fails
-                binding.weatherCardView.setOnClickListener {
-                    val prompt = "What's the weather forecast for my area today?"
-                    (activity as? StartActivity)?.startChatWithPrompt(prompt)
-                }
+                Timber.e(e, "Error opening ImageGenerationActivity: ${e.message}")
+                android.widget.Toast.makeText(requireContext(), "Error opening image generation", android.widget.Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    // Setup periodic weather updates
-    private fun startWeatherUpdates() {
-        stopWeatherUpdates() // Clear any existing updates first
 
-        weatherUpdateHandler = Handler(Looper.getMainLooper())
-        weatherUpdateRunnable = object : Runnable {
-            override fun run() {
-                // Check if it's time for an update
-                val currentTime = System.currentTimeMillis()
-                if (currentTime - lastWeatherUpdateTime >= WEATHER_UPDATE_INTERVAL) {
-                    Timber.d("Updating weather after 30-minute interval")
-                    updateWeather()
-                }
-
-                // Schedule the next check
-                weatherUpdateHandler?.postDelayed(this, WEATHER_UPDATE_INTERVAL)
-            }
-        }
-
-        // Start the updates
-        weatherUpdateHandler?.post(weatherUpdateRunnable!!)
-        Timber.d("Started periodic weather updates")
-    }
-
-    private fun stopWeatherUpdates() {
-        weatherUpdateRunnable?.let { weatherUpdateHandler?.removeCallbacks(it) }
-        weatherUpdateHandler = null
-        weatherUpdateRunnable = null
-    }
 
     private fun setupRecentModels() {
         // Get most used models from the tracker
@@ -771,13 +694,6 @@ class HomeFragment : Fragment() {
                 colorResId = R.color.feature_prompt_day,
             ),
             AIFeature(
-                id = "image_generation",
-                title = "Image Generation",
-                description = "Generate images from text descriptions",
-                iconResId = R.drawable.ic_brush,
-                colorResId = R.color.feature_image_gen,
-            ),
-            AIFeature(
                 id = "ocr_reader",
                 title = "Pic Reader",
                 description = "Extract and summarize text from images",
@@ -797,6 +713,27 @@ class HomeFragment : Fragment() {
                 description = "Upload and analyze documents of various formats",
                 iconResId = R.drawable.ic_file_upload,
                 colorResId = R.color.feature_file_upload,
+            ),
+            AIFeature(
+                id = "private_chat",
+                title = "Private Chat",
+                description = "Start a secure private conversation",
+                iconResId = R.drawable.ic_private_chat,
+                colorResId = R.color.feature_private_chat,
+            ),
+            AIFeature(
+                id = "voice_chat",
+                title = "Voice Chat",
+                description = "Talk with AI using voice only",
+                iconResId = R.drawable.ic_mic,
+                colorResId = R.color.feature_voice_chat,
+            ),
+            AIFeature(
+                id = "image_gallery",
+                title = "Image Gallery",
+                description = "Browse and manage AI generated images",
+                iconResId = R.drawable.ic_gallery,
+                colorResId = R.color.feature_image_gallery,
             )
         )
     }
@@ -885,7 +822,7 @@ class HomeFragment : Fragment() {
             .start()
 
         binding.btnUpgrade.setOnClickListener {
-            (activity as? StartActivity)?.navigateToWelcomeActivity()
+            SubscriptionActivity.start(requireContext())
         }
     }
 
@@ -905,17 +842,6 @@ class HomeFragment : Fragment() {
 
         // Refresh greeting (time of day might have changed)
         setupGreeting()
-
-        // Check if we need a weather update
-        val currentTime = System.currentTimeMillis()
-        if (currentTime - lastWeatherUpdateTime >= WEATHER_UPDATE_INTERVAL) {
-            updateWeather()
-        }
-
-        // Ensure updates are scheduled
-        if (weatherUpdateHandler == null) {
-            startWeatherUpdates()
-        }
     }
     private fun scheduleGreetingUpdates() {
         // Check for greeting updates every hour
@@ -932,8 +858,6 @@ class HomeFragment : Fragment() {
     }
 
     override fun onDestroyView() {
-        // Important: Stop updates to prevent memory leaks
-        stopWeatherUpdates()
         super.onDestroyView()
         _binding = null
     }

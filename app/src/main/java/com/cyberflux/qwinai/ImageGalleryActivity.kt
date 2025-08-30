@@ -16,7 +16,6 @@ import android.view.MenuItem
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.widget.SearchView
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
@@ -63,6 +62,12 @@ class ImageGalleryActivity : BaseThemedActivity(), ImageGalleryAdapter.OnImageCl
         loadImages()
     }
     
+    override fun onResume() {
+        super.onResume()
+        // Reload images when returning from detail view to catch any changes
+        loadImages()
+    }
+    
     private fun setupUI() {
         setSupportActionBar(binding.toolbar)
         supportActionBar?.apply {
@@ -85,32 +90,8 @@ class ImageGalleryActivity : BaseThemedActivity(), ImageGalleryAdapter.OnImageCl
         // Setup filter chips
         setupFilterChips()
         
-        // Setup search
-        binding.searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
-            override fun onQueryTextSubmit(query: String?): Boolean {
-                filterImages(query)
-                return true
-            }
-            
-            override fun onQueryTextChange(newText: String?): Boolean {
-                filterImages(newText)
-                return true
-            }
-        })
-        
-        // Setup selection mode toggle
-        binding.btnSelectMode.setOnClickListener {
-            toggleSelectionMode()
-        }
-        
-        // Setup batch actions
-        binding.btnDeleteSelected.setOnClickListener {
-            deleteSelectedImages()
-        }
-        
-        binding.btnShareSelected.setOnClickListener {
-            shareSelectedImages()
-        }
+        // Setup selection toolbar
+        setupSelectionToolbar()
     }
     
     private fun setupFilterChips() {
@@ -140,6 +121,20 @@ class ImageGalleryActivity : BaseThemedActivity(), ImageGalleryAdapter.OnImageCl
         }
     }
     
+    private fun setupSelectionToolbar() {
+        binding.btnCancelSelection.setOnClickListener {
+            exitSelectionMode()
+        }
+        
+        binding.btnSelectAll.setOnClickListener {
+            selectAllImages()
+        }
+        
+        binding.btnDeleteSelected.setOnClickListener {
+            deleteSelectedImages()
+        }
+    }
+    
     private fun loadImages() {
         lifecycleScope.launch {
             val images = withContext(Dispatchers.IO) {
@@ -164,11 +159,11 @@ class ImageGalleryActivity : BaseThemedActivity(), ImageGalleryAdapter.OnImageCl
         // Update selection UI
         if (isSelectionMode) {
             binding.selectionToolbar.visibility = android.view.View.VISIBLE
-            binding.textSelectedCount.text = "${selectedImages.size} selected"
-            binding.btnDeleteSelected.isEnabled = selectedImages.isNotEmpty()
-            binding.btnShareSelected.isEnabled = selectedImages.isNotEmpty()
+            binding.textSelectionCount.text = "${selectedImages.size} selected"
+            binding.fabToggleView.hide()
         } else {
             binding.selectionToolbar.visibility = android.view.View.GONE
+            binding.fabToggleView.show()
         }
         
         // Show empty state if no images
@@ -200,20 +195,6 @@ class ImageGalleryActivity : BaseThemedActivity(), ImageGalleryAdapter.OnImageCl
         updateUI()
     }
     
-    private fun filterImages(query: String?) {
-        filteredImages = if (query.isNullOrBlank()) {
-            if (currentFilter == "All Models") allImages else allImages.filter { it.aiModel.equals(currentFilter, ignoreCase = true) }
-        } else {
-            val baseList = if (currentFilter == "All Models") allImages else allImages.filter { it.aiModel.equals(currentFilter, ignoreCase = true) }
-            baseList.filter { 
-                it.prompt.contains(query, ignoreCase = true) || 
-                it.fileName.contains(query, ignoreCase = true)
-            }
-        }
-        
-        adapter.submitList(filteredImages)
-        updateUI()
-    }
     
     private fun toggleViewMode() {
         val layoutManager = binding.recyclerView.layoutManager
@@ -234,6 +215,25 @@ class ImageGalleryActivity : BaseThemedActivity(), ImageGalleryAdapter.OnImageCl
         isSelectionMode = !isSelectionMode
         selectedImages.clear()
         adapter.setSelectionMode(isSelectionMode)
+        updateUI()
+        
+        HapticManager.customVibration(this, 100)
+    }
+    
+    private fun exitSelectionMode() {
+        isSelectionMode = false
+        selectedImages.clear()
+        adapter.setSelectionMode(false)
+        adapter.setSelectedImages(emptySet())
+        updateUI()
+        
+        HapticManager.customVibration(this, 50)
+    }
+    
+    private fun selectAllImages() {
+        selectedImages.clear()
+        selectedImages.addAll(filteredImages.map { it.id })
+        adapter.setSelectedImages(selectedImages)
         updateUI()
         
         HapticManager.customVibration(this, 100)
@@ -368,10 +368,6 @@ class ImageGalleryActivity : BaseThemedActivity(), ImageGalleryAdapter.OnImageCl
                 showSortDialog()
                 true
             }
-            R.id.action_clear_all -> {
-                showClearAllDialog()
-                true
-            }
             else -> super.onOptionsItemSelected(item)
         }
     }
@@ -399,33 +395,10 @@ class ImageGalleryActivity : BaseThemedActivity(), ImageGalleryAdapter.OnImageCl
         adapter.submitList(filteredImages)
     }
     
-    private fun showClearAllDialog() {
-        MaterialAlertDialogBuilder(this)
-            .setTitle("Clear All Images")
-            .setMessage("Are you sure you want to delete all images? This action cannot be undone.")
-            .setPositiveButton("Clear All") { _, _ ->
-                lifecycleScope.launch {
-                    val allImageIds = allImages.map { it.id }
-                    val deletedCount = withContext(Dispatchers.IO) {
-                        repository.deleteMultipleImages(allImageIds)
-                    }
-                    
-                    loadImages()
-                    
-                    Snackbar.make(
-                        binding.root,
-                        "All images cleared ($deletedCount deleted)",
-                        Snackbar.LENGTH_SHORT
-                    ).show()
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
     
     override fun onBackPressed() {
         if (isSelectionMode) {
-            toggleSelectionMode()
+            exitSelectionMode()
         } else {
             super.onBackPressed()
         }

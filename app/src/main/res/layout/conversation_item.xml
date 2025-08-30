@@ -5,157 +5,83 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_margin="8dp"
-    android:foreground="?attr/selectableItemBackground"
+    android:layout_marginHorizontal="16dp"
+    android:layout_marginVertical="8dp"
     android:clickable="true"
     android:focusable="true"
-    android:elevation="0dp"
-    app:strokeColor="@color/purple_hint_stroke"
-    app:strokeWidth="1dp"
-    app:cardCornerRadius="16dp"
-    app:cardBackgroundColor="@color/purple_hint_card_bg"
-    app:cardElevation="0dp">
+    android:foreground="?attr/selectableItemBackgroundBorderless"
+    app:cardCornerRadius="20dp"
+    app:cardElevation="2dp"
+    app:cardBackgroundColor="?attr/colorSurface">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="1dp">
+        android:padding="20dp">
 
-
-    <!-- Content Row -->
+        <!-- Header Row -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical">
 
-            <!-- Text Content -->
-            <LinearLayout
+            <!-- Title with max space -->
+            <TextView
+                android:id="@+id/conversationText"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginEnd="8dp">
+                android:textColor="@color/text_primary"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:fontFamily="sans-serif-medium"
+                android:maxLines="1"
+                android:ellipsize="end"
+                tools:text="How to implement machine learning algorithms in Python" />
 
-                <!-- Title + Draft -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
-
-                    <TextView
-                        android:id="@+id/conversationText"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:textColor="@color/text_primary"
-                        android:textSize="15sp"
-                        android:textStyle="bold"
-                        android:fontFamily="sans-serif-medium"
-                        android:maxLines="2"
-                        android:ellipsize="end"
-                        tools:text="How to implement machine learning algorithms in Python" />
-
-                    <TextView
-                        android:id="@+id/draftIndicator"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Draft"
-                        android:textSize="10sp"
-                        android:textColor="@color/white"
-                        android:background="@drawable/draft_badge_background"
-                        android:paddingHorizontal="6dp"
-                        android:paddingVertical="2dp"
-                        android:layout_marginStart="6dp"
-                        android:visibility="gone"
-                        tools:visibility="visible" />
-                </LinearLayout>
-
-                <!-- Model Tag -->
-                <LinearLayout
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:background="@drawable/model_chip_background"
-                    android:paddingHorizontal="6dp"
-                    android:paddingVertical="2dp">
-
-                    <ImageView
-                        android:layout_width="8dp"
-                        android:layout_height="8dp"
-                        android:layout_marginEnd="4dp"
-                        android:src="@drawable/ic_ai_chip"
-                        app:tint="@color/accent_primary" />
-
-                    <TextView
-                        android:id="@+id/aiModelInfo"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:textSize="10sp"
-                        android:textColor="@color/text_secondary"
-                        android:textStyle="bold"
-                        android:fontFamily="sans-serif-medium"
-                        android:letterSpacing="0.02"
-                        tools:text="Claude Sonnet 4" />
-                </LinearLayout>
-
-                <!-- DateTime -->
-                <LinearLayout
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
-
-                    <ImageView
-                        android:layout_width="10dp"
-                        android:layout_height="10dp"
-                        android:layout_marginEnd="4dp"
-                        android:src="@drawable/ic_clock"
-                        app:tint="@color/text_tertiary" />
-
-                    <TextView
-                        android:id="@+id/conversationDateTime"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:textSize="10sp"
-                        android:textColor="@color/text_tertiary"
-                        android:fontFamily="sans-serif"
-                        android:maxLines="1"
-                        android:ellipsize="end"
-                        tools:text="2 hours ago - Draft" />
-                </LinearLayout>
-            </LinearLayout>
+            <!-- Draft indicator -->
+            <TextView
+                android:id="@+id/draftIndicator"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="DRAFT"
+                android:textSize="10sp"
+                android:textColor="@color/white"
+                android:background="@drawable/draft_badge_background"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="4dp"
+                android:layout_marginStart="12dp"
+                android:visibility="gone"
+                android:letterSpacing="0.02"
+                tools:visibility="visible" />
 
             <!-- Actions -->
             <LinearLayout
                 android:layout_width="wrap_content"
-                android:layout_height="match_parent"
-                android:orientation="vertical"
-                android:gravity="center">
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginStart="12dp">
 
                 <!-- Saved Icon -->
                 <FrameLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="4dp">
+                    android:layout_marginEnd="4dp">
 
                     <ImageView
                         android:id="@+id/savedIndicator"
-                        android:layout_width="16dp"
-                        android:layout_height="16dp"
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
                         android:src="@drawable/ic_star_filled"
                         android:scaleType="centerInside"
                         app:tint="@color/accent_gold"
                         tools:visibility="visible" />
 
                     <ImageView
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
                         android:src="@drawable/ic_star_glow"
                         android:alpha="0.3"
                         app:tint="@color/accent_gold_light"
@@ -165,16 +91,102 @@
                 <!-- Dropdown -->
                 <ImageButton
                     android:id="@+id/btnDropdown"
-                    android:layout_width="32dp"
-                    android:layout_height="32dp"
-                    android:background="@drawable/circular_ripple_background"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
                     android:src="@drawable/ic_more_vert"
                     android:contentDescription="More options"
-                    android:padding="6dp"
+                    android:padding="8dp"
                     android:scaleType="centerInside"
                     app:tint="@color/text_secondary" />
             </LinearLayout>
         </LinearLayout>
+
+        <!-- Model Row -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="12dp">
+
+            <!-- Model Tag -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/model_chip_background"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="6dp">
+
+                <ImageView
+                    android:layout_width="12dp"
+                    android:layout_height="12dp"
+                    android:layout_marginEnd="6dp"
+                    android:src="@drawable/ic_ai_chip"
+                    app:tint="@color/accent_primary" />
+
+                <TextView
+                    android:id="@+id/aiModelInfo"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textSize="12sp"
+                    android:textColor="@color/text_secondary"
+                    android:textStyle="bold"
+                    android:fontFamily="sans-serif-medium"
+                    android:letterSpacing="0.01"
+                    tools:text="Claude Sonnet 4" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- DateTime and Status Row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="8dp">
+
+            <ImageView
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:layout_marginEnd="4dp"
+                android:src="@drawable/ic_clock"
+                app:tint="@color/text_tertiary" />
+
+            <TextView
+                android:id="@+id/conversationDateTime"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:textColor="@color/text_tertiary"
+                android:fontFamily="sans-serif"
+                android:maxLines="1"
+                android:ellipsize="end"
+                tools:text="2 hours ago" />
+
+            <!-- Draft/Message Status -->
+            <TextView
+                android:id="@+id/conversationStatus"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:textSize="12sp"
+                android:textColor="@color/text_tertiary"
+                android:fontFamily="sans-serif"
+                android:maxLines="2"
+                android:ellipsize="end"
+                tools:text="Draft with 2 attachments" />
+        </LinearLayout>
+
+        <!-- Attachments View -->
+        <com.cyberflux.qwinai.views.ConversationAttachmentsView
+            android:id="@+id/attachmentsView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp" />
 
     </LinearLayout>
 </androidx.cardview.widget.CardView>

@@ -5,152 +5,162 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/background"
+    android:background="?attr/colorSurface"
     tools:context=".MainActivity">
 
-    <!-- Top Bar with horizontal alignment -->
-    <!-- Top Bar with horizontal alignment -->
+    
+    <!-- Top Bar Layout for Custom Content -->
     <androidx.constraintlayout.widget.ConstraintLayout
         android:id="@+id/topBarLayout"
         android:layout_width="0dp"
-        android:layout_height="@dimen/header_height"
-        android:paddingTop="20dp"
-        android:paddingBottom="12dp"
-        android:background="@color/surface"
-        android:elevation="1dp"
+        android:layout_height="64dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:paddingHorizontal="16dp"
+        android:background="?attr/colorSurface"
+        android:elevation="0dp"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
-        <ImageButton
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnConversationsList"
-            style="@style/Widget.MaterialComponents.Button.Icon"
+            style="@style/Widget.Material3.Button.IconButton"
             android:layout_width="48dp"
             android:layout_height="48dp"
-            android:layout_marginStart="8dp"
             android:contentDescription="Conversation history"
-            app:iconTint="?attr/colorOnSurface"
+            app:icon="@drawable/history_menu"
+            app:iconTint="?attr/colorOnSurfaceVariant"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent"
-            app:srcCompat="@drawable/history_menu" />
+            app:layout_constraintTop_toTopOf="parent" />
 
         <TextView
             android:id="@+id/tvChatTitle"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp"
             android:ellipsize="end"
             android:gravity="center"
             android:maxLines="1"
             android:text="New Chat"
+            android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
             android:textColor="?attr/colorOnSurface"
-            android:textSize="16sp"
-            android:textStyle="bold"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toStartOf="@id/creditsButton"
             app:layout_constraintStart_toEndOf="@id/btnConversationsList"
             app:layout_constraintTop_toTopOf="parent" />
 
-        <LinearLayout
+        <com.google.android.material.card.MaterialCardView
             android:id="@+id/creditsButton"
+            style="@style/Widget.Material3.CardView.Filled"
             android:layout_width="wrap_content"
             android:layout_height="36dp"
             android:layout_marginEnd="8dp"
-            android:background="@drawable/pro_badge_background"
-            android:gravity="center"
-            android:paddingHorizontal="16dp"
-            android:orientation="horizontal"
+            app:cardBackgroundColor="?attr/colorPrimaryContainer"
+            app:cardCornerRadius="18dp"
+            app:cardElevation="0dp"
             android:clickable="true"
             android:focusable="true"
+            app:rippleColor="?attr/colorPrimary"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toStartOf="@id/btnNewConversation"
             app:layout_constraintTop_toTopOf="parent">
-
-            <ImageView
-                android:layout_width="16dp"
-                android:layout_height="16dp"
-                android:layout_marginEnd="4dp"
-                android:src="@drawable/ic_star"
-                app:tint="@color/white" />
-
-            <TextView
-                android:id="@+id/tvCreditsCount"
+            
+            <LinearLayout
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="20"
-                android:textColor="@color/white"
-                android:textSize="14sp"
-                android:textStyle="bold" />
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:paddingHorizontal="16dp"
+                android:orientation="horizontal">
 
-        </LinearLayout>
+                <ImageView
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
+                    android:layout_marginEnd="6dp"
+                    android:src="@drawable/ic_star"
+                    app:tint="?attr/colorOnPrimaryContainer" />
 
-        <ImageButton
+                <TextView
+                    android:id="@+id/tvCreditsCount"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="20"
+                    android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+                    android:textColor="?attr/colorOnPrimaryContainer"
+                    android:textStyle="bold" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnNewConversation"
-            style="@style/Widget.MaterialComponents.Button.Icon"
+            style="@style/Widget.Material3.Button.IconButton"
             android:layout_width="48dp"
             android:layout_height="48dp"
-            android:layout_marginEnd="8dp"
             android:contentDescription="New conversation"
-            app:iconTint="?attr/colorOnSurface"
+            app:icon="@drawable/new_chat_icon"
+            app:iconTint="?attr/colorOnSurfaceVariant"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toTopOf="parent"
-            app:srcCompat="@drawable/new_chat_icon" />
+            app:layout_constraintTop_toTopOf="parent" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 
-    <!-- Header line -->
+    <!-- Material Design 3 Divider -->
     <View
         android:id="@+id/mainHeaderLine"
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:background="@color/divider"
-        android:alpha="0.3"
+        android:background="?attr/colorOutlineVariant"
         app:layout_constraintTop_toBottomOf="@id/topBarLayout"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
-    <!-- Model Selector Spinner -->
+    <!-- Model Selector Spinner (Transparent style) -->
     <Spinner
         android:id="@+id/spinnerModels"
-        android:layout_width="200dp"
-        android:layout_height="47dp"
-        android:minHeight="32dp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minHeight="36dp"
         android:spinnerMode="dropdown"
         android:overlapAnchor="false"
-        android:background="@drawable/spinner_selected_background"
-        android:layout_marginTop="6dp"
-        android:layout_marginBottom="6dp"
+        android:background="@android:color/transparent"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="8dp"
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="6dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/mainHeaderLine" />
 
-    <!-- Private Chat Ghost Icon -->
-    <ImageButton
+    <!-- Private Chat Toggle Button -->
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/btnPrivateChat"
-        android:layout_width="42dp"
-        android:layout_height="42dp"
-        android:layout_marginStart="12dp"
-        android:background="?attr/selectableItemBackgroundBorderless"
-        app:srcCompat="@drawable/ic_ghost"
-        app:tint="@color/colorPrimary"
+        style="@style/Widget.Material3.Button.IconButton"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginStart="8dp"
+        app:icon="@drawable/ic_ghost"
+        app:iconTint="?attr/colorPrimary"
         app:layout_constraintStart_toEndOf="@id/spinnerModels"
         app:layout_constraintTop_toTopOf="@id/spinnerModels"
         app:layout_constraintBottom_toBottomOf="@id/spinnerModels"
         android:contentDescription="Private Chat Mode"/>
 
     <!-- Private Mode Indicator Banner -->
-    <androidx.cardview.widget.CardView
+    <com.google.android.material.card.MaterialCardView
         android:id="@+id/privateModeIndicator"
+        style="@style/Widget.Material3.CardView.Filled"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:layout_marginHorizontal="20dp"
-        app:cardCornerRadius="12dp"
-        app:cardBackgroundColor="@color/private_mode_background"
-        app:cardElevation="2dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginHorizontal="16dp"
+        app:cardCornerRadius="16dp"
+        app:cardBackgroundColor="?attr/colorTertiaryContainer"
+        app:cardElevation="1dp"
         android:visibility="gone"
         app:layout_constraintTop_toBottomOf="@id/spinnerModels"
         app:layout_constraintStart_toStartOf="parent"
@@ -168,20 +178,20 @@
                 android:layout_height="24dp"
                 android:layout_marginEnd="8dp"
                 app:srcCompat="@drawable/ic_ghost"
-                app:tint="@color/colorPrimary"/>
+                app:tint="?attr/colorPrimary"/>
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Private Mode: Conversations won't be saved"
-                android:textColor="@color/colorPrimary"
-                android:textSize="14sp"/>
+                android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                android:textColor="?attr/colorOnTertiaryContainer"/>
         </LinearLayout>
-    </androidx.cardview.widget.CardView>
+    </com.google.android.material.card.MaterialCardView>
 
-    <!-- Chat Messages RecyclerView -->
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/chatRecyclerView"
+    <!-- Chat Messages RecyclerView Container with Fade -->
+    <FrameLayout
+        android:id="@+id/chatRecyclerViewContainer"
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:layout_marginTop="8dp"
@@ -189,7 +199,37 @@
         app:layout_constraintBottom_toTopOf="@id/selectedFilesScrollView"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/privateModeIndicator" />
+        app:layout_constraintTop_toBottomOf="@id/privateModeIndicator">
+        
+        <!-- Chat Messages RecyclerView -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/chatRecyclerView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+            
+        <!-- Top fade gradient overlay -->
+        <View
+            android:id="@+id/chatTopFadeOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_gravity="top"
+            android:background="@drawable/chat_top_fade_gradient"
+            android:clickable="false"
+            android:focusable="false" />
+
+        <TextView
+            android:id="@+id/tvTokenCount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/token_counter_background"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="4dp"
+            android:text="0/4000"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:textSize="12sp"
+            android:visibility="visible" />
+
+    </FrameLayout>
 
     <!-- Scroll to Top Button (TOP of chat area) -->
     <com.google.android.material.floatingactionbutton.FloatingActionButton
@@ -200,13 +240,12 @@
         android:layout_marginEnd="16dp"
         android:contentDescription="Scroll to top"
         android:visibility="gone"
-        app:backgroundTint="@color/accent_blue"
+        app:backgroundTint="?attr/colorPrimary"
         app:fabSize="mini"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="@id/chatRecyclerView"
+        app:layout_constraintTop_toTopOf="@id/chatRecyclerViewContainer"
         app:srcCompat="@drawable/ic_arrow_upward"
-        app:tint="@color/white"
-        android:alpha="0.9" />
+        app:tint="?attr/colorOnPrimary" />
 
     <!-- Scroll to Bottom Button (BOTTOM of chat area) -->
     <com.google.android.material.floatingactionbutton.FloatingActionButton
@@ -217,30 +256,14 @@
         android:layout_marginBottom="20dp"
         android:contentDescription="Scroll to bottom"
         android:visibility="gone"
-        app:backgroundTint="@color/button_danger_background"
+        app:backgroundTint="?attr/colorSecondary"
         app:fabSize="mini"
-        app:layout_constraintBottom_toBottomOf="@id/chatRecyclerView"
+        app:layout_constraintBottom_toBottomOf="@id/chatRecyclerViewContainer"
         app:layout_constraintEnd_toEndOf="parent"
         app:srcCompat="@drawable/ic_arrow_downward"
-        app:tint="@color/white"
-        android:alpha="0.9" />
+        app:tint="?attr/colorOnSecondary" />
 
     <!-- Token Counter -->
-    <TextView
-        android:id="@+id/tvTokenCount"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="16dp"
-        android:layout_marginTop="16dp"
-        android:background="@drawable/token_counter_background"
-        android:paddingHorizontal="8dp"
-        android:paddingVertical="4dp"
-        android:text="0/4000"
-        android:textColor="@color/text_secondary"
-        android:textSize="12sp"
-        android:visibility="visible"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="@id/chatRecyclerView" />
 
     <!-- Typing Indicator -->
     <TextView
@@ -306,7 +329,7 @@
             android:paddingHorizontal="12dp"
             android:paddingVertical="8dp"
             android:textSize="16sp"
-            android:textColorHint="@color/hint_color"/>
+            android:textColorHint="?attr/colorOnSurfaceVariant"/>
 
         <!-- OCR Options Panel -->
         <LinearLayout
@@ -314,7 +337,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:background="@drawable/card_gradient_background"
+            android:background="?attr/colorSurfaceVariant"
             android:padding="12dp"
             android:layout_marginTop="8dp"
             android:visibility="gone">
@@ -417,7 +440,7 @@
             <View
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
-                android:background="@color/divider_color"
+                android:background="?attr/colorOutlineVariant"
                 android:layout_marginVertical="8dp" />
 
             <!-- Buttons Row -->
@@ -440,7 +463,7 @@
                     android:contentDescription="Attach files"
                     android:padding="8dp"
                     app:srcCompat="@drawable/ic_attach"
-                    app:tint="@color/colorPrimary"/>
+                    app:tint="?attr/colorPrimary"/>
 
                 <!-- Reasoning Button -->
                 <ImageButton
@@ -453,7 +476,7 @@
                     android:contentDescription="Enable thinking"
                     android:padding="8dp"
                     app:srcCompat="@drawable/ic_thinking"
-                    app:tint="@color/text_secondary"/>
+                    app:tint="?attr/colorOnSurfaceVariant"/>
 
                 <!-- Web Search Button -->
                 <ImageButton
@@ -466,7 +489,48 @@
                     android:contentDescription="Enable web search"
                     android:padding="8dp"
                     app:srcCompat="@drawable/ic_search"
-                    app:tint="@color/text_secondary"/>
+                    app:tint="?attr/colorOnSurfaceVariant"/>
+
+                <!-- Perplexity Search Mode Toggle Button (Academic/Web) -->
+                <ImageButton
+                    android:id="@+id/btnPerplexitySearchMode"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:layout_gravity="center_vertical"
+                    android:layout_marginHorizontal="4dp"
+                    android:background="@drawable/circle_button_inactive"
+                    android:contentDescription="Search Mode: Web"
+                    android:padding="8dp"
+                    android:visibility="gone"
+                    app:srcCompat="@drawable/ic_search_globe"
+                    app:tint="?attr/colorOnSurfaceVariant"/>
+
+                <!-- Perplexity Context Size Button -->
+                <ImageButton
+                    android:id="@+id/btnPerplexityContextSize"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:layout_gravity="center_vertical"
+                    android:layout_marginHorizontal="4dp"
+                    android:background="@drawable/circle_button_inactive"
+                    android:contentDescription="Search Context: Advanced"
+                    android:padding="8dp"
+                    android:visibility="gone"
+                    app:srcCompat="@drawable/ic_settings"
+                    app:tint="?attr/colorOnSurfaceVariant"/>
+
+                <!-- AI Parameters Button -->
+                <ImageButton
+                    android:id="@+id/btnAiParameters"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:layout_gravity="center_vertical"
+                    android:layout_marginHorizontal="4dp"
+                    android:background="@drawable/circle_button_inactive"
+                    android:contentDescription="AI Parameters"
+                    android:padding="8dp"
+                    app:srcCompat="@drawable/ic_tune"
+                    app:tint="?attr/colorOnSurfaceVariant"/>
 
                 <!-- Expand Text Button (NEW) -->
                 <ImageButton
@@ -477,10 +541,10 @@
                     android:layout_marginHorizontal="4dp"
                     android:background="@drawable/circle_button_inactive"
                     android:contentDescription="Expand text editor"
-                    android:padding="8dp"
+                    android:padding="6dp"
                     android:visibility="gone"
-                    app:srcCompat="@drawable/ic_fullscreen"
-                    app:tint="@color/colorPrimary"/>
+                    app:srcCompat="@drawable/ic_expand_corner"
+                    app:tint="?attr/colorPrimary"/>
                 <ImageButton
                     android:id="@+id/btnAudioConversation"
                     android:layout_width="36dp"
@@ -547,7 +611,7 @@
         android:layout_marginBottom="12dp"
         app:cardCornerRadius="24dp"
         app:cardElevation="8dp"
-        app:cardBackgroundColor="@color/colorPrimary"
+        app:cardBackgroundColor="?attr/colorPrimary"
         android:visibility="gone"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -608,7 +672,7 @@
                     android:contentDescription="Send recording"
                     android:padding="8dp"
                     app:srcCompat="@drawable/send_icon"
-                    app:tint="@color/colorPrimary"/>
+                    app:tint="?attr/colorPrimary"/>
 
                 <ProgressBar
                     android:id="@+id/sendLoadingIndicator"

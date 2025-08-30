@@ -6,467 +6,482 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:clipToPadding="false"
-    android:background="@color/background"
-    android:paddingStart="8dp"
-    android:paddingEnd="8dp"
-    android:paddingTop="20dp"
-    android:paddingBottom="100dp">
+    android:background="@android:color/transparent"
+    android:paddingTop="16dp"
+    android:paddingBottom="100dp"
+    android:fillViewport="true">
 
     <androidx.constraintlayout.widget.ConstraintLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="16dp">
 
-        <!-- Greeting Text -->
+        <!-- Greeting Text with improved typography -->
         <TextView
             android:id="@+id/greetingTextView"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:fontFamily="@font/rubik_medium"
             android:text="Good afternoon, friend!"
-            android:textColor="@color/text_primary"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="24sp"
             android:textStyle="bold"
+            android:letterSpacing="-0.01"
+            app:fontFamily="sans-serif-medium"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
+            app:layout_constraintTop_toTopOf="parent"
+            android:layout_marginTop="8dp" />
 
-        <!-- Row 1: Enhanced AI Tip of the Day Card -->
-        <com.google.android.material.card.MaterialCardView
-            xmlns:android="http://schemas.android.com/apk/res/android"
-            xmlns:app="http://schemas.android.com/apk/res-auto"
-            android:id="@+id/tipCardView"
-            android:layout_width="0dp"
+        <!-- Top Cards Row -->
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:id="@+id/topCardsRow"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:layout_marginEnd="12dp"
-            android:foreground="?attr/selectableItemBackground"
-            app:cardBackgroundColor="@color/purple_hint_card_bg"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="0dp"
-            app:strokeColor="@color/purple_hint_stroke"
-            app:strokeWidth="1dp"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toStartOf="@id/weatherCardView"
             app:layout_constraintTop_toBottomOf="@id/greetingTextView"
-            app:layout_constraintWidth_percent="0.6"
-            app:cardPreventCornerOverlap="true"
-            app:cardUseCompatPadding="false">
+            app:layout_constraintStart_toStartOf="parent"
+            android:layout_marginTop="24dp">
 
-            <LinearLayout
-                android:layout_width="match_parent"
+            <!-- AI Tip of the Day Card -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/tipCardView"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
+                app:cardCornerRadius="16dp"
+                app:cardElevation="2dp"
+                app:strokeColor="?attr/colorOutline"
+                app:strokeWidth="0.5dp"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toStartOf="@+id/guidelineVertical"
+                app:layout_constraintTop_toTopOf="parent"
+                app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
+                android:layout_marginEnd="8dp"
+                android:foreground="?attr/selectableItemBackground">
 
-                <!-- Row with icon and title -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
+                    android:orientation="vertical"
+                    android:padding="20dp">
 
-                    <ImageView
-                        android:layout_width="24dp"
-                        android:layout_height="24dp"
-                        android:src="@drawable/ic_tips"
-                        android:contentDescription="Tip icon"
-                        app:tint="@color/colorPrimary" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:src="@drawable/ic_tips"
+                            android:contentDescription="Tip icon"
+                            app:tint="?attr/colorPrimary" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:text="AI TIP"
+                            android:textSize="12sp"
+                            android:textColor="?attr/colorPrimary"
+                            android:textAllCaps="true"
+                            android:letterSpacing="0.05"
+                            app:fontFamily="sans-serif-medium" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tipOfDayText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="Try being specific with your prompts for better results"
+                        android:textSize="14sp"
+                        android:textColor="?attr/colorOnSurface"
+                        app:fontFamily="sans-serif"
+                        android:lineSpacingExtra="2dp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Image Generation Card -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/imageGenerationCardView"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="2dp"
+                app:strokeColor="?attr/colorOutline"
+                app:strokeWidth="0.5dp"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintStart_toStartOf="@+id/guidelineVertical"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
+                android:layout_marginStart="8dp"
+                android:foreground="?attr/selectableItemBackground">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:padding="16dp">
+
+                    <com.google.android.material.imageview.ShapeableImageView
+                        android:id="@+id/imageGenIcon"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:src="@drawable/ic_image_generation"
+                        android:contentDescription="Image generation icon"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearanceOverlay.Corner50"
+                        app:strokeColor="?attr/colorPrimary"
+                        app:strokeWidth="2dp"
+                        android:padding="10dp"
+                        app:tint="?attr/colorPrimary"
+                        android:background="?attr/colorPrimaryContainer" />
+
+                    <TextView
+                        android:id="@+id/imageGenTextView"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="Create Images"
+                        android:textSize="14sp"
+                        android:textColor="?attr/colorOnSurface"
+                        app:fontFamily="sans-serif-medium"
+                        android:textStyle="bold"
+                        android:gravity="center" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
-                        android:text="AI Tip of the Day"
-                        android:textSize="14sp"
-                        android:textColor="@color/text_primary"
-                        android:fontFamily="sans-serif-medium" />
+                        android:layout_marginTop="2dp"
+                        android:text="AI Art"
+                        android:textSize="12sp"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        app:fontFamily="sans-serif"
+                        android:gravity="center" />
                 </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
-                <!-- Tip content -->
-                <TextView
-                    android:id="@+id/tipOfDayText"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="Try being specific with your prompts for better results"
-                    android:textSize="14sp"
-                    android:textColor="@color/text_secondary"
-                    android:fontFamily="sans-serif" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-        <!-- Enhanced Weather Card -->
-        <com.google.android.material.card.MaterialCardView
-            xmlns:android="http://schemas.android.com/apk/res/android"
-            xmlns:app="http://schemas.android.com/apk/res-auto"
-            android:id="@+id/weatherCardView"
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:layout_marginStart="12dp"
-            android:foreground="?attr/selectableItemBackground"
-            app:cardBackgroundColor="@color/purple_hint_card_bg"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="0dp"
-            app:strokeColor="@color/purple_hint_stroke"
-            app:strokeWidth="1dp"
-            app:layout_constraintTop_toTopOf="@id/tipCardView"
-            app:layout_constraintBottom_toBottomOf="@id/tipCardView"
-            app:layout_constraintStart_toEndOf="@id/tipCardView"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:cardPreventCornerOverlap="true"
-            app:cardUseCompatPadding="false">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
+            <!-- Vertical guideline to split the two cards -->
+            <androidx.constraintlayout.widget.Guideline
+                android:id="@+id/guidelineVertical"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:gravity="center"
-                android:padding="16dp">
+                app:layout_constraintGuide_percent="0.6" />
 
-                <ImageView
-                    android:id="@+id/weatherIcon"
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:src="@drawable/ic_weather_sunny"
-                    android:contentDescription="Weather icon"
-                    app:tint="@color/colorAccent" />
-
-                <TextView
-                    android:id="@+id/weatherTextView"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="25°C, sunny"
-                    android:textSize="14sp"
-                    android:textColor="@color/text_secondary"
-                    android:fontFamily="sans-serif" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+        </androidx.constraintlayout.widget.ConstraintLayout>
 
         <!-- Recent Models Section -->
         <TextView
             android:id="@+id/recentModelsLabel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:layout_marginStart="0dp"
-            android:fontFamily="@font/rubik_medium"
+            android:layout_marginTop="32dp"
             android:text="Recent Models"
-            android:textColor="@color/text_primary"
-            android:textSize="16sp"
+            android:textColor="?attr/colorOnSurface"
+            android:textSize="18sp"
             android:textStyle="bold"
+            android:letterSpacing="-0.01"
+            app:fontFamily="sans-serif-medium"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/tipCardView" />
+            app:layout_constraintTop_toBottomOf="@id/topCardsRow" />
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/recentModelsRecyclerView"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="12dp"
             android:clipToPadding="false"
             android:orientation="horizontal"
-            android:paddingStart="0dp"
             android:paddingEnd="16dp"
             app:layout_constraintTop_toBottomOf="@id/recentModelsLabel" />
 
-        <!-- Enhanced What's New Card (initially hidden, shows for new features) -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/whatsNewCard"
+        <!-- Dynamic Cards Section (What's New & Upgrade) -->
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:id="@+id/dynamicCardsContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp"
-            android:visibility="gone"
-            app:cardBackgroundColor="@color/purple_hint_card_bg"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="0dp"
             app:layout_constraintTop_toBottomOf="@id/recentModelsRecyclerView"
-            app:strokeColor="@color/purple_hint_stroke"
-            app:strokeWidth="1dp"
-            android:foreground="?attr/selectableItemBackground"
-            app:cardPreventCornerOverlap="true">
+            app:layout_constraintStart_toStartOf="parent"
+            android:layout_marginTop="16dp">
 
-
-            <LinearLayout
+            <!-- What's New Card -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/whatsNewCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:padding="16dp">
-
-                <ImageView
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:layout_gravity="center_vertical"
-                    android:src="@drawable/ic_new_feature"
-                    app:tint="@color/colorPrimary" />
+                android:visibility="gone"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="2dp"
+                app:strokeColor="?attr/colorOutline"
+                app:strokeWidth="0.5dp"
+                app:layout_constraintTop_toTopOf="parent"
+                app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
+                android:foreground="?attr/selectableItemBackground">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
-                    android:orientation="vertical">
+                    android:orientation="horizontal"
+                    android:padding="20dp">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:layout_gravity="center_vertical"
+                        android:src="@drawable/ic_new_feature"
+                        app:tint="?attr/colorPrimary" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="16dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="What's New"
+                            android:textColor="?attr/colorOnSurface"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            app:fontFamily="sans-serif-medium" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="Check out the latest features and improvements"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textSize="14sp"
+                            app:fontFamily="sans-serif"
+                            android:lineSpacingExtra="2dp" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Upgrade Card -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/upgradeCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:visibility="gone"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="2dp"
+                app:strokeColor="?attr/colorOutline"
+                app:strokeWidth="0.5dp"
+                app:layout_constraintTop_toBottomOf="@id/whatsNewCard"
+                app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
+                android:layout_marginTop="12dp"
+                android:foreground="?attr/selectableItemBackground">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="20dp">
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:fontFamily="@font/rubik_medium"
-                        android:text="What's New"
-                        android:textColor="@color/text_primary"
+                        android:text="Upgrade to PRO"
+                        android:textColor="?attr/colorOnSurface"
                         android:textSize="16sp"
-                        android:textStyle="bold" />
+                        android:textStyle="bold"
+                        app:fontFamily="sans-serif-medium" />
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:fontFamily="@font/rubik"
-                        android:text="Check out the latest features and improvements"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="14sp" />
+                        android:text="Unlock premium features like image generation, advanced models, and more"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:textSize="14sp"
+                        app:fontFamily="sans-serif"
+                        android:lineSpacingExtra="2dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnUpgrade"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="end"
+                        android:layout_marginTop="16dp"
+                        android:text="Upgrade Now"
+                        android:textAllCaps="false"
+                        app:backgroundTint="?attr/colorPrimary"
+                        android:textColor="?attr/colorOnPrimary" />
                 </LinearLayout>
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+            </com.google.android.material.card.MaterialCardView>
 
-        <!-- Enhanced Upgrade Card (shown when needed) -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/upgradeCard"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp"
-            android:visibility="gone"
-            app:cardBackgroundColor="@color/purple_hint_card_bg"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="0dp"
-            app:layout_constraintTop_toBottomOf="@id/whatsNewCard"
-            app:strokeColor="@color/purple_hint_stroke"
-            app:strokeWidth="1dp"
-            android:foreground="?attr/selectableItemBackground"
-            app:cardPreventCornerOverlap="true">
+        </androidx.constraintlayout.widget.ConstraintLayout>
 
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:fontFamily="@font/rubik_medium"
-                    android:text="Upgrade to PRO"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:fontFamily="@font/rubik"
-                    android:text="Unlock premium features like image generation, advanced models, and more"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="14sp" />
-
-                <Button
-                    android:id="@+id/btnUpgrade"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="end"
-                    android:layout_marginTop="12dp"
-                    android:background="@drawable/modern_button_background"
-                    android:fontFamily="@font/rubik_medium"
-                    android:text="Upgrade Now"
-                    android:textAllCaps="false"
-                    android:textColor="@color/white"
-                    android:paddingHorizontal="20dp"
-                    android:paddingVertical="10dp" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- Invisible Barrier for Dynamic Positioning -->
-        <androidx.constraintlayout.widget.Barrier
-            android:id="@+id/cardsBarrier"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            app:barrierDirection="bottom"
-            app:constraint_referenced_ids="recentModelsRecyclerView,whatsNewCard,upgradeCard" />
-
-        <!-- AI Feature Cards -->
+        <!-- AI Features Section -->
         <TextView
             android:id="@+id/featuresTitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:layout_marginStart="0dp"
-            android:layout_marginEnd="8dp"
+            android:layout_marginTop="32dp"
             android:text="AI Features"
-            android:textColor="@color/text_primary"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="18sp"
             android:textStyle="bold"
+            android:letterSpacing="-0.01"
+            app:fontFamily="sans-serif-medium"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/cardsBarrier" />
+            app:layout_constraintTop_toBottomOf="@id/dynamicCardsContainer" />
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/featuresRecyclerView"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="12dp"
             android:clipToPadding="false"
             android:nestedScrollingEnabled="false"
             app:layout_constraintTop_toBottomOf="@id/featuresTitle" />
 
-        <!-- CATEGORY 1: Quick Prompt Chips -->
-        <TextView
-            android:id="@+id/promptsTitle"
+        <!-- Prompt Categories Section -->
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:id="@+id/promptCategoriesContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:layout_marginStart="0dp"
-            android:layout_marginEnd="8dp"
-            android:text="Quick Prompts"
-            android:textColor="@color/text_primary"
-            android:textSize="16sp"
-            android:textStyle="bold"
+            app:layout_constraintTop_toBottomOf="@id/featuresRecyclerView"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/featuresRecyclerView" />
+            android:layout_marginTop="24dp">
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/promptChipsRecyclerView"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp"
-            android:clipToPadding="false"
-            app:layout_constraintTop_toBottomOf="@id/promptsTitle" />
+            <!-- Quick Prompts -->
+            <TextView
+                android:id="@+id/promptsTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Quick Prompts"
+                android:textColor="?attr/colorOnSurface"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                app:fontFamily="sans-serif-medium"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent" />
 
-        <!-- CATEGORY 2: Creative Prompts -->
-        <TextView
-            android:id="@+id/creativePromptsTitle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:layout_marginStart="0dp"
-            android:layout_marginEnd="8dp"
-            android:text="Creative Writing"
-            android:textColor="@color/text_primary"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/promptChipsRecyclerView" />
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/promptChipsRecyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:clipToPadding="false"
+                app:layout_constraintTop_toBottomOf="@id/promptsTitle" />
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/creativePromptsRecyclerView"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp"
-            android:clipToPadding="false"
-            app:layout_constraintTop_toBottomOf="@id/creativePromptsTitle" />
+            <!-- Creative Writing -->
+            <TextView
+                android:id="@+id/creativePromptsTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="Creative Writing"
+                android:textColor="?attr/colorOnSurface"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                app:fontFamily="sans-serif-medium"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/promptChipsRecyclerView" />
 
-        <!-- CATEGORY 3: Productivity Prompts -->
-        <TextView
-            android:id="@+id/productivityPromptsTitle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:layout_marginStart="0dp"
-            android:layout_marginEnd="8dp"
-            android:text="Productivity Assistant"
-            android:textColor="@color/text_primary"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/creativePromptsRecyclerView" />
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/creativePromptsRecyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:clipToPadding="false"
+                app:layout_constraintTop_toBottomOf="@id/creativePromptsTitle" />
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/productivityPromptsRecyclerView"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp"
-            android:clipToPadding="false"
-            app:layout_constraintTop_toBottomOf="@id/productivityPromptsTitle" />
+            <!-- Productivity Assistant -->
+            <TextView
+                android:id="@+id/productivityPromptsTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="Productivity Assistant"
+                android:textColor="?attr/colorOnSurface"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                app:fontFamily="sans-serif-medium"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/creativePromptsRecyclerView" />
 
-        <!-- CATEGORY 4: Education Prompts -->
-        <TextView
-            android:id="@+id/educationPromptsTitle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:layout_marginStart="0dp"
-            android:layout_marginEnd="8dp"
-            android:text="Learning &amp; Education"
-            android:textColor="@color/text_primary"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/productivityPromptsRecyclerView" />
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/productivityPromptsRecyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:clipToPadding="false"
+                app:layout_constraintTop_toBottomOf="@id/productivityPromptsTitle" />
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/educationPromptsRecyclerView"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp"
-            android:clipToPadding="false"
-            app:layout_constraintTop_toBottomOf="@id/educationPromptsTitle" />
+            <!-- Learning & Education -->
+            <TextView
+                android:id="@+id/educationPromptsTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="Learning &amp; Education"
+                android:textColor="?attr/colorOnSurface"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                app:fontFamily="sans-serif-medium"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/productivityPromptsRecyclerView" />
 
-        <!-- CATEGORY 5: Tech Prompts -->
-        <TextView
-            android:id="@+id/techPromptsTitle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:layout_marginStart="0dp"
-            android:layout_marginEnd="8dp"
-            android:text="Tech &amp; Coding Help"
-            android:textColor="@color/text_primary"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/educationPromptsRecyclerView" />
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/educationPromptsRecyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:clipToPadding="false"
+                app:layout_constraintTop_toBottomOf="@id/educationPromptsTitle" />
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/techPromptsRecyclerView"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp"
-            android:clipToPadding="false"
-            app:layout_constraintTop_toBottomOf="@id/techPromptsTitle" />
+            <!-- Tech & Coding Help -->
+            <TextView
+                android:id="@+id/techPromptsTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="Tech &amp; Coding Help"
+                android:textColor="?attr/colorOnSurface"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                app:fontFamily="sans-serif-medium"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/educationPromptsRecyclerView" />
 
-        <!-- CATEGORY 6: Everyday Prompts -->
-        <TextView
-            android:id="@+id/everydayPromptsTitle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:layout_marginStart="0dp"
-            android:layout_marginEnd="8dp"
-            android:text="Everyday Assistance"
-            android:textColor="@color/text_primary"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/techPromptsRecyclerView" />
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/techPromptsRecyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:clipToPadding="false"
+                app:layout_constraintTop_toBottomOf="@id/techPromptsTitle" />
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/everydayPromptsRecyclerView"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp"
-            android:clipToPadding="false"
-            android:paddingBottom="32dp"
-            app:layout_constraintTop_toBottomOf="@id/everydayPromptsTitle" />
+            <!-- Everyday Assistance -->
+            <TextView
+                android:id="@+id/everydayPromptsTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="Everyday Assistance"
+                android:textColor="?attr/colorOnSurface"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                app:fontFamily="sans-serif-medium"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/techPromptsRecyclerView" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/everydayPromptsRecyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:clipToPadding="false"
+                android:paddingBottom="32dp"
+                app:layout_constraintTop_toBottomOf="@id/everydayPromptsTitle" />
+
+        </androidx.constraintlayout.widget.ConstraintLayout>
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 </androidx.core.widget.NestedScrollView>

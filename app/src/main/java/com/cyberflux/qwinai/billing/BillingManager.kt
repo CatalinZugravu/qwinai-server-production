@@ -6,14 +6,16 @@ import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MediatorLiveData
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import com.cyberflux.qwinai.MyApp
 import com.cyberflux.qwinai.utils.PrefsManager
 import timber.log.Timber
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import com.cyberflux.qwinai.BuildConfig
 
 /**
  * BillingManager - Detects platform and delegates to appropriate billing provider
@@ -42,6 +44,7 @@ class BillingManager private constructor(private val context: Context) {
     // Billing providers
     private var googleProvider: GooglePlayBillingProvider? = null
     private var huaweiProvider: HuaweiIapProvider? = null
+    private var mockProvider: MockBillingProvider? = null
 
     // Active provider based on device
     var activeProvider: BillingProvider? = null
@@ -51,20 +54,19 @@ class BillingManager private constructor(private val context: Context) {
     private var isConnected = false
     private var isInitialized = false
 
-    // LiveData
-    private val _productDetails = MediatorLiveData<List<ProductInfo>>()
-    val productDetails: LiveData<List<ProductInfo>> = _productDetails
+    // StateFlow
+    private val _productDetails = MutableStateFlow<List<ProductInfo>>(emptyList())
+    val productDetails: StateFlow<List<ProductInfo>> = _productDetails.asStateFlow()
 
-    private val _subscriptionStatus = MediatorLiveData<Boolean>()
+    private val _subscriptionStatus = MutableStateFlow(false)
+    val subscriptionStatus: StateFlow<Boolean> = _subscriptionStatus.asStateFlow()
 
-    private val _errorMessage = MediatorLiveData<String>()
-    val errorMessage: LiveData<String> = _errorMessage
+    private val _errorMessage = MutableStateFlow("")
+    val errorMessage: StateFlow<String> = _errorMessage.asStateFlow()
 
     init {
-        // Only start immediate initialization if MyApp device detection is already complete
-        if (MyApp.isHuaweiDeviceCache != null) {
-            initializeBillingProviders()
-        }
+        // Initialize billing providers 
+        initializeBillingProviders()
     }
 
     /**
@@ -81,7 +83,7 @@ class BillingManager private constructor(private val context: Context) {
                 Timber.d("Pre-initializing billing providers")
 
                 // First, determine if we're on a Huawei device - use non-blocking method
-                val isHuaweiDevice = MyApp.isHuaweiDeviceCache ?: MyApp.isHuaweiDeviceNonBlocking()
+                val isHuaweiDevice = MyApp.isHuaweiDeviceNonBlocking()
 
                 Timber.d("Pre-init detected device as ${if (isHuaweiDevice) "Huawei" else "Google"}")
 
@@ -135,8 +137,8 @@ class BillingManager private constructor(private val context: Context) {
         // First validate the current status
         validateSubscriptionStatus()
 
-        // Then update the LiveData
-        _subscriptionStatus.postValue(PrefsManager.isSubscribed(context))
+        // Then update the StateFlow
+        _subscriptionStatus.value = PrefsManager.isSubscribed(context)
 
         Timber.d("Subscription status refreshed: ${PrefsManager.isSubscribed(context)}")
     }
@@ -151,19 +153,23 @@ class BillingManager private constructor(private val context: Context) {
         }
 
         try {
+            // In debug builds, use mock billing provider for testing
+            if (BuildConfig.DEBUG) {
+                Timber.d("🧪 Debug build detected - initializing MockBillingProvider")
+                mockProvider = MockBillingProvider(context)
+                activeProvider = mockProvider
+                setupMockLiveData()
+                isInitialized = true
+                return
+            }
+
             // Use cached device detection result if available for fastest path
             val isHuaweiDevice: Boolean
             val hmsAvailable: Boolean
 
-            // Use the cached value if available (should be set by MyApp initialization)
-            if (MyApp.isHuaweiDeviceCache != null) {
-                isHuaweiDevice = MyApp.isHuaweiDeviceCache!!
-                Timber.d("Using cached device detection: isHuaweiDevice=$isHuaweiDevice")
-            } else {
-                // Fallback to direct check if cache not available
-                isHuaweiDevice = MyApp.isHuaweiDevice()
-                Timber.d("Using direct device detection: isHuaweiDevice=$isHuaweiDevice")
-            }
+            // Use device detection
+            isHuaweiDevice = MyApp.isHuaweiDeviceNonBlocking()
+            Timber.d("Device detection: isHuaweiDevice=$isHuaweiDevice")
 
             // For Huawei devices, verify HMS Core availability separately
             if (isHuaweiDevice) {
@@ -236,7 +242,7 @@ class BillingManager private constructor(private val context: Context) {
             Class.forName("com.huawei.hms.api.HuaweiApiAvailability")
             
             // Check if HMS Core service is available
-            val intent = android.content.Intent("com.huawei.hms.core.aidlservice")
+            val intent = Intent("com.huawei.hms.core.aidlservice")
             intent.setPackage("com.huawei.hwid")
             val resolveInfo = context.packageManager.resolveService(intent, 0)
             
@@ -250,45 +256,85 @@ class BillingManager private constructor(private val context: Context) {
     }
 
     /**
-     * Set up LiveData observers for Huawei provider
+     * Set up StateFlow observers for Huawei provider
      */
     private fun setupHuaweiLiveData() {
         huaweiProvider?.let { provider ->
-            _productDetails.addSource(provider.productDetails) { products ->
-                _productDetails.value = products
-                Timber.d("Updated product details from Huawei: ${products.size} products")
+            CoroutineScope(Dispatchers.Main).launch {
+                provider.productDetails.collect { products ->
+                    _productDetails.value = products
+                    Timber.d("Updated product details from Huawei: ${products.size} products")
+                }
             }
 
-            _subscriptionStatus.addSource(provider.subscriptionStatus) { status ->
-                _subscriptionStatus.value = status
-                Timber.d("Updated subscription status from Huawei: $status")
+            CoroutineScope(Dispatchers.Main).launch {
+                provider.subscriptionStatus.collect { status ->
+                    _subscriptionStatus.value = status
+                    Timber.d("Updated subscription status from Huawei: $status")
+                }
             }
 
-            _errorMessage.addSource(provider.errorMessage) { message ->
-                _errorMessage.value = message
-                Timber.d("Received error message from Huawei: $message")
+            CoroutineScope(Dispatchers.Main).launch {
+                provider.errorMessage.collect { message ->
+                    _errorMessage.value = message
+                    Timber.d("Received error message from Huawei: $message")
+                }
             }
         }
     }
 
     /**
-     * Set up LiveData observers for Google provider
+     * Set up StateFlow observers for Google provider
      */
     private fun setupGoogleLiveData() {
         googleProvider?.let { provider ->
-            _productDetails.addSource(provider.productDetails) { products ->
-                _productDetails.value = products
-                Timber.d("Updated product details from Google: ${products.size} products")
+            CoroutineScope(Dispatchers.Main).launch {
+                provider.productDetails.collect { products ->
+                    _productDetails.value = products
+                    Timber.d("Updated product details from Google: ${products.size} products")
+                }
             }
 
-            _subscriptionStatus.addSource(provider.subscriptionStatus) { status ->
-                _subscriptionStatus.value = status
-                Timber.d("Updated subscription status from Google: $status")
+            CoroutineScope(Dispatchers.Main).launch {
+                provider.subscriptionStatus.collect { status ->
+                    _subscriptionStatus.value = status
+                    Timber.d("Updated subscription status from Google: $status")
+                }
             }
 
-            _errorMessage.addSource(provider.errorMessage) { message ->
-                _errorMessage.value = message
-                Timber.d("Received error message from Google: $message")
+            CoroutineScope(Dispatchers.Main).launch {
+                provider.errorMessage.collect { message ->
+                    _errorMessage.value = message
+                    Timber.d("Received error message from Google: $message")
+                }
+            }
+        }
+    }
+
+    /**
+     * Set up StateFlow observers for Mock provider
+     */
+    private fun setupMockLiveData() {
+        mockProvider?.let { provider ->
+            CoroutineScope(Dispatchers.Main).launch {
+                provider.productDetails.collect { products ->
+                    _productDetails.value = products
+                    Timber.d("🧪 Updated product details from Mock: ${products.size} products")
+                }
+            }
+
+            CoroutineScope(Dispatchers.Main).launch {
+                provider.subscriptionStatus.collect { status ->
+                    _subscriptionStatus.value = status
+                    Timber.d("🧪 Updated subscription status from Mock: $status")
+                }
+            }
+
+            CoroutineScope(Dispatchers.Main).launch {
+                provider.errorMessage.collect { message ->
+                    _errorMessage.value = message
+                    Timber.d("🧪 Received error message from Mock: $message")
+                }
             }
         }
     }
@@ -361,7 +407,7 @@ class BillingManager private constructor(private val context: Context) {
 
         // Update product details
         Handler(Looper.getMainLooper()).postDelayed({
-            _productDetails.postValue(mockProducts)
+            _productDetails.value = mockProducts
         }, 500) // Reduced delay for faster response
     }
 
@@ -441,9 +487,10 @@ class BillingManager private constructor(private val context: Context) {
 
     /**
      * Check and restore existing subscriptions on app startup
+     * Enhanced version that properly handles app reinstalls
      */
     fun restoreSubscriptions() {
-        Timber.d("Attempting to restore subscriptions")
+        Timber.d("🔄 Attempting to restore subscriptions (enhanced version)")
 
         // Ensure providers are initialized
         if (!isInitialized) {
@@ -453,15 +500,106 @@ class BillingManager private constructor(private val context: Context) {
         if (!isConnected) {
             connectToPlayBilling { success ->
                 if (success) {
-                    activeProvider?.checkSubscriptionStatus()
-                    Timber.d("Subscription restoration started after connection")
+                    performEnhancedSubscriptionRestore()
+                } else {
+                    Timber.e("❌ Failed to connect for subscription restoration")
                 }
             }
             return
         }
 
-        activeProvider?.checkSubscriptionStatus()
-        Timber.d("Subscription restoration check initiated")
+        performEnhancedSubscriptionRestore()
+    }
+    
+    /**
+     * Enhanced subscription restoration that checks multiple sources
+     */
+    private fun performEnhancedSubscriptionRestore() {
+        Timber.d("🔄 Performing enhanced subscription restoration")
+        
+        try {
+            // Step 1: Check current local status
+            val wasLocallySubscribed = PrefsManager.isSubscribed(context)
+            Timber.d("📱 Local subscription status before restore: $wasLocallySubscribed")
+            
+            // Step 2: Force check with billing provider
+            activeProvider?.checkSubscriptionStatus()
+            
+            // Step 3: Wait a moment for provider to update status
+            Handler(Looper.getMainLooper()).postDelayed({
+                val isNowSubscribed = PrefsManager.isSubscribed(context)
+                val subscriptionType = PrefsManager.getSubscriptionType(context)
+                
+                when {
+                    !wasLocallySubscribed && isNowSubscribed -> {
+                        Timber.d("✅ Subscription restored from ${activeProvider?.javaClass?.simpleName}")
+                        Timber.d("🎉 Restored subscription type: $subscriptionType")
+                        
+                        // Notify user state manager about restored subscription
+                        notifySubscriptionRestored(subscriptionType)
+                    }
+                    wasLocallySubscribed && isNowSubscribed -> {
+                        Timber.d("✅ Subscription was already active locally")
+                    }
+                    wasLocallySubscribed && !isNowSubscribed -> {
+                        Timber.w("⚠️ Local subscription was revoked by billing provider")
+                    }
+                    else -> {
+                        Timber.d("ℹ️ No active subscription found")
+                    }
+                }
+                
+                // Final validation
+                validateRestoredSubscription()
+                
+            }, 2000) // Give billing provider time to process
+            
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Error in enhanced subscription restoration")
+        }
+    }
+    
+    /**
+     * Validate that restored subscription is legitimate
+     */
+    private fun validateRestoredSubscription() {
+        val isSubscribed = PrefsManager.isSubscribed(context)
+        val endTime = PrefsManager.getSubscriptionEndTime(context)
+        val subscriptionType = PrefsManager.getSubscriptionType(context)
+        
+        if (isSubscribed) {
+            val isValidEndTime = endTime == 0L || endTime > System.currentTimeMillis()
+            val hasValidType = !subscriptionType.isNullOrEmpty()
+            
+            if (!isValidEndTime || !hasValidType) {
+                Timber.w("⚠️ Restored subscription appears invalid, rechecking...")
+                // Force another check
+                Handler(Looper.getMainLooper()).postDelayed({
+                    activeProvider?.checkSubscriptionStatus()
+                }, 1000)
+            } else {
+                Timber.d("✅ Restored subscription validated successfully")
+                Timber.d("📊 Subscription expires: ${if (endTime > 0) java.util.Date(endTime) else "Never"}")
+            }
+        }
+    }
+    
+    /**
+     * Notify about subscription restoration (for server sync)
+     */
+    private fun notifySubscriptionRestored(subscriptionType: String?) {
+        try {
+            // This would typically notify a server about the subscription restoration
+            // For now, we'll just log it
+            Timber.d("🔔 Subscription restoration notification sent")
+            Timber.d("📋 Restored subscription details:")
+            Timber.d("   - Type: $subscriptionType")
+            Timber.d("   - End Time: ${PrefsManager.getSubscriptionEndTime(context)}")
+            Timber.d("   - Provider: ${activeProvider?.javaClass?.simpleName}")
+            
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Error sending subscription restoration notification")
+        }
     }
 
     /**
@@ -487,6 +625,7 @@ class BillingManager private constructor(private val context: Context) {
     fun release() {
         googleProvider?.release()
         huaweiProvider?.release()
+        mockProvider?.release()
 
         // Clear instance
         instance = null

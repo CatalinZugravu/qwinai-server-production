@@ -30,18 +30,6 @@ interface AimlApiService {
     fun sendRawMessage(@Body requestBody: RequestBody): Call<ResponseBody>
 
     /**
-     * Streaming chat completions
-     */
-    @Streaming
-    @POST("chat/completions")
-    @Headers(
-        "Content-Type: application/json",
-        "Accept: text/event-stream",
-        "Cache-Control: no-cache"
-    )
-    suspend fun sendMessageStreaming(@Body request: AimlApiRequest): Response<ResponseBody>
-
-    /**
      * Raw streaming request
      */
     @Streaming
@@ -614,6 +602,23 @@ interface AimlApiService {
     @GET("rate_limits")
     fun getRateLimits(): Call<AimlApiResponse>
 
+    // ==================== OCR ====================
+
+    /**
+     * OCR endpoint for document and image processing
+     */
+    @Multipart
+    @POST("v1/ocr")
+    fun performOCR(
+        @Part document: MultipartBody.Part,
+        @Part("prompt") prompt: RequestBody? = null,
+        @Part("pages") pages: RequestBody? = null,
+        @Part("include_images") includeImages: RequestBody? = null,
+        @Part("image_limit") imageLimit: RequestBody? = null,
+        @Part("image_min_size") imageMinSize: RequestBody? = null,
+        @Part("max_tokens") maxTokens: RequestBody? = null
+    ): Call<AimlApiResponse>
+
     // ==================== PROVIDER SPECIFIC ====================
 
     /**
@@ -672,25 +677,4 @@ interface AimlApiService {
 
     // ==================== EXPERIMENTAL ====================
 
-    /**
-     * Experimental features endpoint
-     */
-    @POST("experimental/{feature}")
-    @Headers("Content-Type: application/json")
-    fun experimentalFeature(
-        @Path("feature") feature: String,
-        @Body request: RequestBody
-    ): Call<ResponseBody>
-
-    /**
-     * WebSocket-style streaming (for providers that support it)
-     */
-    @Streaming
-    @POST("stream")
-    @Headers(
-        "Content-Type: application/json",
-        "Accept: text/event-stream",
-        "Connection: keep-alive"
-    )
-    suspend fun streamConnection(@Body request: RequestBody): Response<ResponseBody>
 }

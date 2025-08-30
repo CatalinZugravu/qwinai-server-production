@@ -2,16 +2,6 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
-    <item
-        android:id="@+id/action_info"
-        android:title="Info"
-        android:icon="@drawable/ic_info"
-        app:showAsAction="ifRoom" />
-
-    <item
-        android:id="@+id/action_copy_prompt"
-        android:title="Copy Prompt"
-        android:icon="@drawable/ic_copy"
-        app:showAsAction="never" />
+    <!-- Menu items removed - functionality moved to UI buttons -->
 
 </menu>

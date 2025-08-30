@@ -1,5 +1,6 @@
 package com.cyberflux.qwinai.adapter
 
+import android.annotation.SuppressLint
 import androidx.recyclerview.widget.DiffUtil
 import com.cyberflux.qwinai.model.ChatMessage
 
@@ -20,6 +21,7 @@ class ChatMessageDiffCallback : DiffUtil.ItemCallback<ChatMessage>() {
         return false
     }
 
+    @SuppressLint("DiffUtilEquals")
     override fun areContentsTheSame(oldItem: ChatMessage, newItem: ChatMessage): Boolean {
         // Quick identity check
         if (oldItem === newItem) return true

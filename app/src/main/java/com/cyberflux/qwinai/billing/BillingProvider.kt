@@ -1,7 +1,7 @@
 package com.cyberflux.qwinai.billing
 
 import android.app.Activity
-import androidx.lifecycle.LiveData
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Interface for billing provider operations (Google Play or Huawei IAP)
@@ -14,14 +14,14 @@ interface BillingProvider {
         const val SUBSCRIPTION_MONTHLY = "qwinai_monthly_subscription"
     }
 
-    // Subscription status live data
-    val subscriptionStatus: LiveData<Boolean>
+    // Subscription status state flow
+    val subscriptionStatus: StateFlow<Boolean>
 
-    // Product information live data
-    val productDetails: LiveData<List<ProductInfo>>
+    // Product information state flow
+    val productDetails: StateFlow<List<ProductInfo>>
 
-    // Error messages live data
-    val errorMessage: LiveData<String>
+    // Error messages state flow
+    val errorMessage: StateFlow<String>
 
     // Initialize billing connection
     fun initialize()

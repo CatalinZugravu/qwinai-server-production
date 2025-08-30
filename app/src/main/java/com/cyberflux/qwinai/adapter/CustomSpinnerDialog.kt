@@ -596,7 +596,7 @@ class CustomSpinnerDialog(
         }
     }    private fun setupPreferencesPage(view: View) {
         try {
-            val optionsContainer = view.findViewById<ScrollView>(R.id.optionsScrollView)
+            view.findViewById<ScrollView>(R.id.optionsScrollView)
             val lengthContainer = view.findViewById<LinearLayout>(R.id.lengthOptionsContainer)
             val toneContainer = view.findViewById<LinearLayout>(R.id.toneOptionsContainer)
 

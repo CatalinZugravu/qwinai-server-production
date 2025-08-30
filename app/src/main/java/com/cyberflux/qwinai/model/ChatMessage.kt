@@ -10,7 +10,19 @@ import java.util.*
 /**
  * Simplified ChatMessage class with branch-related fields removed
  */
-@Entity(tableName = "chat_messages")
+@Entity(
+    tableName = "chat_messages",
+    indices = [
+        androidx.room.Index(value = ["conversationId"], name = "index_chat_messages_conversation_id"),
+        androidx.room.Index(value = ["timestamp"], name = "index_chat_messages_timestamp"),
+        androidx.room.Index(value = ["isUser"], name = "index_chat_messages_is_user"),
+        androidx.room.Index(value = ["modelId"], name = "index_chat_messages_model_id"),
+        androidx.room.Index(value = ["conversationId", "timestamp"], name = "index_chat_messages_conversation_timestamp"),
+        androidx.room.Index(value = ["userGroupId"], name = "index_chat_messages_user_group_id"),
+        androidx.room.Index(value = ["aiGroupId"], name = "index_chat_messages_ai_group_id"),
+        androidx.room.Index(value = ["parentMessageId"], name = "index_chat_messages_parent_message_id")
+    ]
+)
 data class ChatMessage(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val conversationId: String,
@@ -87,7 +99,7 @@ data class ChatMessage(
     val isGeneratedImage: Boolean = false,
     val imagePrompt: String? = null,
 
-    val isOcrDocument: Boolean = false,  // Added this property for OCR documents
+    var isOcrDocument: Boolean = false,  // Added this property for OCR documents
 
     // Metadata
     var lastModified: Long = System.currentTimeMillis(),
@@ -154,6 +166,15 @@ data class ChatMessage(
     val informationFreshness: String = "",
     val citedSources: List<String> = emptyList(),
     val thinkingDuration: String? = 0L.toString(), // sau altă valoare default
+    
+    // Related questions for Perplexity
+    val relatedQuestions: String? = null,
+    
+    // Search images for Perplexity (JSON array of image objects)
+    val searchImages: String? = null,
+    
+    // File attachments (JSON serialized list of attachment info)
+    val attachments: String? = null,
 
 ) {
     /**

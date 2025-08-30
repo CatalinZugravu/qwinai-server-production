@@ -6,8 +6,9 @@ import android.content.Intent
 import android.content.IntentSender
 import android.os.Handler
 import android.os.Looper
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import com.cyberflux.qwinai.utils.PrefsManager
 import com.huawei.hmf.tasks.Task
 import com.huawei.hms.iap.Iap
@@ -30,17 +31,14 @@ import java.util.concurrent.TimeUnit
 
 class HuaweiIapProvider(private val context: Context) : BillingProvider {
 
-    private val _subscriptionStatus = MutableLiveData<Boolean>()
-    override val subscriptionStatus: LiveData<Boolean>
-        get() = _subscriptionStatus
+    private val _subscriptionStatus = MutableStateFlow(false)
+    override val subscriptionStatus: StateFlow<Boolean> = _subscriptionStatus.asStateFlow()
 
-    private val _productDetails = MutableLiveData<List<com.cyberflux.qwinai.billing.ProductInfo>>()
-    override val productDetails: LiveData<List<com.cyberflux.qwinai.billing.ProductInfo>>
-        get() = _productDetails
+    private val _productDetails = MutableStateFlow<List<com.cyberflux.qwinai.billing.ProductInfo>>(emptyList())
+    override val productDetails: StateFlow<List<com.cyberflux.qwinai.billing.ProductInfo>> = _productDetails.asStateFlow()
 
-    private val _errorMessage = MutableLiveData<String>()
-    override val errorMessage: LiveData<String>
-        get() = _errorMessage
+    private val _errorMessage = MutableStateFlow("")
+    override val errorMessage: StateFlow<String> = _errorMessage.asStateFlow()
 
     private lateinit var iapClient: IapClient
     private val huaweiProductInfo = mutableMapOf<String, ProductInfo>()
@@ -315,7 +313,7 @@ class HuaweiIapProvider(private val context: Context) : BillingProvider {
                     if (products.isEmpty()) {
                         Timber.w("No Huawei products returned")
                         // CRITICAL FIX: More descriptive error message
-                        _errorMessage.postValue("Subscription products not found. Please check your AppGallery Connect configuration.")
+                        _errorMessage.value = "Subscription products not found. Please check your AppGallery Connect configuration."
                         return@addOnSuccessListener
                     }
 
@@ -338,10 +336,10 @@ class HuaweiIapProvider(private val context: Context) : BillingProvider {
                         convertedProducts.add(convertToProductInfo(product))
                     }
 
-                    _productDetails.postValue(convertedProducts)
+                    _productDetails.value = convertedProducts
                 } ?: run {
                     Timber.e("No Huawei products found (null list)")
-                    _errorMessage.postValue("No subscriptions available")
+                    _errorMessage.value = "No subscriptions available"
                 }
             }.addOnFailureListener { e ->
                 val errorCode = if (e is IapApiException) e.status.statusCode else -1
@@ -387,11 +385,11 @@ class HuaweiIapProvider(private val context: Context) : BillingProvider {
             }.addOnFailureListener { e ->
                 val errorCode = if (e is IapApiException) e.status.statusCode else -1
                 Timber.e(e, "Subscription check failed with code: $errorCode")
-                _subscriptionStatus.postValue(false)
+                _subscriptionStatus.value = false
             }
         } catch (e: Exception) {
             Timber.e(e, "Exception checking Huawei subscriptions")
-            _subscriptionStatus.postValue(false)
+            _subscriptionStatus.value = false
         }
     }
 
@@ -423,7 +421,7 @@ class HuaweiIapProvider(private val context: Context) : BillingProvider {
                 }
             } ?: Timber.d("No Huawei purchases found")
 
-            _subscriptionStatus.postValue(hasActiveSub)
+            _subscriptionStatus.value = hasActiveSub
         }
     }
 
@@ -472,7 +470,7 @@ class HuaweiIapProvider(private val context: Context) : BillingProvider {
         val productInfo = huaweiProductInfo[productId]
         if (productInfo == null) {
             Timber.w("Product $productId not found in cache, querying products first")
-            _errorMessage.postValue("Loading product information...")
+            _errorMessage.value = "Loading product information..."
             queryProducts()
             // Retry after a delay
             Handler(Looper.getMainLooper()).postDelayed({
@@ -545,19 +543,19 @@ class HuaweiIapProvider(private val context: Context) : BillingProvider {
         when {
             message.contains("907135700") -> {
                 // No HMS Core or HMS Core APK is too old
-                _errorMessage.postValue("Please update HMS Core from AppGallery")
+                _errorMessage.value = "Please update HMS Core from AppGallery"
             }
             message.contains("907135003") -> {
                 // User canceled the operation
-                _errorMessage.postValue("Purchase was canceled")
+                _errorMessage.value = "Purchase was canceled"
             }
             message.contains("907135000") -> {
                 // Network unavailable
-                _errorMessage.postValue("Network connection unavailable")
+                _errorMessage.value = "Network connection unavailable"
             }
             else -> {
                 // Show a more user-friendly message but log the full error
-                _errorMessage.postValue("Payment service error. Please try again later.")
+                _errorMessage.value = "Payment service error. Please try again later."
             }
         }
     }

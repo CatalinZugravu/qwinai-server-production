@@ -9,71 +9,6 @@ object ModelConfigManager {
     init {
         // === OPENAI MODELS ===
 
-        // O1 Model
-        register(ModelConfig(
-            id = "o1",
-            displayName = "O1",
-            provider = "openai",
-            supportsStreaming = false, // Explicitly no streaming
-            supportsFunctionCalling = true,
-            supportsSystemMessages = true,
-            maxOutputTokens = 200000,
-            maxInputTokens = 100000,
-            defaultMaxTokens = 100000,
-            supportsSeed = true,
-            supportsReasoning = true,
-            reasoningParameter = "reasoning_effort",
-            reasoningOptions = listOf("low", "medium", "high"),
-            supportsResponseFormat = true,
-            supportsJsonMode = true,
-            supportsJsonSchema = true,
-            supportsImages = true,
-            supportsDocuments = true,
-            supportsFileUpload = true,
-            maxFiles = 20,
-            maxFileSizeBytes = 512L * 1024 * 1024,
-            maxTotalStorageBytes = 10L * 1024 * 1024 * 1024,
-            maxTokensPerFile = 2_000_000L,
-            supportedFileTypes = listOf("pdf", "txt", "jpg", "jpeg", "png", "gif", "webp"),
-            supportedImageFormats = listOf("jpg", "jpeg", "png", "gif", "webp"),
-            supportedDocumentFormats = listOf("pdf", "txt"),
-            supportsMultipleFileSelection = true,
-            supportsParallelToolCalls = true,
-            supportsToolChoice = true,
-            supportsStopSequences = true,
-            requiresMaxCompletionTokens = true,
-            supportsWebSearchOptions = true,
-            supportsTopP = true
-        ))
-
-        // O3-mini Model
-        register(ModelConfig(
-            id = "o3-mini",
-            displayName = "O3 Mini",
-            provider = "openai",
-            supportsStreaming = true,
-            supportsFunctionCalling = true,
-            supportsSystemMessages = true,
-            maxOutputTokens = 200000,
-            maxInputTokens = 90000,
-            defaultMaxTokens = 65536,
-            supportsSeed = true,
-            supportsReasoning = true,
-            reasoningParameter = "reasoning_effort",
-            reasoningOptions = listOf("low", "medium", "high"),
-            supportsResponseFormat = true,
-            supportsJsonMode = true,
-            supportsJsonSchema = true,
-            supportsStreamOptions = true,
-            streamIncludeUsage = true,
-            supportsParallelToolCalls = true,
-            supportsToolChoice = true,
-            supportsStopSequences = true,
-            requiresMaxCompletionTokens = true,
-            supportsWebSearchOptions = true,
-            supportsTopP = true
-        ))
-
         // GPT-4o
         register(ModelConfig(
             id = "gpt-4o",
@@ -101,113 +36,57 @@ object ModelConfigManager {
             supportedVoices = listOf("alloy", "echo", "fable", "onyx", "nova", "shimmer"),
             maxFiles = 20,
             maxFileSizeBytes = 512L * 1024 * 1024,
-            supportsStreamOptions = true,
-            streamIncludeUsage = true,
-            supportsN = true,
-            supportsWebSearchOptions = true,
-            supportsTopP = true
-        ))
-
-        // ChatGPT-4o Latest
-        register(ModelConfig(
-            id = "chatgpt-4o-latest",
-            displayName = "ChatGPT-4o Latest",
-            provider = "openai",
-            supportsStreaming = true,
-            supportsFunctionCalling = true,
-            supportsSystemMessages = true,
-            maxOutputTokens = 128000,
-            maxInputTokens = 128000,
-            defaultMaxTokens = 16384,
-            supportsFrequencyPenalty = true,
-            supportsPresencePenalty = true,
-            supportsLogprobs = true,
-            supportsTopLogprobs = true,
-            supportsSeed = true,
-            supportsPrediction = true,
-            supportsResponseFormat = true,
-            supportsJsonMode = true,
-            supportsJsonSchema = true,
-            supportsImages = true,
-            supportsDocuments = true,
-            maxFiles = 20,
-            maxFileSizeBytes = 512L * 1024 * 1024,
-            supportsStreamOptions = true,
-            streamIncludeUsage = true,
-            supportsN = true,
-            supportsWebSearchOptions = true,
-            supportsTopP = true
-        ))
-
-        // GPT-4o Mini
-        register(ModelConfig(
-            id = "gpt-4o-mini",
-            displayName = "GPT-4o Mini",
-            provider = "openai",
-            supportsStreaming = true,
-            supportsFunctionCalling = true,
-            supportsSystemMessages = true,
-            maxOutputTokens = 128000,
-            maxInputTokens = 128000,
-            defaultMaxTokens = 16384,
-            supportsFrequencyPenalty = true,
-            supportsPresencePenalty = true,
-            supportsLogprobs = true,
-            supportsTopLogprobs = true,
-            supportsSeed = true,
-            supportsPrediction = true,
-            supportsResponseFormat = true,
-            supportsJsonMode = true,
-            supportsJsonSchema = true,
-            supportsImages = true,
-            supportsDocuments = true,
-            maxFiles = 20,
-            maxFileSizeBytes = 512L * 1024 * 1024,
-            supportsStreamOptions = true,
-            streamIncludeUsage = true,
-            supportsN = true,
-            supportsWebSearchOptions = true,
-            supportsTopP = true
-        ))
-
-        // GPT-4.1 Mini
-        register(ModelConfig(
-            id = "openai/gpt-4.1-mini-2025-04-14",
-            displayName = "GPT-4.1 Mini",
-            provider = "openai",
-            supportsStreaming = true,
-            supportsFunctionCalling = true,
-            supportsSystemMessages = true,
-            maxOutputTokens = 128000,
-            maxInputTokens = 50000,
-            defaultMaxTokens = 16384,
-            supportsFrequencyPenalty = true,
-            supportsPresencePenalty = true,
-            supportsLogprobs = true,
-            supportsTopLogprobs = true,
-            supportsSeed = true,
-            supportsPrediction = true,
-            supportsResponseFormat = true,
-            supportsJsonMode = true,
-            supportsJsonSchema = true,
-            supportsImages = true,
-            supportsDocuments = true,
-            supportsAudio = true,
-            supportsTts = true,
-            supportsFileUpload = true,
-            supportedAudioFormats = listOf("mp3", "opus", "aac", "flac", "wav", "pcm"),
-            supportedVoices = listOf("alloy", "echo", "fable", "onyx", "nova", "shimmer"),
-            maxFiles = 20,
-            maxFileSizeBytes = 512L * 1024 * 1024,
-            maxTotalStorageBytes = 10L * 1024 * 1024 * 1024,
-            maxTokensPerFile = 2_000_000L,
-            supportedFileTypes = listOf("txt", "pdf", "csv", "xlsx", "jpg", "jpeg", "png", "gif", "webp", "mp3", "opus", "aac", "flac", "wav", "pcm"),
+            maxTotalStorageBytes = 10L * 1024 * 1024 * 1024, // 10GB per user
+            maxTokensPerFile = 2_000_000L, // 2 million tokens per file
+            supportedFileTypes = listOf("pdf", "jpg", "jpeg", "png", "gif", "webp"),
             supportedImageFormats = listOf("jpg", "jpeg", "png", "gif", "webp"),
-            supportedDocumentFormats = listOf("txt", "pdf", "csv", "xlsx"),
+            supportedDocumentFormats = listOf("pdf"),
             supportsMultipleFileSelection = true,
+            supportsFileUpload = true,
             supportsStreamOptions = true,
             streamIncludeUsage = true,
             supportsN = true,
+            supportsWebSearchOptions = true,
+            supportsTopP = true
+        ))
+
+        // GPT-4o Audio Preview
+        register(ModelConfig(
+            id = "gpt-4o-audio-preview",
+            displayName = "GPT-4o Audio Preview",
+            provider = "openai",
+            supportsStreaming = true,
+            supportsFunctionCalling = false, // Audio model doesn't support function calling
+            supportsSystemMessages = true,
+            maxOutputTokens = 16384, // Conservative limit for audio responses
+            maxInputTokens = 128000, // Same as GPT-4o for input context
+            defaultMaxTokens = 4096,
+            supportsFrequencyPenalty = true,
+            supportsPresencePenalty = true,
+            supportsLogprobs = false,
+            supportsTopLogprobs = false,
+            supportsSeed = true,
+            supportsPrediction = false,
+            supportsResponseFormat = false,
+            supportsJsonMode = false,
+            supportsJsonSchema = false,
+            supportsImages = false, // Audio-only model
+            supportsDocuments = false,
+            supportsAudio = true,
+            supportedAudioFormats = listOf("mp3", "opus", "aac", "flac", "wav", "pcm"),
+            supportedVoices = listOf("alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer"),
+            maxFiles = 0, // Audio input only
+            maxFileSizeBytes = 25L * 1024 * 1024, // 25MB audio limit
+            maxTotalStorageBytes = 0L,
+            maxTokensPerFile = 0L,
+            supportedFileTypes = emptyList(),
+            supportedImageFormats = emptyList(),
+            supportedDocumentFormats = emptyList(),
+            supportsMultipleFileSelection = false,
+            supportsFileUpload = false,
+            supportsStreamOptions = true,
+            streamIncludeUsage = true,
+            supportsN = false,
             supportsWebSearchOptions = true,
             supportsTopP = true
         ))
@@ -235,6 +114,13 @@ object ModelConfigManager {
             supportsDocuments = true,
             maxFiles = 20,
             maxFileSizeBytes = 512L * 1024 * 1024,
+            maxTotalStorageBytes = 10L * 1024 * 1024 * 1024, // 10GB per user
+            maxTokensPerFile = 2_000_000L, // 2 million tokens per file
+            supportedFileTypes = listOf("pdf", "jpg", "jpeg", "png", "gif", "webp"),
+            supportedImageFormats = listOf("jpg", "jpeg", "png", "gif", "webp"),
+            supportedDocumentFormats = listOf("pdf"),
+            supportsMultipleFileSelection = true,
+            supportsFileUpload = true,
             supportsStreamOptions = true,
             streamIncludeUsage = true,
             supportsN = true,
@@ -274,37 +160,6 @@ object ModelConfigManager {
 
         // === META MODELS ===
 
-        // Llama 3.2 3B Instruct Turbo
-        register(ModelConfig(
-            id = "meta-llama/Llama-3.2-3B-Instruct-Turbo",
-            displayName = "Llama 3.2 3B Turbo",
-            provider = "meta",
-            supportsStreaming = true,
-            supportsFunctionCalling = true,
-            supportsSystemMessages = true,
-            maxOutputTokens = 16000,
-            maxInputTokens = 8000,
-            defaultMaxTokens = 2048,
-            supportsTopK = true,
-            supportsFrequencyPenalty = true,
-            supportsPresencePenalty = true,
-            supportsRepetitionPenalty = true,
-            supportsLogprobs = true,
-            supportsTopLogprobs = true,
-            supportsSeed = true,
-            supportsMinP = true,
-            supportsPrediction = true,
-            supportsResponseFormat = true,
-            supportsJsonMode = true,
-            supportsJsonSchema = true,
-            supportsStreamOptions = true,
-            streamIncludeUsage = true,
-            supportsParallelToolCalls = true,
-            supportsStopSequences = true,
-            supportsWebSearchOptions = true,
-            isFree = true,
-            supportsTopP = true
-        ))
 
         // Llama 4 Maverick
         register(ModelConfig(
@@ -339,39 +194,6 @@ object ModelConfigManager {
 
         // === GOOGLE MODELS ===
 
-        // Gemma 3 12B
-        register(ModelConfig(
-            id = "google/gemma-3-12b-it",
-            displayName = "Gemma 3 12B Instruct",
-            provider = "google",
-            supportsStreaming = true,
-            supportsFunctionCalling = false, // Gemma doesn't support tools
-            supportsSystemMessages = true,
-            maxOutputTokens = 8192,
-            maxInputTokens = 4096,
-            defaultMaxTokens = 2048,
-            supportsTopK = true,
-            supportsTopP = true,
-            supportsMinP = true,
-            supportsTopA = true,
-            supportsRepetitionPenalty = true,
-            supportsSeed = true,
-            supportsFrequencyPenalty = true,
-            supportsPresencePenalty = true,
-            supportsPrediction = true,
-            supportsStreamOptions = true,
-            streamIncludeUsage = true,
-            supportsLogprobs = true,
-            supportsTopLogprobs = true,
-            supportsResponseFormat = true,
-            supportsJsonMode = true,
-            supportsJsonSchema = true,
-            supportsImages = true,
-            supportsDocuments = true,
-            supportsStopSequences = true,
-            supportsWebSearchOptions = false,
-            isFree = true
-        ))
 
         // Gemma 3 27B
         register(ModelConfig(
@@ -406,39 +228,6 @@ object ModelConfigManager {
             supportsWebSearchOptions = false
         ))
 
-        // Gemma 3 4B
-        register(ModelConfig(
-            id = "google/gemma-3-4b-it",
-            displayName = "Gemma 3 4B Instruct",
-            provider = "google",
-            supportsStreaming = true,
-            supportsFunctionCalling = false,
-            supportsSystemMessages = true,
-            maxOutputTokens = 8192,
-            maxInputTokens = 4096,
-            defaultMaxTokens = 2048,
-            supportsTopK = true,
-            supportsTopP = true,
-            supportsMinP = true,
-            supportsTopA = true,
-            supportsRepetitionPenalty = true,
-            supportsSeed = true,
-            supportsFrequencyPenalty = true,
-            supportsPresencePenalty = true,
-            supportsPrediction = true,
-            supportsStreamOptions = true,
-            streamIncludeUsage = true,
-            supportsLogprobs = true,
-            supportsTopLogprobs = true,
-            supportsResponseFormat = true,
-            supportsJsonMode = true,
-            supportsJsonSchema = true,
-            supportsImages = true,
-            supportsDocuments = true,
-            supportsStopSequences = true,
-            supportsWebSearchOptions = false,
-            isFree = true
-        ))
 
         // === COHERE MODELS ===
 
@@ -550,27 +339,11 @@ object ModelConfigManager {
             supportsRepetitionPenalty = true,
             supportsPrediction = true,
             supportsStopSequences = true,
+            // NOTE: Qwen has built-in thinking - no reasoning button needed
+            supportsReasoning = false, // Button-controlled reasoning not supported  
             supportsWebSearchOptions = false // Qwen doesn't use web search options
         ))
 
-        // Qwen 2.5 72B
-        register(ModelConfig(
-            id = "Qwen/Qwen2.5-72B-Instruct-Turbo",
-            displayName = "Qwen 2.5 72B",
-            provider = "qwen",
-            supportsStreaming = true,
-            supportsFunctionCalling = true,
-            supportsSystemMessages = true,
-            maxOutputTokens = 32000,
-            maxInputTokens = 16000,
-            defaultMaxTokens = 4096,
-            supportsTopP = true,
-            supportsParallelToolCalls = true,
-            supportsStreamOptions = true,
-            streamIncludeUsage = true,
-            supportsToolChoice = true,
-            supportsWebSearchOptions = true
-        ))
 
         // === XAI MODELS ===
 
@@ -610,24 +383,6 @@ object ModelConfigManager {
 
         // === MISTRAL MODELS ===
 
-        // Mixtral 8x22B
-        register(ModelConfig(
-            id = "mistralai/Mixtral-8x7B-Instruct-v0.1",
-            displayName = "Mixtral 8x22B",
-            provider = "mistral",
-            supportsStreaming = true,
-            supportsFunctionCalling = true,
-            supportsSystemMessages = true,
-            maxOutputTokens = 64000,
-            maxInputTokens = 32000,
-            defaultMaxTokens = 4096,
-            supportsTopP = true,
-            supportsTopK = true,
-            supportsStreamOptions = true,
-            streamIncludeUsage = true,
-            supportsToolChoice = true,
-            supportsWebSearchOptions = true
-        ))
 
         // Mistral OCR
         register(ModelConfig(
@@ -649,6 +404,83 @@ object ModelConfigManager {
             supportsTopP = false, // OCR doesn't use these parameters
             requiresMaxCompletionTokens = true // OCR requires max_tokens parameter
         ))
+
+
+        // === PERPLEXITY MODELS ===
+
+        // Perplexity Sonar Pro
+        register(ModelConfig(
+            id = "perplexity/sonar-pro",
+            displayName = "Perplexity Sonar Pro",
+            provider = "perplexity",
+            supportsStreaming = true,
+            supportsFunctionCalling = false, // Perplexity uses built-in web search instead of tools
+            supportsSystemMessages = false, // Specialized web search model - no system instructions needed
+            maxOutputTokens = 512,
+            maxInputTokens = 28000,
+            defaultMaxTokens = 512,
+            supportsTopP = true,
+            supportsTopK = true,
+            supportsFrequencyPenalty = true,
+            supportsPresencePenalty = true,
+            supportsSeed = true,
+            supportsLogprobs = false,
+            supportsTopLogprobs = false,
+            supportsResponseFormat = true,
+            supportsJsonMode = true,
+            supportsJsonSchema = true,
+            supportsImages = true,
+            supportsDocuments = false,
+            supportsStreamOptions = true,
+            streamIncludeUsage = true,
+            supportsStopSequences = true,
+            supportsWebSearchOptions = true // Perplexity has built-in web search
+        ))
+
+        // === ZHIPU MODELS ===
+
+        // GLM-4.5 with built-in search engine and thinking support
+        register(ModelConfig(
+            id = "zhipu/glm-4.5",
+            displayName = "GLM-4.5 (ZhiPu)",
+            provider = "zhipu",
+            supportsStreaming = true,
+            supportsFunctionCalling = true, // Supports built-in web search via tools
+            supportsSystemMessages = true,
+            maxOutputTokens = 512,
+            maxInputTokens = 128000,
+            defaultMaxTokens = 512,
+            supportsTopP = true,
+            supportsFrequencyPenalty = true,
+            supportsPresencePenalty = true,
+            supportsSeed = false,
+            supportsLogprobs = false,
+            supportsTopLogprobs = false,
+            supportsResponseFormat = true,
+            supportsJsonMode = true,
+            supportsJsonSchema = true,
+            supportsImages = true,
+            supportsDocuments = true,
+            supportsFileUpload = true,
+            maxFiles = 20,
+            maxFileSizeBytes = 512L * 1024 * 1024,
+            maxTotalStorageBytes = 10L * 1024 * 1024 * 1024,
+            maxTokensPerFile = 2_000_000L,
+            supportedFileTypes = listOf("txt", "pdf", "csv", "xlsx", "jpg", "jpeg", "png", "gif", "webp"),
+            supportedImageFormats = listOf("jpg", "jpeg", "png", "gif", "webp"),
+            supportedDocumentFormats = listOf("txt", "pdf", "csv", "xlsx"),
+            supportsMultipleFileSelection = true,
+            supportsStreamOptions = true,
+            streamIncludeUsage = true,
+            supportsParallelToolCalls = true,
+            supportsToolChoice = true,
+            supportsStopSequences = true,
+            supportsReasoning = true,
+            reasoningParameter = "thinking", // ZhiPu uses "thinking" parameter
+            reasoningOptions = listOf("enabled", "disabled"), // ZhiPu thinking options
+            supportsWebSearchOptions = false, // ZhiPu has built-in web search via tools instead of options
+            isFree = false
+        ))
     }
 
     fun register(config: ModelConfig) {
@@ -661,14 +493,16 @@ object ModelConfigManager {
 
     fun supportsWebSearch(modelId: String): Boolean {
         // Web search is implemented via function calling
-        return getConfig(modelId)?.supportsFunctionCalling ?: false
+        return getConfig(modelId)?.supportsFunctionCalling == true
     }
 
     fun supportsStreaming(modelId: String): Boolean {
-        return getConfig(modelId)?.supportsStreaming ?: false
+        return getConfig(modelId)?.supportsStreaming == true
     }
 
     fun supportsReasoning(modelId: String): Boolean {
-        return getConfig(modelId)?.supportsReasoning ?: false
+        // Return true only for models that support button-controlled reasoning
+        // Models with built-in thinking (DeepSeek, Qwen) have supportsReasoning = false in their config
+        return getConfig(modelId)?.supportsReasoning == true
     }
 }

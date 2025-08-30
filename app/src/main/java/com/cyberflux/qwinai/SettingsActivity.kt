@@ -8,6 +8,7 @@ import com.cyberflux.qwinai.model.ResponseTone
 import com.cyberflux.qwinai.utils.ThemeManager
 import android.content.Intent
 import android.util.Log
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -18,6 +19,7 @@ import com.cyberflux.qwinai.utils.ModelManager
 import com.cyberflux.qwinai.utils.PrefsManager
 import com.cyberflux.qwinai.utils.PrefsManager.isHapticFeedbackEnabled
 import com.cyberflux.qwinai.utils.HapticManager
+import com.cyberflux.qwinai.utils.ThemeSettingsDialog
 import com.google.android.material.switchmaterial.SwitchMaterial
 
 class SettingsActivity : BaseThemedActivity() {
@@ -30,15 +32,7 @@ class SettingsActivity : BaseThemedActivity() {
     private lateinit var voiceTypeContainer: LinearLayout
     private lateinit var audioFormatValue: TextView
     private lateinit var voiceTypeValue: TextView
-    // Define theme names as a class property
-    private val themeNames = arrayOf(
-        "Default",
-        // Elegant Themes
-        "Slate Blue", "Olive Garden", "Burgundy", "Rustic Copper", "Carbon", "Teal Harbor", "Serenity",
-        // Vibrant Themes
-        "Neon Cyberpunk", "Aurora Borealis", "Royal Jewel", "Tropical Paradise", "Monochrome Punch",
-        "Cosmic Gradient", "Vivid Gradient"
-    )
+    // Material Design 3 uses simplified theming
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,12 +48,21 @@ class SettingsActivity : BaseThemedActivity() {
     private fun loadSavedPreferences() {
         val sharedPrefs = getSharedPreferences("app_settings", MODE_PRIVATE)
 
+        // User Name
+        val userName = PrefsManager.getUserName(this)
+        binding.userNameValue.text = if (!userName.isNullOrBlank()) {
+            userName
+        } else {
+            "Set your name so AI can address you personally"
+        }
+
         // Default AI Model
         val defaultModel = sharedPrefs.getString("default_ai_model", "DeepSeek Chat v1.0")
         binding.defaultModelValue.text = defaultModel
 
-        // Theme setting
-        binding.themeValue.text = ThemeManager.getThemeDisplayName(this)
+        // Theme setting - show both theme mode and accent color
+        binding.themeValue.text = "${ThemeManager.getThemeModeDisplayName(this)} - ${ThemeManager.getAccentColorDisplayName(this)}"
+
 
         // Haptic feedback
         binding.hapticFeedbackToggle.isChecked = sharedPrefs.getBoolean("haptic_feedback_enabled", true)
@@ -82,6 +85,11 @@ class SettingsActivity : BaseThemedActivity() {
 
         // Initialize audio settings
         initializeAudioSettings()
+
+        // Security & Performance settings
+        binding.biometricAuthToggle.isChecked = sharedPrefs.getBoolean("biometric_auth_enabled", false)
+        binding.performanceModeToggle.isChecked = sharedPrefs.getBoolean("performance_mode_enabled", true)
+        binding.privacyModeToggle.isChecked = sharedPrefs.getBoolean("privacy_mode_enabled", false)
         
         // Update cleanup interval visibility based on auto-clean state
         updateCleanupIntervalVisibility()
@@ -90,6 +98,11 @@ class SettingsActivity : BaseThemedActivity() {
         // Back button in header
         binding.btnBack.setOnClickListener {
             finish()
+        }
+
+        // User Name
+        binding.userNameContainer.setOnClickListener {
+            showUserNameDialog()
         }
 
         // Default AI Model
@@ -106,6 +119,7 @@ class SettingsActivity : BaseThemedActivity() {
         binding.themeContainer.setOnClickListener {
             showThemeDialog()
         }
+
 
         // Haptic Feedback
         binding.hapticFeedbackToggle.setOnCheckedChangeListener { _, isChecked ->
@@ -202,142 +216,69 @@ class SettingsActivity : BaseThemedActivity() {
         binding.btnAbout.setOnClickListener {
             showAbout()
         }
+
+        // Tools Section
+        binding.fileGenerationContainer.setOnClickListener {
+            openFileGenerationActivity()
+        }
+
+        binding.textSelectionContainer.setOnClickListener {
+            openTextSelectionTool()
+        }
+
+        binding.videoPlayerContainer.setOnClickListener {
+            openVideoPlayerTool()
+        }
+
+        // Security & Performance
+        binding.biometricAuthToggle.setOnCheckedChangeListener { _, isChecked ->
+            savePreference("biometric_auth_enabled", isChecked)
+            
+            if (isChecked) {
+                // Check if biometric auth is available
+                if (isBiometricAuthAvailable()) {
+                    Toast.makeText(this, "Biometric authentication enabled", Toast.LENGTH_SHORT).show()
+                } else {
+                    binding.biometricAuthToggle.isChecked = false
+                    Toast.makeText(this, "Biometric authentication not available on this device", Toast.LENGTH_LONG).show()
+                }
+            } else {
+                Toast.makeText(this, "Biometric authentication disabled", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        binding.performanceModeToggle.setOnCheckedChangeListener { _, isChecked ->
+            savePreference("performance_mode_enabled", isChecked)
+            Toast.makeText(
+                this,
+                if (isChecked) "Performance mode enabled" else "Performance mode disabled",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+
+        binding.privacyModeToggle.setOnCheckedChangeListener { _, isChecked ->
+            savePreference("privacy_mode_enabled", isChecked)
+            Toast.makeText(
+                this,
+                if (isChecked) "Enhanced privacy enabled" else "Enhanced privacy disabled",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+
+        binding.securityDashboardContainer.setOnClickListener {
+            showSecurityDashboard()
+        }
     }
 
     private fun showThemeDialog() {
-        // Get currently saved theme style
-        val currentThemeStyle = ThemeManager.getSavedThemeStyle(this)
-        Log.d(TAG, "Showing theme dialog, current style: $currentThemeStyle")
-
-        // Create the theme style dialog
-        val themeStyleDialog = AlertDialog.Builder(this)
-            .setTitle("Select Theme Style")
-            .setSingleChoiceItems(themeNames, currentThemeStyle) { styleDialog, styleIndex ->
-                Log.d(TAG, "Theme style selected: $styleIndex")
-                // When a theme style is selected, show mode options (light/dark/system)
-                styleDialog.dismiss()
-
-                // Show the theme mode selection dialog
-                showThemeModeDialog(styleIndex)
-            }
-            .setNegativeButton("Cancel", null)
-            .create()
-
-        themeStyleDialog.show()
+        // Show the new Material Design 3 theme settings dialog
+        val themeDialog = ThemeSettingsDialog(this)
+        themeDialog.show()
+        
+        // Update the displayed theme name
+        binding.themeValue.text = "${ThemeManager.getThemeModeDisplayName(this)} - ${ThemeManager.getAccentColorDisplayName(this)}"
     }
 
-    private fun showThemeModeDialog(themeStyle: Int) {
-        // Define theme mode options for display
-        val themeModes = arrayOf("System default", "Light", "Dark")
-
-        // Get currently saved theme mode
-        val currentThemeMode = ThemeManager.getSavedThemeMode(this)
-
-        // Get index for current mode
-        val selectedIndex = when (currentThemeMode) {
-            ThemeManager.MODE_DARK -> 2
-            ThemeManager.MODE_LIGHT -> 1
-            else -> 0
-        }
-
-        Log.d(TAG, "Showing theme mode dialog: style=$themeStyle, currentMode=$currentThemeMode")
-
-        // Create the theme mode dialog
-        AlertDialog.Builder(this)
-            .setTitle("Select Theme Mode")
-            .setSingleChoiceItems(themeModes, selectedIndex) { dialog, which ->
-                // Convert selection to theme mode constant
-                val newThemeMode = when (which) {
-                    1 -> ThemeManager.MODE_LIGHT
-                    2 -> ThemeManager.MODE_DARK
-                    else -> ThemeManager.MODE_SYSTEM
-                }
-
-                Log.d(TAG, "Theme mode selected: $which (mode=$newThemeMode)")
-
-                // For vibrant themes, check if gradients should be enabled
-                val shouldEnableGradients = shouldEnableGradientsForTheme(themeStyle)
-                if (shouldEnableGradients) {
-                    showGradientOptionsDialog(themeStyle, newThemeMode)
-                } else {
-                    // Apply both the theme style and mode without gradients
-                    ThemeManager.setTheme(this, newThemeMode, themeStyle, false)
-
-                    // Update UI
-                    binding.themeValue.text = "${themeNames[themeStyle]} (${themeModes[which]})"
-
-                    // Provide haptic feedback if enabled
-                    HapticManager.selectionFeedback(this)
-
-                    // Show toast with applied theme
-                    Toast.makeText(
-                        this,
-                        "${themeNames[themeStyle]} theme with ${themeModes[which].lowercase()} mode applied",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-
-                dialog.dismiss()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun showGradientOptionsDialog(themeStyle: Int, themeMode: Int) {
-        AlertDialog.Builder(this)
-            .setTitle("Enable Gradients?")
-            .setMessage("Would you like to enable gradient effects for this theme?")
-            .setPositiveButton("Yes") { dialog, _ ->
-                // Apply theme with gradients enabled
-                ThemeManager.setTheme(this, themeMode, themeStyle, true)
-
-                // Update UI
-                updateThemeUI(themeStyle, themeMode, true)
-
-                dialog.dismiss()
-            }
-            .setNegativeButton("No") { dialog, _ ->
-                // Apply theme without gradients
-                ThemeManager.setTheme(this, themeMode, themeStyle, false)
-
-                // Update UI
-                updateThemeUI(themeStyle, themeMode, false)
-
-                dialog.dismiss()
-            }
-            .show()
-    }
-    private fun updateThemeUI(themeStyle: Int, themeMode: Int, gradientsEnabled: Boolean) {
-        // Update the theme value display
-        val modeText = when (themeMode) {
-            ThemeManager.MODE_LIGHT -> "Light"
-            ThemeManager.MODE_DARK -> "Dark"
-            else -> "System default"
-        }
-
-        // Update the theme display text
-        binding.themeValue.text = if (gradientsEnabled && shouldEnableGradientsForTheme(themeStyle)) {
-            "${themeNames[themeStyle]} with Gradients ($modeText)"
-        } else {
-            "${themeNames[themeStyle]} ($modeText)"
-        }
-
-        // Provide haptic feedback if enabled
-        HapticManager.selectionFeedback(this)
-
-        // Show toast with applied theme
-        val gradientText = if (gradientsEnabled && shouldEnableGradientsForTheme(themeStyle)) " with gradients" else ""
-        Toast.makeText(
-            this,
-            "${themeNames[themeStyle]}$gradientText theme with ${modeText.lowercase()} mode applied",
-            Toast.LENGTH_SHORT
-        ).show()
-    }
-
-    private fun shouldEnableGradientsForTheme(themeStyle: Int): Boolean {
-        // Only vibrant themes support gradients
-        return themeStyle >= ThemeManager.THEME_NEON
-    }
 
     private fun showResponseToneDialog() {
         val tones = ResponseTone.values().map { it.displayName }.toTypedArray()
@@ -375,6 +316,56 @@ class SettingsActivity : BaseThemedActivity() {
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    private fun showUserNameDialog() {
+        val currentName = PrefsManager.getUserName(this) ?: ""
+        
+        val editText = EditText(this).apply {
+            setText(currentName)
+            hint = "Enter your name"
+            setSingleLine(true)
+            requestFocus()
+            selectAll()
+        }
+        
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Your Name")
+            .setMessage("Set your name so the AI can address you personally in conversations.")
+            .setView(editText)
+            .setPositiveButton("Save") { _, _ ->
+                val newName = editText.text.toString().trim()
+                if (newName.isNotBlank()) {
+                    PrefsManager.setUserName(this, newName)
+                    binding.userNameValue.text = newName
+                    Toast.makeText(this, "Name saved! AI will now address you as $newName", Toast.LENGTH_SHORT).show()
+                } else {
+                    PrefsManager.setUserName(this, "")
+                    binding.userNameValue.text = "Set your name so AI can address you personally"
+                    Toast.makeText(this, "Name cleared", Toast.LENGTH_SHORT).show()
+                }
+                if (isHapticFeedbackEnabled(this@SettingsActivity)) {
+                    HapticManager.lightVibration(this@SettingsActivity)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .setNeutralButton("Clear") { _, _ ->
+                PrefsManager.setUserName(this, "")
+                binding.userNameValue.text = "Set your name so AI can address you personally"
+                Toast.makeText(this, "Name cleared", Toast.LENGTH_SHORT).show()
+                if (isHapticFeedbackEnabled(this@SettingsActivity)) {
+                    HapticManager.lightVibration(this@SettingsActivity)
+                }
+            }
+            .create()
+        
+        dialog.show()
+        
+        // Show keyboard automatically
+        editText.postDelayed({
+            val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            imm.showSoftInput(editText, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+        }, 100)
     }
 
     private fun savePreference(key: String, value: Boolean) {
@@ -707,6 +698,179 @@ class SettingsActivity : BaseThemedActivity() {
             .setTitle("About Qwin AI")
             .setMessage("Qwin AI is an advanced AI-powered chat application that provides intelligent conversations and assistance.\n\nVersion: $versionName")
             .setPositiveButton("OK", null)
+            .show()
+    }
+
+    private fun openFileGenerationActivity() {
+        try {
+            val intent = Intent(this, FileGenerationActivity::class.java)
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error opening file generation tool", Toast.LENGTH_SHORT).show()
+            Log.e(TAG, "Error opening FileGenerationActivity", e)
+        }
+    }
+
+    private fun openTextSelectionTool() {
+        try {
+            val intent = Intent(this, TextSelectionActivity::class.java).apply {
+                putExtra("MESSAGE_TEXT", "Welcome to the advanced text editor!\n\nThis tool provides powerful text selection and editing capabilities.")
+                putExtra("IS_EDITABLE", true)
+                putExtra("TITLE", "Text Editor")
+                putExtra("HINT", "Enter or paste your text here...")
+                putExtra("SOURCE", "settings")
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error opening text editor", Toast.LENGTH_SHORT).show()
+            Log.e(TAG, "Error opening TextSelectionActivity", e)
+        }
+    }
+
+
+
+    private fun openVideoPlayerTool() {
+        val input = EditText(this).apply {
+            hint = "Enter video URL (e.g., https://example.com/video.mp4)"
+            setText("") // Default empty
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Video Player")
+            .setMessage("Enter a video URL to play:")
+            .setView(input)
+            .setPositiveButton("Play") { _, _ ->
+                val url = input.text.toString().trim()
+                if (url.isNotEmpty()) {
+                    if (isValidVideoUrl(url)) {
+                        playVideo(url)
+                    } else {
+                        Toast.makeText(this, "Please enter a valid video URL", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    Toast.makeText(this, "Please enter a video URL", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNeutralButton("Sample Videos") { _, _ ->
+                showSampleVideosDialog()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showSampleVideosDialog() {
+        val sampleVideos = arrayOf(
+            "Big Buck Bunny (Sample)",
+            "Elephant's Dream (Sample)", 
+            "Sintel (Sample)"
+        )
+        
+        val sampleUrls = arrayOf(
+            "https://sample-videos.com/zip/10/mp4/720/big_buck_bunny_720p_1mb.mp4",
+            "https://sample-videos.com/zip/10/mp4/720/elephants_dream_1080p_24fps_1mb.mp4",
+            "https://sample-videos.com/zip/10/mp4/720/sintel_trailer-720p.mp4"
+        )
+
+        AlertDialog.Builder(this)
+            .setTitle("Sample Videos")
+            .setItems(sampleVideos) { _, which ->
+                playVideo(sampleUrls[which], sampleVideos[which])
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun playVideo(url: String, title: String = "Video") {
+        try {
+            // Use external video player or browser to play video
+            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply {
+                setDataAndType(android.net.Uri.parse(url), "video/*")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            
+            // Try to open with video player first, fallback to browser
+            if (intent.resolveActivity(packageManager) != null) {
+                startActivity(intent)
+            } else {
+                // Fallback to browser
+                val browserIntent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                startActivity(browserIntent)
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error opening video: ${e.message}", Toast.LENGTH_SHORT).show()
+            Log.e(TAG, "Error opening video", e)
+        }
+    }
+
+    private fun isValidVideoUrl(url: String): Boolean {
+        return try {
+            val uri = android.net.Uri.parse(url)
+            uri.scheme in listOf("http", "https") && 
+            (url.contains(".mp4", ignoreCase = true) || 
+             url.contains(".avi", ignoreCase = true) ||
+             url.contains(".mov", ignoreCase = true) ||
+             url.contains(".mkv", ignoreCase = true) ||
+             url.contains("youtube.com") ||
+             url.contains("vimeo.com") ||
+             url.contains("twitch.tv"))
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun isBiometricAuthAvailable(): Boolean {
+        return try {
+            val biometricManager = androidx.biometric.BiometricManager.from(this)
+            when (biometricManager.canAuthenticate(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK)) {
+                androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS -> true
+                else -> false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking biometric availability", e)
+            false
+        }
+    }
+
+    private fun showSecurityDashboard() {
+        val sharedPrefs = getSharedPreferences("app_settings", MODE_PRIVATE)
+        val biometricEnabled = sharedPrefs.getBoolean("biometric_auth_enabled", false)
+        val performanceEnabled = sharedPrefs.getBoolean("performance_mode_enabled", true)
+        val privacyEnabled = sharedPrefs.getBoolean("privacy_mode_enabled", false)
+        
+        val statusBuilder = StringBuilder()
+        statusBuilder.append("🔒 Security & Performance Status\n\n")
+        
+        statusBuilder.append("Biometric Authentication: ")
+        statusBuilder.append(if (biometricEnabled) "✅ Enabled" else "❌ Disabled")
+        statusBuilder.append("\n")
+        
+        statusBuilder.append("Performance Mode: ")
+        statusBuilder.append(if (performanceEnabled) "✅ Enabled" else "❌ Disabled")
+        statusBuilder.append("\n")
+        
+        statusBuilder.append("Enhanced Privacy: ")
+        statusBuilder.append(if (privacyEnabled) "✅ Enabled" else "❌ Disabled")
+        statusBuilder.append("\n\n")
+        
+        statusBuilder.append("🛡️ Security Features Available:\n")
+        statusBuilder.append("• Biometric authentication support\n")
+        statusBuilder.append("• Encrypted local storage\n")
+        statusBuilder.append("• Privacy-enhanced communications\n")
+        statusBuilder.append("• Advanced security monitoring\n\n")
+        
+        statusBuilder.append("⚡ Performance Features:\n")
+        statusBuilder.append("• Memory optimization\n")
+        statusBuilder.append("• Network request optimization\n")
+        statusBuilder.append("• UI rendering improvements\n")
+        statusBuilder.append("• Cold start optimization")
+
+        AlertDialog.Builder(this)
+            .setTitle("Security & Performance Dashboard")
+            .setMessage(statusBuilder.toString())
+            .setPositiveButton("OK", null)
+            .setNeutralButton("Advanced Settings") { _, _ ->
+                Toast.makeText(this, "Advanced security settings coming soon", Toast.LENGTH_SHORT).show()
+            }
             .show()
     }
 }

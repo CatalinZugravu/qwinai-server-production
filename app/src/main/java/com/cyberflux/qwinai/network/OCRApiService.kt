@@ -1,16 +1,21 @@
 package com.cyberflux.qwinai.network
 
-import com.cyberflux.qwinai.utils.ModelManager
 import retrofit2.Response
-import retrofit2.http.Body
-import retrofit2.http.POST
+import retrofit2.http.*
 
 /**
- * OCR API Service for document text extraction
+ * OCR API Service interface for Retrofit
  */
 interface OCRApiService {
-    @POST("v1/ocr")
-    suspend fun processDocument(@Body request: OCRRequest): Response<OCRResponse>
+    @POST("ocr")
+    suspend fun performOCR(@Body request: OCRRequest): Response<OCRResponse>
+    
+    @Multipart
+    @POST("ocr")
+    suspend fun performOCRWithFile(
+        @Part("model") model: String,
+        @Part file: okhttp3.MultipartBody.Part
+    ): Response<OCRResponse>
 }
 
 /**

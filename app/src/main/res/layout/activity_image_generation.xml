@@ -1259,11 +1259,12 @@
 
             <!-- Image Display -->
             <FrameLayout
+                android:id="@+id/imageDisplayContainer"
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_margin="16dp"
                 app:layout_constraintTop_toTopOf="parent"
-                app:layout_constraintBottom_toTopOf="@id/actionButtonsContainer"
+                app:layout_constraintBottom_toTopOf="@id/imageNavigationContainer"
                 android:background="@drawable/image_frame_background">
 
                 <ImageView
@@ -1309,6 +1310,54 @@
                         android:visibility="gone" />
                 </LinearLayout>
             </FrameLayout>
+
+            <!-- Image Navigation Container -->
+            <LinearLayout
+                android:id="@+id/imageNavigationContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:padding="16dp"
+                android:visibility="gone"
+                app:layout_constraintTop_toBottomOf="@id/imageDisplayContainer"
+                app:layout_constraintBottom_toTopOf="@id/tvImageCaption">
+
+                <!-- Previous Button -->
+                <ImageButton
+                    android:id="@+id/btnPreviousImage"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/ic_arrow_back"
+                    android:contentDescription="Previous image"
+                    android:enabled="false"
+                    android:alpha="0.5" />
+
+                <!-- Image Counter -->
+                <TextView
+                    android:id="@+id/tvImageCounter"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="1/4"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/text_primary"
+                    android:gravity="center" />
+
+                <!-- Next Button -->
+                <ImageButton
+                    android:id="@+id/btnNextImage"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/ic_arrow_forward"
+                    android:contentDescription="Next image"
+                    android:enabled="false"
+                    android:alpha="0.5" />
+
+            </LinearLayout>
 
             <!-- Image Caption -->
             <TextView

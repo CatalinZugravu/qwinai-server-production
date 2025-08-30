@@ -8,7 +8,7 @@ import timber.log.Timber
  */
 object AdConfig {
     // Set to true to use test ads for debugging
-    private const val USE_TEST_ADS = true
+    private const val USE_TEST_ADS = false
     
     /**
      * Initialize ad configuration
@@ -20,11 +20,6 @@ object AdConfig {
         // Log IDs that will be used
         Timber.d("AdMob Interstitial: ${getAdMobInterstitialId()}")
         Timber.d("AdMob Rewarded: ${getAdMobRewardedId()}")
-        Timber.d("AppLovin Interstitial: ${getAppLovinInterstitialId()}")
-        Timber.d("AppLovin Rewarded: ${getAppLovinRewardedId()}")
-        Timber.d("IronSource App Key: ${getIronSourceAppKey()}")
-        Timber.d("IronSource Interstitial: ${getIronSourceInterstitialId()}")
-        Timber.d("IronSource Rewarded: ${getIronSourceRewardedId()}")
         Timber.d("Huawei Interstitial: ${getHuaweiInterstitialId()}")
         Timber.d("Huawei Rewarded: ${getHuaweiRewardedId()}")
     }
@@ -42,29 +37,7 @@ object AdConfig {
         const val PROD_REWARDED_AD_UNIT_ID = "ca-app-pub-6013627845589729/1791635370"
     }
 
-    /**
-     * AppLovin ad unit IDs
-     */
-    object AppLovin {
-        // Production SDK Key - replace with your actual AppLovin SDK key
-        const val PROD_SDK_KEY = "YOUR_APPLOVIN_SDK_KEY"
-
-        // Production ad unit IDs - replace with your actual AppLovin ad unit IDs
-        const val PROD_INTERSTITIAL_AD_UNIT_ID = "YOUR_APPLOVIN_INTERSTITIAL_ID"
-        const val PROD_REWARDED_AD_UNIT_ID = "YOUR_APPLOVIN_REWARDED_ID"
-    }
-
-    /**
-     * IronSource ad unit IDs
-     */
-    object IronSource {
-        // Production App Key - replace with your actual IronSource app key
-        const val PROD_APP_KEY = "YOUR_IRONSOURCE_APP_KEY"
-
-        // Production placement IDs - replace with your actual IronSource placement IDs
-        const val PROD_INTERSTITIAL_PLACEMENT_ID = "DefaultInterstitial"
-        const val PROD_REWARDED_PLACEMENT_ID = "DefaultRewardedVideo"
-    }
+    // AppLovin and IronSource ad networks - REMOVED (SDKs no longer included)
 
     /**
      * Huawei Ads Kit ad unit IDs
@@ -82,15 +55,7 @@ object AdConfig {
     // Legacy compatibility for BuildConfig references
     val ADMOB_REWARDED_AD_ID: String get() = getAdMobRewardedId()
 
-    // Getter methods for AppLovin
-    fun getAppLovinSdkKey(): String = AppLovin.PROD_SDK_KEY
-    fun getAppLovinInterstitialId(): String = AppLovin.PROD_INTERSTITIAL_AD_UNIT_ID
-    fun getAppLovinRewardedId(): String = AppLovin.PROD_REWARDED_AD_UNIT_ID
-
-    // Getter methods for IronSource
-    fun getIronSourceAppKey(): String = IronSource.PROD_APP_KEY
-    fun getIronSourceInterstitialId(): String = IronSource.PROD_INTERSTITIAL_PLACEMENT_ID
-    fun getIronSourceRewardedId(): String = IronSource.PROD_REWARDED_PLACEMENT_ID
+    // AppLovin and IronSource getter methods - REMOVED (SDKs no longer included)
 
     // Getter methods for Huawei
     fun getHuaweiInterstitialId(): String = Huawei.PROD_INTERSTITIAL_AD_UNIT_ID

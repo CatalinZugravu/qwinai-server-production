@@ -7,6 +7,10 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collectLatest
+import com.cyberflux.qwinai.databinding.FragmentHistoryBinding
 import com.google.android.material.tabs.TabLayoutMediator
 
 /**
@@ -34,7 +38,8 @@ class HistoryFragment : Fragment() {
 
         setupSearchView()
         setupViewPagerAndTabs()
-        setupSettingsButton() // Add this line
+        setupSettingsButton()
+        setupExpandButton()
         observeTotalConversations()
     }
 
@@ -54,6 +59,39 @@ class HistoryFragment : Fragment() {
 
                     // Launch SettingsActivity
                     val intent = Intent(requireContext(), SettingsActivity::class.java)
+                    startActivity(intent)
+                    requireActivity().overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+                }
+                .start()
+
+            // Optional: Add haptic feedback if available in the fragment
+            (requireActivity() as? StartActivity)?.provideHapticFeedback()
+        }
+    }
+
+    private fun setupExpandButton() {
+        binding.btnExpandConversations.setOnClickListener {
+            // Animate the button when clicked
+            binding.btnExpandConversations.animate()
+                .scaleX(0.9f)
+                .scaleY(0.9f)
+                .setDuration(100)
+                .withEndAction {
+                    binding.btnExpandConversations.animate()
+                        .scaleX(1f)
+                        .scaleY(1f)
+                        .setDuration(100)
+                        .start()
+
+                    // Determine if we're on saved tab (tab 1) or all tab (tab 0)
+                    val currentTab = binding.viewPager.currentItem
+                    val showSavedOnly = currentTab == 1
+                    
+                    // Launch AllConversationsActivity with appropriate mode
+                    val intent = AllConversationsActivity.createIntent(
+                        context = requireContext(),
+                        showSavedOnly = showSavedOnly
+                    )
                     startActivity(intent)
                     requireActivity().overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
                 }
@@ -101,9 +139,10 @@ class HistoryFragment : Fragment() {
 
     private fun observeTotalConversations() {
         // Observe all conversations for counts
-        viewModel.allConversations.observe(viewLifecycleOwner) { conversations ->
-            val savedCount = conversations.count { it.saved }
-            val totalCount = conversations.size
+        lifecycleScope.launch {
+            viewModel.allConversations.collectLatest { conversations ->
+                val savedCount = conversations.count { it.saved }
+                val totalCount = conversations.size
 
             // Update message with counts
             val messageText = "Conversations will be automatically deleted after 30 days.\n" +
@@ -124,6 +163,7 @@ class HistoryFragment : Fragment() {
                 } catch (e: Exception) {
                     // If badges aren't supported in this version, just ignore
                 }
+            }
             }
         }
     }

@@ -621,7 +621,7 @@ class CustomSpanRenderers(private val context: Context) {
             paint: Paint
         ) {
             val width = getSize(paint, text, start, end, null).toFloat()
-            val height = bottom - top.toFloat()
+            bottom - top.toFloat()
 
             // Draw cell background
             val cellRect = RectF(x, top.toFloat(), x + width, bottom.toFloat())

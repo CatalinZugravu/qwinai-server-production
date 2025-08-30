@@ -1,6 +1,8 @@
 package com.cyberflux.qwinai.credits
 
 import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -15,6 +17,7 @@ import androidx.security.crypto.MasterKey
 import com.cyberflux.qwinai.MainActivity
 import com.cyberflux.qwinai.R
 import com.cyberflux.qwinai.utils.PrefsManager
+import com.cyberflux.qwinai.security.UserStateManager
 import timber.log.Timber
 import java.security.MessageDigest
 import java.util.*
@@ -32,17 +35,21 @@ class CreditManager private constructor(private val context: Context) {
 
     companion object {
         private const val PREFS_NAME = "credit_system_secure"
-        private const val DAILY_BASE_CREDITS = 20
-        private const val MAX_AD_CREDITS = 50
-        private const val MAX_TOTAL_CREDITS = DAILY_BASE_CREDITS + MAX_AD_CREDITS
         
-        // Different maximum credits for different types
-        private const val MAX_IMAGE_CREDITS = 50
-        private const val MAX_CHAT_CREDITS = MAX_TOTAL_CREDITS
+        // Chat Credits: 15 free daily + 10 from ads (1 per ad) = 25 max
+        private const val DAILY_BASE_CHAT_CREDITS = 15
+        private const val MAX_AD_CHAT_CREDITS = 10
+        private const val MAX_CHAT_CREDITS = DAILY_BASE_CHAT_CREDITS + MAX_AD_CHAT_CREDITS
         
-        // Different daily base credits for different types
-        private const val DAILY_BASE_CHAT_CREDITS = 20
+        // Image Credits: 20 free daily + 10 from ads (1 per ad) = 30 max  
         private const val DAILY_BASE_IMAGE_CREDITS = 20
+        private const val MAX_AD_IMAGE_CREDITS = 10
+        private const val MAX_IMAGE_CREDITS = DAILY_BASE_IMAGE_CREDITS + MAX_AD_IMAGE_CREDITS
+        
+        // Legacy constants for backwards compatibility
+        private const val DAILY_BASE_CREDITS = DAILY_BASE_CHAT_CREDITS
+        private const val MAX_AD_CREDITS = MAX_AD_CHAT_CREDITS
+        private const val MAX_TOTAL_CREDITS = MAX_CHAT_CREDITS
         
         // Keys for SharedPreferences
         private const val CHAT_CREDITS_KEY = "chat_credits"
@@ -65,7 +72,10 @@ class CreditManager private constructor(private val context: Context) {
         
         fun getInstance(context: Context): CreditManager {
             return INSTANCE ?: synchronized(this) {
-                INSTANCE ?: CreditManager(context.applicationContext).also { INSTANCE = it }
+                INSTANCE ?: CreditManager(context.applicationContext).also { 
+                    INSTANCE = it
+                    it.createNotificationChannel()
+                }
             }
         }
     }
@@ -87,6 +97,11 @@ class CreditManager private constructor(private val context: Context) {
     private val installId: String by lazy {
         encryptedPrefs.getString(INSTALL_ID_KEY, null) ?: generateInstallId()
     }
+    
+    // User state manager for server-side credit tracking
+    private val userStateManager: UserStateManager by lazy {
+        UserStateManager.getInstance(context)
+    }
 
     enum class CreditType {
         CHAT, IMAGE_GENERATION
@@ -104,7 +119,8 @@ class CreditManager private constructor(private val context: Context) {
     }
 
     private fun generateHash(credits: Int, type: CreditType): String {
-        val data = "$credits:$type:$installId:${getCurrentDate()}:${System.currentTimeMillis() / 10000}"
+        // Use stable data that doesn't change frequently - only date, not timestamp
+        val data = "$credits:$type:$installId:${getCurrentDate()}"
         return MessageDigest.getInstance("SHA-256")
             .digest(data.toByteArray())
             .joinToString("") { "%02x".format(it) }
@@ -121,7 +137,7 @@ class CreditManager private constructor(private val context: Context) {
         val lastResetDate = encryptedPrefs.getString(LAST_RESET_DATE_KEY, "")
         
         if (currentDate != lastResetDate) {
-            Timber.d("Daily credit reset triggered")
+            Timber.d("🔄 Daily credit reset triggered - Current: $currentDate, Last: $lastResetDate")
             resetDailyCredits()
             encryptedPrefs.edit().putString(LAST_RESET_DATE_KEY, currentDate).apply()
         }
@@ -146,9 +162,9 @@ class CreditManager private constructor(private val context: Context) {
         
         Timber.d("Credits reset - Chat: $DAILY_BASE_CHAT_CREDITS, Image: $DAILY_BASE_IMAGE_CREDITS")
         
-        // Send notification about credit reset (only for non-subscribers)
+        // Send enhanced notification about credit reset (only for non-subscribers)
         if (!PrefsManager.isSubscribed(context)) {
-            sendCreditResetNotification()
+            sendEnhancedCreditResetNotification()
         }
     }
 
@@ -185,15 +201,25 @@ class CreditManager private constructor(private val context: Context) {
         
         val expectedHash = generateHash(credits, type)
         
-        // Anti-cheat: verify hash
-        if (storedHash != expectedHash) {
-            Timber.w("Credit hash mismatch detected for $type, resetting to base amount")
-            val baseCredits = when (type) {
-                CreditType.CHAT -> DAILY_BASE_CHAT_CREDITS
-                CreditType.IMAGE_GENERATION -> DAILY_BASE_IMAGE_CREDITS
+        // Anti-cheat: verify hash (but be more forgiving to prevent false positives)
+        if (!storedHash.isNullOrEmpty() && storedHash != expectedHash) {
+            Timber.w("Credit hash mismatch detected for $type - stored: ${storedHash.take(8)}..., expected: ${expectedHash.take(8)}...")
+            
+            // Only reset if the credits value seems impossible (negative or way too high)
+            val maxPossibleCredits = getMaxCredits(type) + 5 // Allow small buffer
+            if (credits < 0 || credits > maxPossibleCredits) {
+                Timber.w("Credit value $credits is impossible for $type, resetting to base amount")
+                val baseCredits = when (type) {
+                    CreditType.CHAT -> DAILY_BASE_CHAT_CREDITS
+                    CreditType.IMAGE_GENERATION -> DAILY_BASE_IMAGE_CREDITS
+                }
+                setCreditsSafe(baseCredits, type)
+                return baseCredits
+            } else {
+                // Hash mismatch but credits seem reasonable - just update the hash
+                Timber.d("Hash mismatch but credits ($credits) seem valid, updating hash")
+                setCreditsSafe(credits, type)
             }
-            setCreditsSafe(baseCredits, type)
-            return baseCredits
         }
         
         return credits
@@ -215,9 +241,21 @@ class CreditManager private constructor(private val context: Context) {
      * @return true if successful, false if insufficient credits
      */
     fun consumeChatCredits(amount: Int = 1): Boolean {
-        // Security validation
-        if (amount <= 0 || amount > 10) {
-            Timber.w("Invalid credit amount: $amount")
+        // Enhanced security validation
+        if (amount <= 0 || amount > 5) {
+            Timber.e("🚨 SECURITY: Invalid credit amount: $amount - BLOCKED")
+            return false
+        }
+        
+        // Anti-cheat: Validate calling context
+        val stackTrace = Thread.currentThread().stackTrace
+        val isAuthorizedCall = stackTrace.any { 
+            it.className.contains("MainActivity") || 
+            it.className.contains("ImageGenerationActivity") ||
+            it.className.contains("CreditManager")
+        }
+        if (!isAuthorizedCall) {
+            Timber.e("🚨 SECURITY: consumeChatCredits called from unauthorized location - BLOCKED")
             return false
         }
         
@@ -243,10 +281,15 @@ class CreditManager private constructor(private val context: Context) {
                     encryptedPrefs.getInt(CHAT_CONSUMPTION_COUNT_KEY, 0) + amount)
                 .apply()
             
-            Timber.d("Consumed $amount chat credits. Remaining: ${currentCredits - amount}")
+            val newCredits = currentCredits - amount
+            Timber.d("✅ Consumed $amount chat credits: $currentCredits → $newCredits")
+            
+            // CRITICAL: Record consumption server-side to prevent reinstall abuse
+            userStateManager.recordCreditConsumption(CreditType.CHAT, amount)
+            
             return true
         }
-        Timber.w("Insufficient chat credits. Required: $amount, Available: $currentCredits")
+        Timber.w("❌ Insufficient chat credits. Required: $amount, Available: $currentCredits")
         return false
     }
 
@@ -285,6 +328,10 @@ class CreditManager private constructor(private val context: Context) {
                 .apply()
             
             Timber.d("Consumed $amount image credits. Remaining: ${currentCredits - amount}")
+            
+            // CRITICAL: Record consumption server-side to prevent reinstall abuse
+            userStateManager.recordCreditConsumption(CreditType.IMAGE_GENERATION, amount)
+            
             return true
         }
         Timber.w("Insufficient image credits. Required: $amount, Available: $currentCredits")
@@ -312,30 +359,54 @@ class CreditManager private constructor(private val context: Context) {
     /**
      * Add credits from watching ads
      * @param type Type of credits to add
-     * @param amount Amount to add (default 5 credits per ad)
+     * @param amount Amount to add (default 1 credit per ad)
      * @return true if successful, false if already at maximum
      */
-    fun addCreditsFromAd(type: CreditType, amount: Int = 5): Boolean {
-        // Security validation
-        if (amount <= 0 || amount > 10) {
-            Timber.w("Invalid ad credit amount: $amount")
+    @Synchronized
+    fun addCreditsFromAd(type: CreditType, amount: Int = 1): Boolean {
+        // Security validation - each ad should give exactly 1 credit
+        if (amount != 1) {
+            Timber.w("🚨 SECURITY: Invalid ad credit amount: $amount - BLOCKED")
             return false
         }
         
-        // Rate limiting for ad rewards
+        // Anti-cheat: Validate calling context (should only be called by AdManager)
+        val stackTrace = Thread.currentThread().stackTrace
+        val isCalledByAdManager = stackTrace.any { 
+            it.className.contains("AdManager") || it.className.contains("RewardedAd")
+        }
+        if (!isCalledByAdManager) {
+            Timber.e("🚨 SECURITY: addCreditsFromAd called from unauthorized location - BLOCKED")
+            return false
+        }
+        
+        // Enhanced rate limiting for ad rewards
         val currentTime = System.currentTimeMillis()
         val lastAdTime = encryptedPrefs.getLong("last_ad_time_${type.name}", 0)
         val timeDiff = currentTime - lastAdTime
         
-        if (timeDiff < 30000) { // Minimum 30 seconds between ad rewards
-            Timber.w("Rate limit exceeded for ad credits")
+        // Minimum 30 seconds between ads + daily limit check
+        if (timeDiff < 30000) {
+            Timber.w("🚨 SECURITY: Rate limit exceeded for ad credits (${timeDiff}ms) - BLOCKED")
+            return false
+        }
+        
+        // Daily ad limit check (max 10 ads per day per type)
+        val adCountToday = getAdCountToday(type)
+        val maxAdsPerDay = when (type) {
+            CreditType.CHAT -> MAX_AD_CHAT_CREDITS
+            CreditType.IMAGE_GENERATION -> MAX_AD_IMAGE_CREDITS
+        }
+        
+        if (adCountToday >= maxAdsPerDay) {
+            Timber.w("🚨 SECURITY: Daily ad limit reached ($adCountToday/$maxAdsPerDay) - BLOCKED")
             return false
         }
         
         val currentCredits = getCreditsInternal(type)
         val maxCredits = getMaxCredits(type)
         
-        // Check if user can earn more credits
+        // Double-check if user can earn more credits
         if (currentCredits >= maxCredits) {
             Timber.d("Already at maximum credits for $type: $currentCredits")
             return false
@@ -344,22 +415,45 @@ class CreditManager private constructor(private val context: Context) {
         val newCredits = minOf(currentCredits + amount, maxCredits)
         setCreditsSafe(newCredits, type)
         
-        // Update ad tracking
+        // Update ad tracking with timestamp validation
         encryptedPrefs.edit()
             .putLong("last_ad_time_${type.name}", currentTime)
-            .putInt("ad_count_${type.name}", 
-                encryptedPrefs.getInt("ad_count_${type.name}", 0) + 1)
+            .putInt("ad_count_${type.name}", adCountToday + 1)
+            .putString("last_ad_date_${type.name}", getCurrentDate())
             .apply()
         
-        Timber.d("Added $amount credits from ad for $type. New total: $newCredits")
+        Timber.d("✅ Added $amount credits from ad for $type: $currentCredits → $newCredits")
         return true
+    }
+
+    /**
+     * Get today's ad count for security validation
+     */
+    private fun getAdCountToday(type: CreditType): Int {
+        val today = getCurrentDate()
+        val lastAdDate = encryptedPrefs.getString("last_ad_date_${type.name}", "")
+        
+        return if (lastAdDate == today) {
+            encryptedPrefs.getInt("ad_count_${type.name}", 0)
+        } else {
+            // Different day, reset count
+            0
+        }
     }
 
     /**
      * Check if user can earn more credits from ads
      */
     fun canEarnMoreCredits(type: CreditType): Boolean {
-        return getCreditsInternal(type) < getMaxCredits(type)
+        val currentCredits = getCreditsInternal(type)
+        val maxCredits = getMaxCredits(type)
+        val adCountToday = getAdCountToday(type)
+        val maxAdsPerDay = when (type) {
+            CreditType.CHAT -> MAX_AD_CHAT_CREDITS
+            CreditType.IMAGE_GENERATION -> MAX_AD_IMAGE_CREDITS
+        }
+        
+        return currentCredits < maxCredits && adCountToday < maxAdsPerDay
     }
 
     /**
@@ -387,6 +481,54 @@ class CreditManager private constructor(private val context: Context) {
      */
     fun getCreditsToMax(type: CreditType): Int {
         return maxOf(0, getMaxCredits(type) - getCreditsInternal(type))
+    }
+
+    /**
+     * Refund credits (when errors occur)
+     * @param amount Amount to refund
+     * @param type Type of credits to refund
+     * @param reason Reason for refund (for logging)
+     * @return true if successful, false if already at maximum
+     */
+    fun refundCredits(amount: Int, type: CreditType, reason: String = "Error occurred"): Boolean {
+        // Security validation
+        if (amount <= 0 || amount > 10) {
+            Timber.w("Invalid refund amount: $amount")
+            return false
+        }
+        
+        // Anti-cheat: Validate calling context
+        val stackTrace = Thread.currentThread().stackTrace
+        val isAuthorizedCall = stackTrace.any { 
+            it.className.contains("MainActivity") || 
+            it.className.contains("ImageGenerationActivity") ||
+            it.className.contains("ImageGenerationManager") ||
+            it.className.contains("StreamingHandler") ||
+            it.className.contains("CreditManager") ||
+            it.className.contains("ErrorManager")
+        }
+        if (!isAuthorizedCall) {
+            Timber.e("🚨 SECURITY: refundCredits called from unauthorized location - BLOCKED")
+            return false
+        }
+        
+        val currentCredits = getCreditsInternal(type)
+        val maxCredits = getMaxCredits(type)
+        
+        if (currentCredits >= maxCredits) {
+            Timber.d("Already at maximum credits for $type, cannot refund")
+            return false
+        }
+        
+        val newCredits = minOf(currentCredits + amount, maxCredits)
+        setCreditsSafe(newCredits, type)
+        
+        // Record the refund with server-side tracking
+        // TODO: Implement recordCreditRefund in UserStateManager
+        // userStateManager.recordCreditRefund(type, amount, reason)
+        
+        Timber.d("💰 REFUNDED $amount $type credits: $currentCredits → $newCredits (Reason: $reason)")
+        return true
     }
 
     /**
@@ -437,16 +579,87 @@ class CreditManager private constructor(private val context: Context) {
     }
 
     /**
+     * Create notification channel for credit notifications
+     */
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val name = "Credit System"
+            val descriptionText = "Notifications about daily credit resets and credit-related updates"
+            val importance = NotificationManager.IMPORTANCE_DEFAULT
+            val channel = NotificationChannel(CHANNEL_ID, name, importance).apply {
+                description = descriptionText
+                enableLights(true)
+                enableVibration(false)
+                setShowBadge(true)
+            }
+            
+            val notificationManager: NotificationManager =
+                context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
+            
+            Timber.d("✅ Credit notification channel created: $CHANNEL_ID")
+        }
+    }
+    
+    /**
+     * Enhanced notification with better logging
+     */
+    private fun sendEnhancedCreditResetNotification() {
+        try {
+            // Ensure notification channel exists
+            createNotificationChannel()
+            
+            val intent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            }
+
+            val pendingIntent = PendingIntent.getActivity(
+                context, 
+                0, 
+                intent, 
+                PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setContentTitle("Daily Credits Reset! 🎉")
+                .setContentText("Your daily credits have been reset. Chat: $DAILY_BASE_CHAT_CREDITS, Images: $DAILY_BASE_IMAGE_CREDITS")
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .setStyle(NotificationCompat.BigTextStyle()
+                    .bigText("Your daily credits have been reset! You now have $DAILY_BASE_CHAT_CREDITS chat credits and $DAILY_BASE_IMAGE_CREDITS image generation credits. Watch ads to earn more!"))
+
+            with(NotificationManagerCompat.from(context)) {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                    ActivityCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.POST_NOTIFICATIONS
+                    ) == PackageManager.PERMISSION_GRANTED) {
+                    notify(NOTIFICATION_ID, builder.build())
+                    Timber.d("✅ Enhanced credit reset notification sent successfully")
+                } else {
+                    Timber.w("⚠️ Notification permission not granted for credit reset notification")
+                }
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Error sending enhanced credit reset notification")
+        }
+    }
+
+    /**
      * Get debug info
      */
     fun getDebugInfo(): String {
         return """
-            Chat Credits: ${getChatCredits()}
-            Image Credits: ${getImageCredits()}
-            Max Credits: $MAX_TOTAL_CREDITS
-            Daily Base: $DAILY_BASE_CREDITS
+            🔒 CREDIT SYSTEM DEBUG INFO
+            Chat Credits: ${getChatCredits()}/${getMaxCredits(CreditType.CHAT)}
+            Image Credits: ${getImageCredits()}/${getMaxCredits(CreditType.IMAGE_GENERATION)}
+            Chat Ads Today: ${getAdCountToday(CreditType.CHAT)}/$MAX_AD_CHAT_CREDITS
+            Image Ads Today: ${getAdCountToday(CreditType.IMAGE_GENERATION)}/$MAX_AD_IMAGE_CREDITS
             Last Reset: ${encryptedPrefs.getString(LAST_RESET_DATE_KEY, "Never")}
-            Install ID: $installId
+            Install ID: ${installId.take(8)}...
+            Is Subscribed: ${PrefsManager.isSubscribed(context)}
         """.trimIndent()
     }
 }

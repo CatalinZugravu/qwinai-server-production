@@ -5,9 +5,7 @@ import android.content.SharedPreferences
 import androidx.core.content.edit
 import com.cyberflux.qwinai.model.RecentModel
 import com.cyberflux.qwinai.utils.ModelManager
-import com.google.gson.Gson
-import com.google.gson.JsonSyntaxException
-import com.google.gson.reflect.TypeToken
+import com.cyberflux.qwinai.utils.JsonUtils
 import timber.log.Timber
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
@@ -307,10 +305,7 @@ object ModelUsageTracker {
     private fun getUsageMap(prefs: SharedPreferences): MutableMap<String, Int> {
         val usageJson = prefs.getString(KEY_MODEL_USAGE, "{}")
         return try {
-            val rawMap = Gson().fromJson<MutableMap<String, Int>>(
-                usageJson,
-                object : TypeToken<MutableMap<String, Int>>() {}.type
-            ) ?: mutableMapOf()
+            val rawMap = JsonUtils.fromJsonMap(usageJson, String::class.java, Int::class.java) ?: mutableMapOf()
 
             // Clean existing keys to prevent duplicates from old data
             val cleanedMap = mutableMapOf<String, Int>()
@@ -322,8 +317,8 @@ object ModelUsageTracker {
                 }
             }
 
-            cleanedMap
-        } catch (e: JsonSyntaxException) {
+            cleanedMap.toMutableMap()
+        } catch (e: Exception) {
             Timber.e(e, "Error parsing usage data, resetting: ${e.message}")
             mutableMapOf()
         }
@@ -334,7 +329,7 @@ object ModelUsageTracker {
      */
     private fun saveUsageMap(prefs: SharedPreferences, usageMap: MutableMap<String, Int>) {
         try {
-            val usageJson = Gson().toJson(usageMap)
+            val usageJson = JsonUtils.mapToJson(usageMap)
             prefs.edit {
                 putString(KEY_MODEL_USAGE, usageJson)
                 apply()

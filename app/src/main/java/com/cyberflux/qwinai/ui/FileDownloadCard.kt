@@ -175,7 +175,7 @@ class FileDownloadCard @JvmOverloads constructor(
 
     private fun showDownloadAnimation() {
         // Show progress bar
-        downloadProgress.visibility = View.VISIBLE
+        downloadProgress.visibility = VISIBLE
         downloadProgress.isIndeterminate = true
         
         // Animate download button
@@ -191,7 +191,7 @@ class FileDownloadCard @JvmOverloads constructor(
 
     private fun showSuccessAnimation() {
         // Hide progress bar
-        downloadProgress.visibility = View.GONE
+        downloadProgress.visibility = GONE
         
         // Change download button to checkmark briefly
         val downloadIcon = downloadButton.findViewById<ImageView>(R.id.downloadIcon)
@@ -217,7 +217,7 @@ class FileDownloadCard @JvmOverloads constructor(
     }
 
     private fun resetDownloadButton() {
-        downloadProgress.visibility = View.GONE
+        downloadProgress.visibility = GONE
         
         val downloadIcon = downloadButton.findViewById<ImageView>(R.id.downloadIcon)
         downloadIcon?.setImageResource(R.drawable.ic_download)

@@ -2,6 +2,7 @@ package com.cyberflux.qwinai.utils
 
 import com.cyberflux.qwinai.model.AIModel
 import com.cyberflux.qwinai.model.ModelConfig
+import timber.log.Timber
 
 /**
  * Complete ModelManager with all model IDs and helper methods
@@ -9,29 +10,18 @@ import com.cyberflux.qwinai.model.ModelConfig
 object ModelManager {
 
     // Model IDs - OpenAI
-    const val DEFAULT_MODEL_ID = "o1"
-    const val O1_ID = "o1"
-    const val O3_MINI_ID = "o3-mini"
+    const val DEFAULT_MODEL_ID = "gpt-4o"
     const val GPT_4O_ID = "gpt-4o"
-    const val CHATGPT_4O_LATEST_ID = "chatgpt-4o-latest"
-    const val GPT_4o_MINI_ID = "gpt-4o-mini"
-    const val GPT_4_1_MINI_ID = "openai/gpt-4.1-mini-2025-04-14"
     const val GPT_4_TURBO_ID = "gpt-4-turbo"
-    const val GPT_4_TURBO_2024_04_09_ID = "gpt-4-turbo-2024-04-09"
-    const val GPT_4O_2024_05_13_ID = "gpt-4o-2024-05-13"
-    const val GPT_4O_2024_08_06_ID = "gpt-4o-2024-08-06"
 
     // Anthropic Models
     const val CLAUDE_3_7_SONNET_ID = "claude-3-7-sonnet-20250219"
 
     // Meta Models
-    const val LLAMA_3_2_3B_INSTRUCT_TURBO_ID = "meta-llama/Llama-3.2-3B-Instruct-Turbo"
     const val LLAMA_4_MAVERICK_ID = "meta-llama/llama-4-maverick"
 
     // Google Models
-    const val GEMMA_3B_INSTRUCT_ID = "google/gemma-3-12b-it"
     const val GEMMA_27B_INSTRUCT_ID = "google/gemma-3-27b-it"
-    const val GEMMA_4B_INSTRUCT_ID = "google/gemma-3-4b-it"
 
     // Cohere Models
     const val COHERE_COMMAND_R_PLUS_ID = "cohere/command-r-plus"
@@ -41,14 +31,18 @@ object ModelManager {
 
     // Qwen Models
     const val QWEN_3_235B_ID = "Qwen/Qwen3-235B-A22B-fp8-tput"
-    const val QWEN_2_5_72B_ID = "Qwen/Qwen2.5-72B-Instruct-Turbo"
 
     // xAI Models
     const val GROK_3_BETA_ID = "x-ai/grok-3-beta"
 
     // Mistral Models
-    const val MIXTRAL_8X7B_ID = "mistralai/Mixtral-8x7B-Instruct-v0.1"
     const val MISTRAL_OCR_ID = "mistral/mistral-ocr-latest"
+
+    // Perplexity Models
+    const val PERPLEXITY_SONAR_PRO_ID = "perplexity/sonar-pro"
+
+    // ZhiPu Models
+    const val ZHIPU_GLM_4_5_ID = "zhipu/glm-4.5"
 
     // Image generation models (kept for compatibility but not used in ModelApiHandler)
     const val DALLE_3_ID = "dall-e-3"
@@ -60,6 +54,9 @@ object ModelManager {
     const val FLUX_KONTEXT_MAX_IMAGE_TO_IMAGE_ID = "flux/kontext-max/image-to-image"
     const val FLUX_KONTEXT_PRO_IMAGE_TO_IMAGE_ID = "flux/kontext-pro/image-to-image"
     const val SEEDREAM_3_ID = "bytedance/seedream-3.0"
+    const val QWEN_IMAGE_ID = "alibaba/qwen-image"
+    const val SEEDEDIT_3_I2I_ID = "bytedance/seededit-3.0-i2i"
+    const val IMAGEN_4_ULTRA_ID = "imagen-4.0-ultra-generate-preview-06-06"
     /**
      * Generate AIModel list from ModelConfigs
      */
@@ -83,7 +80,28 @@ object ModelManager {
     }
 
     var selectedModel: AIModel = models.firstOrNull() ?: throw IllegalStateException("No models configured")
+    
+    /**
+     * Select a model by ID
+     */
+    fun selectModel(modelId: String) {
+        val model = models.find { it.id == modelId }
+        if (model != null) {
+            selectedModel = model
+            Timber.d("Selected model: ${selectedModel.displayName} (${selectedModel.id})")
+        } else {
+            Timber.w("Model not found: $modelId, keeping current model")
+        }
+    }
 
+    /**
+     * Get display name for a model ID
+     */
+    fun getModelDisplayName(modelId: String): String {
+        val config = ModelConfigManager.getConfig(modelId)
+        return config?.displayName ?: modelId
+    }
+    
     /**
      * Helper method to check if a model is an image generation model
      */
@@ -96,7 +114,11 @@ object ModelManager {
             RECRAFT_V3_ID,
             FLUX_DEV_IMAGE_TO_IMAGE_ID,
             FLUX_KONTEXT_MAX_IMAGE_TO_IMAGE_ID,
-            FLUX_KONTEXT_PRO_IMAGE_TO_IMAGE_ID
+            FLUX_KONTEXT_PRO_IMAGE_TO_IMAGE_ID,
+            SEEDREAM_3_ID,
+            QWEN_IMAGE_ID,
+            SEEDEDIT_3_I2I_ID,
+            IMAGEN_4_ULTRA_ID
         )
     }
 
@@ -170,4 +192,30 @@ object ModelManager {
     fun getOcrModels(): List<AIModel> = models.filter {
         getModelConfig(it.id)?.isOcrModel == true
     }
+    
+    /**
+     * Update subscription status to control model availability
+     */
+    fun updateSubscriptionStatus(isSubscribed: Boolean) {
+        // Update internal subscription state for model filtering
+        this.isSubscribed = isSubscribed
+        
+        // If user is no longer subscribed and current model is premium, switch to free
+        if (!isSubscribed && !selectedModel.isFree) {
+            val freeModel = getDefaultFreeModel()
+            selectModel(freeModel.id)
+            Timber.d("Switched to free model due to subscription expiry: ${freeModel.displayName}")
+        }
+    }
+    
+    /**
+     * Get default free model for non-subscribers
+     */
+    fun getDefaultFreeModel(): AIModel {
+        return models.find { it.isFree } ?: models.first {
+            it.id == DEFAULT_MODEL_ID || it.id.contains("gpt-3.5")
+        }
+    }
+    
+    private var isSubscribed = false
 }

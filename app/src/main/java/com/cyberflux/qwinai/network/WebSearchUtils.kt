@@ -1,10 +1,7 @@
 package com.cyberflux.qwinai.network
 
 import timber.log.Timber
-import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Date
-import java.util.Locale
 
 /**
  * Utility class for web search detection and analysis

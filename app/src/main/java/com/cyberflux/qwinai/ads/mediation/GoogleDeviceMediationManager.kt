@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Mediation manager for Google devices
- * Prioritizes AdMob, then AppLovin, then IronSource
+ * Uses AdMob (Google Ads) only - other networks removed for APK size optimization
  */
 class GoogleDeviceMediationManager : AdMediationManager {
     private val adProviders = mutableListOf<BaseAdProvider>()
@@ -24,12 +24,10 @@ class GoogleDeviceMediationManager : AdMediationManager {
 
     override fun initialize(context: Context) {
         try {
-            // Use AdMob, AppLovin, and IronSource for Google devices
+            // FIXED: Use AdMob ONLY for Google devices as requested
             adProviders.clear() // Clear any existing providers to avoid duplicates
 
-            adProviders.add(GoogleAdProvider())        // Primary for Google devices
-            adProviders.add(AppLovinAdProvider())      // Secondary
-            adProviders.add(IronSourceAdProvider())    // Tertiary
+            adProviders.add(GoogleAdProvider())        // AdMob ONLY for Google devices
 
             // Initialize all providers with proper tracking
             pendingInitCount.set(adProviders.size)
@@ -54,7 +52,7 @@ class GoogleDeviceMediationManager : AdMediationManager {
                 }.start()
             }
 
-            Timber.d("Initialized Google device mediation with ${adProviders.size} providers: AdMob, AppLovin, IronSource")
+            Timber.d("Initialized Google device mediation with ${adProviders.size} provider: AdMob ONLY")
         } catch (e: Exception) {
             Timber.e(e, "Error setting up Google device mediation: ${e.message}")
         }
@@ -236,9 +234,9 @@ class GoogleDeviceMediationManager : AdMediationManager {
         } ?: Timber.d("No rewarded ad ready to show")
     }
 
-    override fun isRewardedAdLoaded(): Boolean = currentRewardedProvider?.isRewardedAdLoaded() ?: false
+    override fun isRewardedAdLoaded(): Boolean = currentRewardedProvider?.isRewardedAdLoaded() == true
 
-    override fun isInterstitialAdLoaded(): Boolean = currentInterstitialProvider?.isInterstitialAdLoaded() ?: false
+    override fun isInterstitialAdLoaded(): Boolean = currentInterstitialProvider?.isInterstitialAdLoaded() == true
 
     override fun release() {
         // Release resources for all providers

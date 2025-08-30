@@ -250,6 +250,99 @@ object ImageGenerationUtils {
     }
 
     /**
+     * Create Alibaba Qwen Image request with exact API parameters
+     */
+    fun createQwenImageRequest(
+        prompt: String,
+        outputFormat: String = "jpeg",
+        numImages: Int = 1,
+        seed: Int? = null,
+        enableSafetyChecker: Boolean = true,
+        guidanceScale: Float = 7.5f,
+        syncMode: Boolean = false,
+        negativePrompt: String = "",
+        enableProgressiveLoading: Boolean = true
+    ): JSONObject {
+        return JSONObject().apply {
+            put("model", "alibaba/qwen-image")
+            put("prompt", prompt)
+            put("output_format", outputFormat)
+            put("num_images", numImages)
+            put("enable_safety_checker", enableSafetyChecker)
+            put("guidance_scale", guidanceScale)
+            put("sync_mode", syncMode)
+
+            // Optional parameters
+            seed?.let { put("seed", it) }
+            if (negativePrompt.isNotBlank()) {
+                put("negative_prompt", negativePrompt)
+            }
+
+            Timber.d("Created Qwen Image request with ${numImages} images")
+        }
+    }
+
+    /**
+     * Create Bytedance SeedEdit 3.0 Image-to-Image request with exact API parameters
+     */
+    fun createSeedEdit3ImageToImageRequest(
+        imageBase64: String,
+        prompt: String,
+        size: String = "adaptive",
+        responseFormat: String = "url",
+        seed: Int? = null,
+        guidanceScale: Float = 7.5f,
+        watermark: Boolean = false,
+        enableProgressiveLoading: Boolean = true
+    ): JSONObject {
+        return JSONObject().apply {
+            put("model", "bytedance/seededit-3.0-i2i")
+            put("image", imageBase64)
+            put("size", size)
+            put("prompt", prompt)
+            put("response_format", responseFormat)
+            put("guidance_scale", guidanceScale)
+            put("watermark", watermark)
+
+            // Optional parameters
+            seed?.let { put("seed", it) }
+
+            Timber.d("Created SeedEdit 3.0 I2I request with image length: ${imageBase64.length}")
+        }
+    }
+
+    /**
+     * Create Google Imagen 4.0 Ultra request with exact API parameters
+     */
+    fun createImagen4UltraRequest(
+        prompt: String,
+        convertBase64ToUrl: Boolean = true,
+        numImages: Int = 1,
+        seed: Int? = null,
+        enhancePrompt: Boolean = true,
+        aspectRatio: String = "1:1",
+        personGeneration: String = "allow_adult",
+        safetySetting: String = "block_medium_and_above",
+        enableProgressiveLoading: Boolean = true
+    ): JSONObject {
+        return JSONObject().apply {
+            put("model", "imagen-4.0-ultra-generate-preview-06-06")
+            put("prompt", prompt)
+            put("convert_base64_to_url", convertBase64ToUrl)
+            put("num_images", numImages)
+            put("enhance_prompt", enhancePrompt)
+            put("aspect_ratio", aspectRatio)
+            put("person_generation", personGeneration)
+            put("safety_setting", safetySetting)
+
+            // Optional parameters
+            seed?.let { put("seed", it) }
+
+            Timber.d("Created Imagen 4.0 Ultra request with ${numImages} images, aspect ratio: $aspectRatio")
+        }
+    }
+
+    /**
      * Get model display name for UI
      */
     fun getModelDisplayName(modelId: String): String {
@@ -263,6 +356,9 @@ object ImageGenerationUtils {
             "flux/kontext-max/image-to-image" -> "Flux Kontext Max I2I"
             "flux/kontext-pro/image-to-image" -> "Flux Kontext Pro I2I"
             "bytedance/seedream-3.0" -> "SeedDream 3.0"
+            "alibaba/qwen-image" -> "Qwen Image"
+            "bytedance/seededit-3.0-i2i" -> "SeedEdit 3.0 I2I"
+            "imagen-4.0-ultra-generate-preview-06-06" -> "Imagen 4.0 Ultra"
             else -> modelId
         }
     }
@@ -277,6 +373,9 @@ object ImageGenerationUtils {
             "stable-diffusion-v35-large", "flux/schnell", "flux-realism", "recraft-v3" -> {
                 listOf("square_hd", "square", "portrait_4_3", "portrait_16_9", "landscape_4_3", "landscape_16_9")
             }
+            "alibaba/qwen-image" -> listOf("1024x1024", "1024x1792", "1792x1024", "512x512", "768x768")
+            "bytedance/seededit-3.0-i2i" -> listOf("adaptive")
+            "imagen-4.0-ultra-generate-preview-06-06" -> listOf("1:1", "9:16", "16:9", "3:4", "4:3")
             else -> listOf("1024x1024")
         }
     }
@@ -336,6 +435,9 @@ object ImageGenerationUtils {
             "bytedance/seedream-3.0" -> listOf("url", "b64_json")
             "stable-diffusion-v35-large", "flux-realism" -> listOf("jpeg", "png")
             "flux/kontext-max/image-to-image", "flux/kontext-pro/image-to-image" -> listOf("jpeg", "png")
+            "alibaba/qwen-image" -> listOf("jpeg", "png")
+            "bytedance/seededit-3.0-i2i" -> listOf("url", "b64_json")
+            "imagen-4.0-ultra-generate-preview-06-06" -> listOf("url", "base64")
             else -> listOf("url")
         }
     }
@@ -349,6 +451,9 @@ object ImageGenerationUtils {
             "flux/kontext-pro/image-to-image" -> listOf(
                 "21:9", "16:9", "4:3", "3:2", "1:1", "2:3", "3:4", "9:16", "9:21"
             )
+            "imagen-4.0-ultra-generate-preview-06-06" -> listOf(
+                "1:1", "9:16", "16:9", "3:4", "4:3"
+            )
             else -> listOf("16:9", "1:1", "4:3", "3:4")
         }
     }
@@ -361,6 +466,8 @@ object ImageGenerationUtils {
             "bytedance/seedream-3.0" -> Pair(1.0f, 10.0f)
             "stable-diffusion-v35-large", "flux-realism", "flux/dev/image-to-image",
             "flux/kontext-max/image-to-image", "flux/kontext-pro/image-to-image" -> Pair(1.0f, 20.0f)
+            "alibaba/qwen-image" -> Pair(1.0f, 20.0f)
+            "bytedance/seededit-3.0-i2i" -> Pair(1.0f, 10.0f)
             else -> Pair(1.0f, 20.0f)
         }
     }
@@ -383,6 +490,9 @@ object ImageGenerationUtils {
         return when (modelId) {
             "dall-e-3" -> 1 // DALL-E 3 only supports 1 image
             "recraft-v3" -> 1 // Recraft v3 only supports 1 image
+            "bytedance/seededit-3.0-i2i" -> 1 // Image-to-image typically supports 1 image
+            "alibaba/qwen-image" -> 4 // Supports up to 4 images
+            "imagen-4.0-ultra-generate-preview-06-06" -> 4 // Supports up to 4 images
             else -> 4
         }
     }
@@ -393,6 +503,7 @@ object ImageGenerationUtils {
     fun supportsNegativePrompt(modelId: String): Boolean {
         return when (modelId) {
             "stable-diffusion-v35-large" -> true
+            "alibaba/qwen-image" -> true
             else -> false
         }
     }
@@ -413,6 +524,7 @@ object ImageGenerationUtils {
     fun supportsWatermark(modelId: String): Boolean {
         return when (modelId) {
             "bytedance/seedream-3.0" -> true
+            "bytedance/seededit-3.0-i2i" -> true
             else -> false
         }
     }
@@ -423,6 +535,8 @@ object ImageGenerationUtils {
     fun supportsSafetyChecker(modelId: String): Boolean {
         return when (modelId) {
             "stable-diffusion-v35-large", "flux/schnell", "flux-realism", "flux/dev/image-to-image" -> true
+            "alibaba/qwen-image" -> true
+            "imagen-4.0-ultra-generate-preview-06-06" -> true
             else -> false
         }
     }
@@ -433,6 +547,9 @@ object ImageGenerationUtils {
     fun supportsSeed(modelId: String): Boolean {
         return when (modelId) {
             "dall-e-3" -> false // DALL-E 3 doesn't support custom seeds
+            "alibaba/qwen-image" -> true
+            "bytedance/seededit-3.0-i2i" -> true
+            "imagen-4.0-ultra-generate-preview-06-06" -> true
             else -> true
         }
     }
@@ -528,13 +645,19 @@ object ImageGenerationUtils {
         outputFormat: String? = null,
         numImages: Int = 1,
         guidanceScale: Float? = null,
-        numInferenceSteps: Int? = null
+        numInferenceSteps: Int? = null,
+        seed: Int? = null
     ): List<String> {
         val errors = mutableListOf<String>()
 
-        // Check prompt length
-        if (prompt.length > 4000) {
-            errors.add("Prompt must be 4000 characters or less")
+        // Check prompt length based on model
+        val maxPromptLength = when (modelId) {
+            "imagen-4.0-ultra-generate-preview-06-06" -> 400
+            else -> 4000
+        }
+        
+        if (prompt.length > maxPromptLength) {
+            errors.add("Prompt must be $maxPromptLength characters or less for model '$modelId'")
         }
 
         // Check size/aspect ratio
@@ -591,6 +714,82 @@ object ImageGenerationUtils {
             }
         }
 
+        // Check seed parameter
+        seed?.let { s ->
+            when (modelId) {
+                "alibaba/qwen-image" -> {
+                    if (s < 1) {
+                        errors.add("Seed must be 1 or greater for model '$modelId'")
+                    }
+                }
+                "imagen-4.0-ultra-generate-preview-06-06" -> {
+                    if (s < 0 || s > 4294967295L) {
+                        errors.add("Seed must be between 0 and 4294967295 for model '$modelId'")
+                    }
+                }
+                "dall-e-3" -> {
+                    errors.add("Model '$modelId' does not support custom seeds")
+                }
+            }
+        }
+
         return errors
+    }
+
+    /**
+     * Get supported person generation options for Imagen model
+     */
+    fun getSupportedPersonGeneration(): List<String> {
+        return listOf("dont_allow", "allow_adult")
+    }
+
+    /**
+     * Get supported safety settings for Imagen model
+     */
+    fun getSupportedSafetySettings(): List<String> {
+        return listOf("block_low_and_above", "block_medium_and_above", "block_only_high")
+    }
+
+    /**
+     * Get person generation display name for UI
+     */
+    fun getPersonGenerationDisplayName(option: String): String {
+        return when (option) {
+            "dont_allow" -> "Don't Allow People"
+            "allow_adult" -> "Allow Adults"
+            else -> option
+        }
+    }
+
+    /**
+     * Get safety setting display name for UI
+     */
+    fun getSafetySettingDisplayName(setting: String): String {
+        return when (setting) {
+            "block_low_and_above" -> "Block Low Risk & Above"
+            "block_medium_and_above" -> "Block Medium Risk & Above"
+            "block_only_high" -> "Block Only High Risk"
+            else -> setting
+        }
+    }
+
+    /**
+     * Get credit cost for a specific image generation model
+     */
+    fun getCreditCost(modelId: String): Int {
+        return when (modelId) {
+            "dall-e-3" -> 5                                          // DALL-E 3 - Premium model
+            "imagen-4.0-ultra-generate-preview-06-06" -> 4          // Google Imagen 4.0 Ultra - High-end
+            "stable-diffusion-v35-large" -> 3                       // Stable Diffusion v3.5 - Mid-tier
+            "flux-realism", "recraft-v3" -> 3                       // Premium artistic models
+            "flux/dev/image-to-image" -> 4                          // Image-to-image premium
+            "flux/kontext-max/image-to-image", 
+            "flux/kontext-pro/image-to-image" -> 4                  // Premium I2I models
+            "bytedance/seededit-3.0-i2i" -> 3                      // ByteDance I2I
+            "flux/schnell" -> 2                                     // Flux Schnell - Fast generation
+            "bytedance/seedream-3.0" -> 2                          // ByteDance text-to-image
+            "alibaba/qwen-image" -> 2                              // Qwen Image - Standard
+            else -> 3                                              // Default cost for unknown models
+        }
     }
 }

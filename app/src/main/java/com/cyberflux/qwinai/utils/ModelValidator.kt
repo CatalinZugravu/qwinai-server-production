@@ -30,29 +30,156 @@ object ModelValidator {
         ModelConfigManager.supportsWebSearch(modelId)
 
     fun supportsFunctionCalling(modelId: String): Boolean =
-        ModelConfigManager.getConfig(modelId)?.supportsFunctionCalling ?: false
+        ModelConfigManager.getConfig(modelId)?.supportsFunctionCalling == true
 
     fun supportsSystemMessages(modelId: String): Boolean =
-        ModelConfigManager.getConfig(modelId)?.supportsSystemMessages ?: true
+        ModelConfigManager.getConfig(modelId)?.supportsSystemMessages != false
 
     fun supportsAudio(modelId: String): Boolean =
-        ModelConfigManager.getConfig(modelId)?.supportsAudio ?: false
+        ModelConfigManager.getConfig(modelId)?.supportsAudio == true
 
     fun supportsImageUpload(modelId: String): Boolean =
-        ModelConfigManager.getConfig(modelId)?.supportsImages ?: false
+        ModelConfigManager.getConfig(modelId)?.supportsImages == true
 
     fun supportsDocuments(modelId: String): Boolean =
-        ModelConfigManager.getConfig(modelId)?.supportsDocuments ?: false
+        ModelConfigManager.getConfig(modelId)?.supportsDocuments == true
+
+    /**
+     * Check if a model supports PDF files directly (without conversion)
+     */
+    fun supportsPdfDirectly(modelId: String): Boolean {
+        return when {
+            // OpenAI models with native PDF support
+            modelId.contains("gpt-4o", ignoreCase = true) -> true
+            modelId.contains("gpt-4-turbo", ignoreCase = true) -> true
+            modelId.contains("gpt-4", ignoreCase = true) && 
+                modelId.contains("vision", ignoreCase = true) -> true
+            
+            // Anthropic Claude models with PDF support
+            modelId.contains("claude-3", ignoreCase = true) -> true
+            modelId.contains("claude-3.5", ignoreCase = true) -> true
+            
+            // Google models with PDF support
+            modelId.contains("gemini-pro", ignoreCase = true) -> true
+            modelId.contains("gemini-1.5", ignoreCase = true) -> true
+            modelId.contains("gemini-2", ignoreCase = true) -> true
+            
+            // Perplexity models (have PDF support)
+            modelId.contains("pplx", ignoreCase = true) -> true
+            
+            // Other models that might support PDF
+            modelId.contains("o1", ignoreCase = true) -> true // GPT o1 models
+            
+            // Default: no PDF support
+            else -> false
+        }
+    }
+
+    /**
+     * Get maximum tokens per file for a model
+     * Returns 0 if the model doesn't support files
+     */
+    fun getMaxTokensPerFile(modelId: String): Long {
+        return ModelConfigManager.getConfig(modelId)?.maxTokensPerFile ?: 0L
+    }
+
+    /**
+     * Get total storage limit per user for a model
+     * Returns 0 if the model doesn't have a limit
+     */
+    fun getMaxTotalStorage(modelId: String): Long {
+        return ModelConfigManager.getConfig(modelId)?.maxTotalStorageBytes ?: 0L
+    }
+
+    /**
+     * Validate if a file can be uploaded to a model
+     * @param modelId The model ID
+     * @param fileSize File size in bytes
+     * @param mimeType MIME type of the file
+     * @param fileName Original file name
+     * @return ValidationResult with success/failure and details
+     */
+    fun validateFileForModel(
+        modelId: String,
+        fileSize: Long,
+        mimeType: String,
+        fileName: String?
+    ): FileValidationResult {
+        val config = ModelConfigManager.getConfig(modelId)
+        
+        if (config == null) {
+            return FileValidationResult(
+                isValid = false,
+                errorMessage = "Model configuration not found"
+            )
+        }
+
+        // Check if model supports file uploads
+        if (!config.supportsFileUpload) {
+            return FileValidationResult(
+                isValid = false,
+                errorMessage = "This model does not support file uploads"
+            )
+        }
+
+        // Check file size
+        if (fileSize > config.maxFileSizeBytes) {
+            return FileValidationResult(
+                isValid = false,
+                errorMessage = "File size (${FileUtil.formatFileSize(fileSize)}) exceeds maximum allowed (${FileUtil.formatFileSize(config.maxFileSizeBytes)})"
+            )
+        }
+
+        // Check file type
+        val fileExtension = fileName?.substringAfterLast(".", "") ?: ""
+        val isPdf = mimeType == "application/pdf"
+        val isImage = mimeType.startsWith("image/")
+
+        if (isPdf && !config.supportedDocumentFormats.contains("pdf")) {
+            return FileValidationResult(
+                isValid = false,
+                errorMessage = "PDF files are not supported by this model"
+            )
+        }
+
+        if (isImage && config.supportedImageFormats.isEmpty()) {
+            return FileValidationResult(
+                isValid = false,
+                errorMessage = "Image files are not supported by this model"
+            )
+        }
+
+        if (!isPdf && !isImage) {
+            return FileValidationResult(
+                isValid = false,
+                errorMessage = "Only PDF and image files are supported"
+            )
+        }
+
+        return FileValidationResult(
+            isValid = true,
+            errorMessage = null,
+            maxTokensPerFile = config.maxTokensPerFile,
+            maxTotalStorage = config.maxTotalStorageBytes
+        )
+    }
+
+    data class FileValidationResult(
+        val isValid: Boolean,
+        val errorMessage: String?,
+        val maxTokensPerFile: Long = 0L,
+        val maxTotalStorage: Long = 0L
+    )
 
     // === MODEL TYPE CHECKS ===
 
     fun isImageGenerator(modelId: String): Boolean = false // Image models excluded as requested
 
     fun isOcrModel(modelId: String): Boolean =
-        ModelConfigManager.getConfig(modelId)?.isOcrModel ?: false
+        ModelConfigManager.getConfig(modelId)?.isOcrModel == true
 
     fun isClaudeModel(modelId: String): Boolean =
-        ModelConfigManager.getConfig(modelId)?.requiresClaudeThinking ?: false ||
+        ModelConfigManager.getConfig(modelId)?.requiresClaudeThinking == true ||
                 modelId.contains("claude", ignoreCase = true)
 
     // === FILE HANDLING ===
@@ -96,10 +223,10 @@ object ModelValidator {
         }
 
     fun supportsMinP(modelId: String): Boolean =
-        ModelConfigManager.getConfig(modelId)?.supportsMinP ?: false
+        ModelConfigManager.getConfig(modelId)?.supportsMinP == true
 
     fun supportsTopA(modelId: String): Boolean =
-        ModelConfigManager.getConfig(modelId)?.supportsTopA ?: false
+        ModelConfigManager.getConfig(modelId)?.supportsTopA == true
 
 
     // === LEGACY COMPATIBILITY METHODS ===
@@ -133,7 +260,10 @@ object ModelValidator {
         "recraft-v3" to 12,                                             // Most versatile with many styles
         "flux/dev/image-to-image" to 8,                                 // Standard I2I
         "flux/kontext-max/image-to-image" to 10,                       // Advanced I2I
-        "flux/kontext-pro/image-to-image" to 12                        // Premium I2I with multi-image
+        "flux/kontext-pro/image-to-image" to 12,                       // Premium I2I with multi-image
+        "alibaba/qwen-image" to 6,                                      // Alibaba Qwen image generation
+        "bytedance/seededit-3.0-i2i" to 8,                             // ByteDance SeedEdit I2I
+        "imagen-4.0-ultra-generate-preview-06-06" to 15                // Google Imagen 4.0 Ultra (premium)
     )
 
     // Quality multipliers
@@ -200,7 +330,8 @@ object ModelValidator {
         return when (modelId) {
             "flux/dev/image-to-image",
             "flux/kontext-max/image-to-image",
-            "flux/kontext-pro/image-to-image" -> true
+            "flux/kontext-pro/image-to-image",
+            "bytedance/seededit-3.0-i2i" -> true
             else -> false
         }
     }
@@ -212,7 +343,8 @@ object ModelValidator {
         return when (modelId) {
             "flux/kontext-max/image-to-image",
             "flux/kontext-pro/image-to-image" -> 4
-            "flux/dev/image-to-image" -> 1
+            "flux/dev/image-to-image",
+            "bytedance/seededit-3.0-i2i" -> 1
             else -> 1
         }
     }
@@ -231,6 +363,9 @@ object ModelValidator {
         return when (modelId) {
             "dall-e-3" -> 1 // DALL-E 3 only supports 1 image
             "recraft-v3" -> 1 // Recraft v3 only supports 1 image
+            "bytedance/seededit-3.0-i2i" -> 1 // SeedEdit I2I supports 1 image
+            "alibaba/qwen-image" -> 4 // Qwen Image supports up to 4 images
+            "imagen-4.0-ultra-generate-preview-06-06" -> 4 // Imagen 4.0 Ultra supports up to 4 images
             else -> 4
         }
     }

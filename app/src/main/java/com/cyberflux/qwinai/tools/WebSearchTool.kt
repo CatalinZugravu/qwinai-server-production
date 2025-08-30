@@ -46,7 +46,7 @@ class WebSearchTool(private val context: Context) : Tool {
 
             val freshness = parameters[PARAM_FRESHNESS] as? String
             val count = parameters[PARAM_COUNT] as? Int ?: 5
-            val safeSearch = parameters[PARAM_SAFE_SEARCH] as? Boolean ?: true
+            val safeSearch = parameters[PARAM_SAFE_SEARCH] as? Boolean != false
             val qualityFilter = parameters[PARAM_QUALITY_FILTER] as? String ?: "high"
 
             Timber.d("Executing web search: query='$cleanedQuery', freshness=$freshness, count=$count")

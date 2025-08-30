@@ -34,173 +34,91 @@
             android:longClickable="true"
             android:padding="12dp">
 
-            <!-- Persistent Loading Indicator (Always visible, separate from status container) -->
-            <LinearLayout
-                android:id="@+id/persistentIndicatorContainer"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:padding="8dp"
-                android:background="@drawable/status_indicator_background">
-
-                <com.cyberflux.qwinai.components.PersistentLoadingIndicator
-                    android:id="@+id/persistentLoadingIndicator"
-                    style="?android:attr/progressBarStyleSmall"
-                    android:layout_width="16dp"
-                    android:layout_height="16dp"
-                    android:layout_marginEnd="8dp" />
-
-                <!-- Status Text Container (can hide/show independently) -->
-                <LinearLayout
-                    android:id="@+id/simpleStatusContainer"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:visibility="gone">
-
-                    <com.cyberflux.qwinai.components.ShimmerStatusWrapper
-                        android:id="@+id/shimmerStatusWrapper"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content" />
-
-                    <TextView
-                        android:id="@+id/tvSimpleStatus"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:textSize="14sp"
-                        android:textColor="@color/status_text_color"
-                        android:fontFamily="@font/inter_medium"
-                        android:visibility="gone"
-                        tools:text="Generating..." />
-
-                </LinearLayout>
-
-            </LinearLayout>            <!-- Simplified Thinking Process Container -->
-            <LinearLayout
-                android:id="@+id/thinkingContainer"
+            <!-- New Thinking Content Component -->
+            <com.cyberflux.qwinai.components.ThinkingContentView
+                android:id="@+id/thinkingContentView"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="8dp"
-                android:orientation="vertical"
-                android:visibility="visible"
-                android:alpha="0">
+                android:visibility="gone" />
 
-                <!-- Simple Thinking Header -->
-                <LinearLayout
-                    android:id="@+id/thinkingHeader"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:paddingTop="4dp"
-                    android:paddingBottom="8dp"
-                    android:gravity="center_vertical"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <TextView
-                        android:id="@+id/thinkingTitle"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:textSize="13sp"
-                        android:textStyle="italic"
-                        android:textColor="@color/thinking_text_muted"
-                        android:text="Thinking..." />
-
-                    <!-- Timer - shows during and after thinking -->
-                    <TextView
-                        android:id="@+id/tvThinkingTimer"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginEnd="8dp"
-                        android:textSize="12sp"
-                        android:textColor="@color/thinking_text_light"
-                        android:text="0:00"
-                        android:visibility="visible"
-                        android:fontFamily="monospace" />
-
-                    <!-- Simple expand/collapse arrow -->
-                    <ImageButton
-                        android:id="@+id/thinkingToggle"
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:background="?attr/selectableItemBackgroundBorderless"
-                        android:src="@drawable/ic_expand"
-                        android:rotation="0"
-                        android:scaleType="fitCenter"
-                        android:contentDescription="Toggle thinking process" />
-                </LinearLayout>
-
-                <!-- Transparent Thinking Content with Left Border Line -->
-                <LinearLayout
-                    android:id="@+id/thinkingContentContainer"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:visibility="gone"
-                    android:alpha="0"
-                    android:paddingStart="8dp"
-                    android:paddingEnd="8dp"
-                    android:paddingBottom="8dp">
-
-                    <!-- Vertical thinking indicator line -->
-                    <View
-                        android:id="@+id/thinkingIndicatorLine"
-                        android:layout_width="3dp"
-                        android:layout_height="match_parent"
-                        android:layout_marginTop="2dp"
-                        android:layout_marginEnd="12dp"
-                        android:background="@color/colorSecondary"
-                        android:alpha="0.7" />
-
-                    <!-- Thinking content with distinct styling -->
-                    <TextView
-                        android:id="@+id/thinkingContent"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:textSize="13sp"
-                        android:textIsSelectable="false"
-                        android:textColor="@color/colorSecondary"
-                        android:alpha="0.9"
-                        android:lineSpacingExtra="3dp"
-                        android:fontFamily="sans-serif"
-                        android:fontStyle="italic"
-                        android:background="@android:color/transparent"
-                        tools:text="Let me think about this step by step..." />
-                </LinearLayout>
-            </LinearLayout>
-
-            <!-- Main Message Content -->
-            <ScrollView
-                android:id="@+id/messageScrollView"
+            <!-- Main Message Content - Mixed Content Container with Integrated Loading Indicator -->
+            <FrameLayout
+                android:id="@+id/messageContentFrame"
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
-                android:layout_weight="1"
-                android:fadeScrollbars="false"
-                android:scrollbars="vertical">
+                android:layout_weight="1">
 
-                <TextView
-                    android:id="@+id/tvMessage"
-                    android:layout_width="match_parent"
+                <!-- Loading indicator in same position as content -->
+                <LinearLayout
+                    android:id="@+id/persistentIndicatorContainer"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textColor="?attr/colorOnSurface"
-                    android:textIsSelectable="true"
-                    android:textSize="14sp" />
-            </ScrollView>
+                    android:layout_gravity="start|top"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="0dp"
+                    android:layout_margin="0dp">
 
-            <!-- Code blocks container -->
-            <LinearLayout
-                android:id="@+id/codeBlocksContainer"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:orientation="vertical"
-                android:visibility="gone" />
+                    <com.cyberflux.qwinai.components.PersistentLoadingIndicator
+                        android:id="@+id/persistentLoadingIndicator"
+                        style="?android:attr/progressBarStyleSmall"
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:layout_marginEnd="8dp" />
+
+                    <!-- Status Text Container (can hide/show independently) -->
+                    <LinearLayout
+                        android:id="@+id/simpleStatusContainer"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:visibility="gone">
+
+                        <com.cyberflux.qwinai.components.ShimmerStatusWrapper
+                            android:id="@+id/shimmerStatusWrapper"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" />
+
+                        <TextView
+                            android:id="@+id/tvSimpleStatus"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            style="@style/StatusTextStyle"
+                            android:visibility="gone"
+                            tools:text="Generating..." />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
+                <ScrollView
+                    android:id="@+id/messageScrollView"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:fadeScrollbars="false"
+                    android:scrollbars="vertical">
+
+                    <!-- FIXED: LinearLayout to hold mixed content (text blocks + code blocks inline) -->
+                    <LinearLayout
+                        android:id="@+id/messageContentContainer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:layout_margin="0dp"
+                        android:padding="0dp" />
+                </ScrollView>
+                
+                <!-- Fade overlay for generating text effect -->
+                <View
+                    android:id="@+id/generatingTextFade"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="@drawable/generating_text_fade_overlay"
+                    android:visibility="gone" />
+                    
+            </FrameLayout>
 
             <!-- Metadata section (timestamp) -->
             <TextView
@@ -210,8 +128,7 @@
                 android:layout_gravity="start"
                 android:layout_marginTop="8dp"
                 android:text="10:05 AM"
-                android:textColor="@color/black"
-                android:textSize="12sp" />
+                style="@style/MessageTimestampStyle" />
         </LinearLayout>
     </LinearLayout>
 
@@ -330,38 +247,40 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:background="@drawable/rounded_version_control"
             android:padding="2dp"
             android:visibility="gone">
 
             <ImageButton
-                android:id="@+id/btnPrevious"
+                android:id="@+id/btnAiPrevious"
                 style="?android:attr/borderlessButtonStyle"
                 android:src="@drawable/left_arrow"
                 android:layout_width="24dp"
                 android:layout_height="24dp"
                 android:padding="0dp"
                 android:contentDescription="Previous"
-                android:layout_marginEnd="2dp"/>
+                android:layout_marginEnd="2dp"
+                android:visibility="gone"/>
 
             <TextView
-                android:id="@+id/tvNavigationIndicator"
+                android:id="@+id/tvAiNavigationIndicator"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="1/2"
                 android:textSize="12sp"
                 android:textColor="@color/version_indicator"
-                android:layout_marginEnd="4dp"/>
+                android:layout_marginEnd="4dp"
+                android:visibility="gone"/>
 
             <ImageButton
-                android:id="@+id/btnNext"
+                android:id="@+id/btnAiNext"
                 style="?android:attr/borderlessButtonStyle"
                 android:src="@drawable/right_arrow"
                 android:layout_width="24dp"
                 android:layout_height="24dp"
                 android:padding="0dp"
                 android:contentDescription="Next"
-                android:layout_marginEnd="4dp"/>
+                android:layout_marginEnd="4dp"
+                android:visibility="gone"/>
         </LinearLayout>
 
         <ImageButton
@@ -393,6 +312,91 @@
             android:contentDescription="Play audio"
             android:visibility="gone"
             android:layout_marginStart="8dp"/>
+    </LinearLayout>
+
+    <!-- Related Questions Section (Perplexity only) -->
+    <LinearLayout
+        android:id="@+id/relatedQuestionsContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="8dp"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="8dp">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:layout_marginEnd="8dp"
+                android:src="@drawable/ic_related"
+                app:tint="@color/text_secondary" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Related"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textColor="@color/text_secondary" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/relatedQuestionsLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </LinearLayout>
+
+    <!-- Search Images Section (Perplexity only) -->
+    <LinearLayout
+        android:id="@+id/searchImagesContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="8dp"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="8dp">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:layout_marginEnd="8dp"
+                android:src="@drawable/ic_image_generation"
+                app:tint="@color/text_secondary" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Images"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textColor="@color/text_secondary" />
+        </LinearLayout>
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/searchImagesRecyclerView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:clipToPadding="false"
+            android:paddingStart="0dp"
+            android:paddingEnd="16dp" />
     </LinearLayout>
 
 </LinearLayout>

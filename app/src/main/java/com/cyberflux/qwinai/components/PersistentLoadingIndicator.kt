@@ -3,6 +3,8 @@ package com.cyberflux.qwinai.components
 import android.animation.ValueAnimator
 import android.content.Context
 import android.content.res.ColorStateList
+import android.os.Handler
+import android.os.Looper
 import android.util.AttributeSet
 import android.view.View
 import android.widget.ProgressBar
@@ -15,50 +17,63 @@ class PersistentLoadingIndicator @JvmOverloads constructor(
     defStyleAttr: Int = 0
 ) : ProgressBar(context, attrs, defStyleAttr) {
 
-    private var colorAnimator: ValueAnimator? = null
-    private var currentColorIndex = 0
-    private var isAnimating = false
+    private var currentColor: Int = 0xFF6366F1.toInt() // Default indigo color
+    private var isVisible = false
 
-    // Beautiful colors for cycling animation - vibrant and distinct
-    private val animationColors = listOf(
-        0xFF6366F1.toInt(), // Indigo - Modern and professional
-        0xFF8B5CF6.toInt(), // Purple - Creative and elegant  
-        0xFF06B6D4.toInt(), // Cyan - Fresh and modern
-        0xFF10B981.toInt(), // Emerald - Natural and calming
-        0xFFF59E0B.toInt(), // Amber - Warm and energetic
-        0xFFEF4444.toInt(), // Red - Bold and attention-grabbing
-        0xFFEC4899.toInt()  // Pink - Vibrant and friendly
+    // Color cycling for smooth transitions
+    private val colorCycleAnimator: ValueAnimator? = null
+    private val colorPalette = arrayOf(
+        0xFF6366F1.toInt(), // Indigo
+        0xFF8B5CF6.toInt(), // Violet  
+        0xFF3B82F6.toInt(), // Blue
+        0xFF06B6D4.toInt(), // Cyan
+        0xFF10B981.toInt(), // Emerald
+        0xFF84CC16.toInt(), // Lime
     )
+    private var colorAnimator: ValueAnimator? = null
+    private var colorIndex = 0
+
+    // Fixed, stable color that never changes - no flickering
+    private val DEFAULT_INDICATOR_COLOR = 0xFF6366F1.toInt() // Professional indigo
 
     init {
         // Set initial style and make it always visible but transparent when not needed
         isIndeterminate = true
         alpha = 0f // Start invisible
-        visibility = View.VISIBLE // Always keep in layout to prevent flickering
+        visibility = VISIBLE // Always keep in layout to prevent flickering
+        
+        // Set initial stable color
+        indeterminateTintList = ColorStateList.valueOf(DEFAULT_INDICATOR_COLOR)
     }
 
     /**
-     * Shows the loading indicator with smooth fade-in and starts color animation
+     * FIXED: Shows the loading indicator with thread-safe UI updates
      */
     fun show(targetColor: Int? = null) {
-        // Stop any existing animations
-        stopColorAnimation()
-        
-        // Set initial color - prefer beautiful animation colors over target color for better effect
-        val initialColor = if (targetColor != null && !isAnimating) {
-            // Use target color initially, but animation will take over
-            targetColor
-        } else {
-            animationColors[currentColorIndex]
+        // FIXED: Ensure UI operations run on main thread
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            Handler(Looper.getMainLooper()).post {
+                showOnMainThread(targetColor)
+            }
+            return
         }
+        showOnMainThread(targetColor)
+    }
+    
+    private fun showOnMainThread(targetColor: Int?) {
+        // Use provided color as the starting color, or use default
+        val initialColor = targetColor?.let { ensureVisibleColor(it) } ?: DEFAULT_INDICATOR_COLOR
+        
+        currentColor = initialColor
         indeterminateTintList = ColorStateList.valueOf(initialColor)
         
-        // Start animation immediately for better visual feedback
-        startColorAnimation()
+        isVisible = true
         
-        // Ensure visibility
+        // Start color cycling animation for smooth color changes
+        startColorCycling()
+        
+        // Ensure visibility with smooth fade in
         if (alpha < 1f) {
-            // Fade in smoothly while animation is already running
             animate()
                 .alpha(1f)
                 .setDuration(200)
@@ -67,12 +82,26 @@ class PersistentLoadingIndicator @JvmOverloads constructor(
     }
 
     /**
-     * Hides the loading indicator with smooth fade-out
+     * FIXED: Hides the loading indicator with thread-safe UI updates
      */
     fun hide() {
-        if (alpha == 0f) return // Already hidden
+        // FIXED: Ensure UI operations run on main thread
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            Handler(Looper.getMainLooper()).post {
+                hideOnMainThread()
+            }
+            return
+        }
+        hideOnMainThread()
+    }
+    
+    private fun hideOnMainThread() {
+        if (alpha == 0f && !isVisible) return // Already hidden
         
-        stopColorAnimation()
+        isVisible = false
+        
+        // Stop color cycling animation
+        stopColorCycling()
         
         // Fade out smoothly
         animate()
@@ -81,84 +110,79 @@ class PersistentLoadingIndicator @JvmOverloads constructor(
             .start()
     }
 
+
     /**
-     * Updates the target color without hiding/showing (for smooth transitions)
+     * Ensures the color is visible (not white/transparent/too light)
      */
-    fun updateColor(color: Int) {
-        if (alpha > 0f) {
-            // Animate to new color smoothly
-            colorAnimator?.cancel()
-            val currentColor = indeterminateTintList?.defaultColor ?: color
-            
-            ValueAnimator.ofArgb(currentColor, color).apply {
-                duration = 300
-                addUpdateListener { animator ->
-                    val animatedColor = animator.animatedValue as Int
-                    indeterminateTintList = ColorStateList.valueOf(animatedColor)
-                }
-                start()
-            }
+    private fun ensureVisibleColor(color: Int): Int {
+        // Extract RGB components
+        val red = (color shr 16) and 0xFF
+        val green = (color shr 8) and 0xFF  
+        val blue = color and 0xFF
+        
+        // Calculate brightness (perceived luminance)
+        val brightness = (0.299 * red + 0.587 * green + 0.114 * blue)
+        
+        // If too bright (close to white), use default color
+        return if (brightness > 200) { // Threshold for "too bright"
+            DEFAULT_INDICATOR_COLOR
+        } else {
+            color
         }
     }
 
-    private fun startColorAnimation() {
-        if (isAnimating) return
-        
-        isAnimating = true
-        // Start from random color index for variety
-        currentColorIndex = (0 until animationColors.size).random()
+    /**
+     * Start smooth color cycling animation with proper timing
+     */
+    private fun startColorCycling() {
+        stopColorCycling() // Stop any existing animation
         
         colorAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 1500 // 1.5 seconds per color - faster, more engaging
+            duration = 2500L // Slower transitions for pleasant effect
             repeatCount = ValueAnimator.INFINITE
-            interpolator = android.view.animation.AccelerateDecelerateInterpolator()
+            repeatMode = ValueAnimator.RESTART
             
             addUpdateListener { animator ->
-                val progress = animator.animatedValue as Float
-                val nextColorIndex = (currentColorIndex + 1) % animationColors.size
-                
-                // Smooth interpolation between current and next color
-                val currentColor = animationColors[currentColorIndex]
-                val nextColor = animationColors[nextColorIndex]
-                
-                val interpolatedColor = interpolateColor(currentColor, nextColor, progress)
-                indeterminateTintList = ColorStateList.valueOf(interpolatedColor)
-                
-                // Move to next color when cycle completes
-                if (progress >= 0.95f) {
-                    currentColorIndex = nextColorIndex
+                if (isVisible) {
+                    val progress = animator.animatedValue as Float
+                    
+                    // Create smooth transitions between colors
+                    val fromColor = colorPalette[colorIndex % colorPalette.size]
+                    val toColor = colorPalette[(colorIndex + 1) % colorPalette.size]
+                    
+                    // Use ArgbEvaluator for smooth color interpolation
+                    val interpolatedColor = android.animation.ArgbEvaluator().evaluate(
+                        progress, fromColor, toColor
+                    ) as Int
+                    
+                    currentColor = interpolatedColor
+                    indeterminateTintList = ColorStateList.valueOf(interpolatedColor)
                 }
             }
+            
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationRepeat(animation: android.animation.Animator) {
+                    // Move to next color in the palette
+                    colorIndex = (colorIndex + 1) % colorPalette.size
+                }
+            })
             
             start()
         }
     }
-
-    private fun stopColorAnimation() {
+    
+    /**
+     * Stop color cycling animation
+     */
+    private fun stopColorCycling() {
         colorAnimator?.cancel()
         colorAnimator = null
-        isAnimating = false
-    }
-
-    private fun interpolateColor(startColor: Int, endColor: Int, fraction: Float): Int {
-        val startA = (startColor shr 24) and 0xFF
-        val startR = (startColor shr 16) and 0xFF
-        val startG = (startColor shr 8) and 0xFF
-        val startB = startColor and 0xFF
-
-        val endA = (endColor shr 24) and 0xFF
-        val endR = (endColor shr 16) and 0xFF
-        val endG = (endColor shr 8) and 0xFF
-        val endB = endColor and 0xFF
-
-        return ((startA + (fraction * (endA - startA)).toInt()) shl 24) or
-               ((startR + (fraction * (endR - startR)).toInt()) shl 16) or
-               ((startG + (fraction * (endG - startG)).toInt()) shl 8) or
-               (startB + (fraction * (endB - startB)).toInt())
     }
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
-        stopColorAnimation()
+        // Clean up any running animations
+        animate().cancel()
+        stopColorCycling()
     }
 }

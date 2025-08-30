@@ -38,12 +38,29 @@
 
             <ImageView
                 android:id="@+id/document_icon"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
+                android:layout_width="26dp"
+                android:layout_height="26dp"
                 android:layout_gravity="center"
                 android:src="@drawable/ic_document"
                 android:contentDescription="Document icon"
                 android:visibility="gone" />
+
+            <!-- Loading indicator overlay -->
+            <FrameLayout
+                android:id="@+id/loadingOverlay"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="#80000000"
+                android:visibility="gone">
+
+                <ProgressBar
+                    android:id="@+id/loadingIndicator"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:layout_gravity="center"
+                    android:indeterminateTint="@color/white"
+                    style="?android:attr/progressBarStyleSmall" />
+            </FrameLayout>
         </FrameLayout>
 
         <!-- Right side content -->

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginEnd="8dp"
+    app:cardCornerRadius="8dp"
+    app:cardElevation="0dp"
+    app:strokeColor="@color/attachment_border"
+    app:strokeWidth="1dp"
+    app:cardBackgroundColor="@color/attachment_background"
+    android:foreground="?attr/selectableItemBackground"
+    android:clickable="true"
+    android:focusable="true">
+
+    <!-- Image Attachment -->
+    <ImageView
+        android:id="@+id/ivImage"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:visibility="gone"
+        tools:src="@drawable/ic_image_placeholder"
+        tools:visibility="visible" />
+
+    <!-- File Attachment -->
+    <LinearLayout
+        android:id="@+id/layoutFile"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="6dp"
+        android:visibility="gone">
+
+        <!-- File Type Icon -->
+        <ImageView
+            android:id="@+id/ivFileIcon"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:src="@drawable/ic_file_generic"
+            app:tint="@color/text_secondary"
+            android:layout_marginBottom="2dp" />
+
+        <!-- File Name (Truncated) -->
+        <TextView
+            android:id="@+id/tvFileName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="8sp"
+            android:textColor="@color/text_tertiary"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:fontFamily="sans-serif"
+            tools:text="document.pdf" />
+
+        <!-- File Size -->
+        <TextView
+            android:id="@+id/tvFileSize"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="7sp"
+            android:textColor="@color/text_tertiary"
+            android:maxLines="1"
+            android:gravity="center"
+            android:fontFamily="sans-serif"
+            tools:text="2.3 MB" />
+
+    </LinearLayout>
+
+</androidx.cardview.widget.CardView>

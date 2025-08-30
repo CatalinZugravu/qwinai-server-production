@@ -31,5 +31,51 @@
     <string name="get_unlimited_credits">Get Unlimited Credits</string>
     <string name="watch_an_ad">Watch an Ad</string>
     <string name="watch_2_ads">Watch 2 Ads</string>
+    
+    <!-- Error Messages -->
+    <string name="error_no_internet">No internet connection available</string>
+    <string name="error_connection_failed">Connection failed</string>
+    <string name="error_request_timeout">Request timed out</string>
+    <string name="error_network_io">Network error occurred</string>
+    <string name="error_ssl_connection">Secure connection failed</string>
+    <string name="error_data_parsing">Failed to parse response data</string>
+    <string name="error_permission_denied">Permission denied</string>
+    <string name="error_invalid_state">Invalid operation state</string>
+    <string name="error_invalid_input">Invalid input provided</string>
+    <string name="error_unexpected">An unexpected error occurred</string>
+    <string name="error_authentication">Authentication failed</string>
+    <string name="error_access_denied">Access denied</string>
+    <string name="error_rate_limit">Rate limit exceeded</string>
+    <string name="error_server">Server error</string>
+    <string name="error_api_request">API request failed</string>
+    <string name="error_streaming">Streaming error occurred</string>
+    <string name="error_database">Database operation failed</string>
+    <string name="error_file_operation">File operation failed</string>
+    
+    <!-- Widget Strings -->
+    <string name="widget_description">Quick access to Qwin AI chat features - start new conversations, use voice chat, or generate images right from your home screen</string>
+    
     <!-- TODO: Remove or change this placeholder text -->
+    
+    <!-- Subscription Activity -->
+    <string name="upgrade_to_premium">Upgrade to Premium</string>
+    <string name="unlock_unlimited_potential">Unlock unlimited potential with AI</string>
+    <string name="premium_active">Premium Active</string>
+    <string name="expires_never">Never expires</string>
+    <string name="expires_in_days">Expires in %d days</string>
+    <string name="expires_soon">Expires soon</string>
+    <string name="manage">Manage</string>
+    <string name="premium_features">Premium Features</string>
+    <string name="choose_your_plan">Choose Your Plan</string>
+    <string name="error_loading_plans">Error Loading Plans</string>
+    <string name="please_check_connection">Please check your internet connection and try again.</string>
+    <string name="retry">Retry</string>
+    <string name="subscription_successful">Subscription Successful!</string>
+    <string name="welcome_to_premium">Welcome to Premium! All features are now unlocked.</string>
+    <string name="continue_text">Continue</string>
+    <string name="terms_of_service">Terms of Service</string>
+    <string name="privacy_policy">Privacy Policy</string>
+    <string name="restore_purchases">Restore Purchases</string>
+    <string name="close">Close</string>
+    
 </resources>

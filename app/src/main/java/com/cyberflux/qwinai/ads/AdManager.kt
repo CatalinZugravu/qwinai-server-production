@@ -1,21 +1,34 @@
 package com.cyberflux.qwinai.ads
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.widget.ProgressBar
+import android.widget.Toast
+import com.cyberflux.qwinai.MainActivity
+import com.cyberflux.qwinai.MyApp
 import com.cyberflux.qwinai.ads.mediation.MediationManagerFactory
 import com.cyberflux.qwinai.credits.CreditManager
+import com.cyberflux.qwinai.utils.PrefsManager
 import timber.log.Timber
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Comprehensive Ad Manager that handles all ad operations
+ * UNIFIED AD MANAGER - Consolidates all ad management functionality
  * Features:
- * - Frequency control to prevent too many ads
+ * - Frequency control and rate limiting
  * - Integration with credit system
- * - Automatic ad loading and showing
- * - Rate limiting and cooldown periods
+ * - Automatic ad loading with retry logic
+ * - Loading dialogs and UI feedback
+ * - Activity lifecycle management
+ * - Smart ad triggers based on user behavior
+ * - Context-aware ad display
  */
+
+@Suppress("DEPRECATION")
 class AdManager private constructor(private val context: Context) {
 
     companion object {
@@ -23,6 +36,10 @@ class AdManager private constructor(private val context: Context) {
         private const val MIN_REWARDED_INTERVAL_MS = 30000L // 30 seconds
         private const val MAX_INTERSTITIAL_PER_HOUR = 6
         private const val MAX_REWARDED_PER_HOUR = 10
+        
+        // UI constants from mediation AdManager
+        private const val MAX_RETRY_COUNT = 3
+        private const val AD_LOAD_TIMEOUT = 20000L // 20 seconds
         
         @Volatile
         private var INSTANCE: AdManager? = null
@@ -34,9 +51,15 @@ class AdManager private constructor(private val context: Context) {
         }
     }
 
-    private val mediationManager = MediationManagerFactory.getMediationManager()
+    // CRITICAL FIX: Make mediation manager lazy to prevent startup deadlocks
+    private val mediationManager by lazy { MediationManagerFactory.getMediationManager() }
     private val creditManager = CreditManager.getInstance(context)
     
+    // Store current activity for ad loading (use WeakReference to prevent memory leaks)
+    @Volatile
+    private var currentActivity: java.lang.ref.WeakReference<Activity>? = null
+    
+    // Frequency control
     private var lastInterstitialTime = AtomicLong(0)
     private var lastRewardedTime = AtomicLong(0)
     private var interstitialCountThisHour = AtomicBoolean(false)
@@ -45,6 +68,18 @@ class AdManager private constructor(private val context: Context) {
     
     private val interstitialCooldowns = mutableMapOf<String, Long>()
     private val rewardedCooldowns = mutableMapOf<String, Long>()
+    
+    // Loading state management (from mediation AdManager)
+    private val isLoadingRewardedAd = AtomicBoolean(false)
+    private val isLoadingInterstitialAd = AtomicBoolean(false)
+    private var adLoadRetryCount = 0
+    private var pendingRewardCredits = 0
+    private var loadingDialog: AlertDialog? = null
+    
+    // UI handlers
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var adLoadTimeoutRunnable: Runnable? = null
+    private var adLoadCheckRunnable: Runnable? = null
 
     enum class AdTrigger {
         CHAT_RESPONSE_COMPLETE,
@@ -69,6 +104,27 @@ class AdManager private constructor(private val context: Context) {
         mediationManager.initialize(context)
         preloadAds()
     }
+    
+    /**
+     * Initialize ads for MainActivity (replaces the mediation AdManager)
+     */
+    fun initializeForActivity(activity: Activity) {
+        try {
+            // Store the activity reference for ad loading
+            currentActivity = java.lang.ref.WeakReference(activity)
+            
+            if (!PrefsManager.isSubscribed(activity)) {
+                mainHandler.postDelayed({
+                    loadInterstitialAd()
+                    loadRewardedAd()
+                    Timber.d("Initial ad loading started for activity")
+                }, 2000)
+            }
+            Timber.d("Ad system initialized for activity using ${if (MyApp.isHuaweiDeviceNonBlocking()) "Huawei" else "Google"} mediation")
+        } catch (e: Exception) {
+            Timber.e(e, "Error initializing ad system for activity")
+        }
+    }
 
     fun addAdCallback(callback: AdCallback) {
         adCallbacks.add(callback)
@@ -80,6 +136,136 @@ class AdManager private constructor(private val context: Context) {
 
     private fun preloadAds() {
         // Pre-load interstitial ads - requires activity context, will be loaded on-demand
+    }
+    
+    /**
+     * Load interstitial ad with retry logic (from mediation AdManager)
+     */
+    fun loadInterstitialAd() {
+        if (!isLoadingInterstitialAd.compareAndSet(false, true)) {
+            Timber.d("Interstitial ad load already in progress")
+            return
+        }
+        
+        // Get the current activity from weak reference
+        val activity = currentActivity?.get()
+        if (activity == null) {
+            Timber.w("⚠️ No activity available for ad loading, skipping")
+            isLoadingInterstitialAd.set(false)
+            return
+        }
+        
+        adLoadRetryCount = 0
+        adLoadTimeoutRunnable = Runnable {
+            if (isLoadingInterstitialAd.get()) {
+                isLoadingInterstitialAd.set(false)
+                Timber.d("Interstitial ad load timed out")
+            }
+        }
+        mainHandler.postDelayed(adLoadTimeoutRunnable!!, AD_LOAD_TIMEOUT)
+        
+        // Use the stored activity reference for loading
+        mediationManager.loadInterstitialAd(
+            activity,
+            object : com.cyberflux.qwinai.ads.mediation.InterstitialAdListener {
+                override fun onAdLoaded(networkName: String) {
+                    isLoadingInterstitialAd.set(false)
+                    mainHandler.removeCallbacks(adLoadTimeoutRunnable!!)
+                    adLoadRetryCount = 0
+                    Timber.d("Interstitial ad loaded successfully from $networkName")
+                }
+                
+                override fun onAdFailedToLoad(errorCode: Int, errorMessage: String) {
+                    isLoadingInterstitialAd.set(false)
+                    mainHandler.removeCallbacks(adLoadTimeoutRunnable!!)
+                    Timber.d("Failed to load interstitial ad (code: $errorCode): $errorMessage")
+                    
+                    if (adLoadRetryCount < MAX_RETRY_COUNT) {
+                        adLoadRetryCount++
+                        Timber.d("Retrying interstitial ad load (attempt $adLoadRetryCount)")
+                        mainHandler.postDelayed({ loadInterstitialAd() }, 3000)
+                    }
+                }
+                
+                override fun onAdClosed() {
+                    Timber.d("Interstitial ad closed, reloading")
+                    mainHandler.postDelayed({ loadInterstitialAd() }, 1000)
+                }
+            }
+        )
+    }
+    
+    /**
+     * Load rewarded ad with retry logic (from mediation AdManager)
+     */
+    fun loadRewardedAd() {
+        if (!isLoadingRewardedAd.compareAndSet(false, true)) {
+            Timber.d("Rewarded ad load already in progress")
+            return
+        }
+        
+        // Get the current activity from weak reference
+        val activity = currentActivity?.get()
+        if (activity == null) {
+            Timber.w("⚠️ No activity available for rewarded ad loading, skipping")
+            isLoadingRewardedAd.set(false)
+            return
+        }
+        
+        adLoadRetryCount = 0
+        adLoadTimeoutRunnable = Runnable {
+            if (isLoadingRewardedAd.get()) {
+                isLoadingRewardedAd.set(false)
+                pendingRewardCredits = 0
+                Timber.d("Rewarded ad load timed out")
+                dismissLoadingDialog()
+                if (pendingRewardCredits > 0) {
+                    // Show toast if we have a context reference
+                    Timber.w("Ad loading timed out with pending credits")
+                }
+            }
+        }
+        mainHandler.postDelayed(adLoadTimeoutRunnable!!, AD_LOAD_TIMEOUT)
+        
+        mediationManager.loadRewardedAd(
+            activity,
+            object : com.cyberflux.qwinai.ads.mediation.RewardedAdListener {
+                override fun onAdLoaded(networkName: String) {
+                    isLoadingRewardedAd.set(false)
+                    mainHandler.removeCallbacks(adLoadTimeoutRunnable!!)
+                    adLoadRetryCount = 0
+                    Timber.d("Rewarded ad loaded successfully from $networkName")
+                    dismissLoadingDialog()
+                    if (pendingRewardCredits > 0) {
+                        // Show pending rewarded ad
+                        pendingRewardCredits = 0
+                    }
+                }
+                
+                override fun onAdFailedToLoad(errorCode: Int, errorMessage: String) {
+                    isLoadingRewardedAd.set(false)
+                    mainHandler.removeCallbacks(adLoadTimeoutRunnable!!)
+                    Timber.d("Failed to load rewarded ad (code: $errorCode): $errorMessage")
+                    
+                    if (adLoadRetryCount < MAX_RETRY_COUNT) {
+                        adLoadRetryCount++
+                        Timber.d("Retrying rewarded ad load (attempt $adLoadRetryCount)")
+                        mainHandler.postDelayed({ loadRewardedAd() }, 3000)
+                    } else {
+                        dismissLoadingDialog()
+                        if (pendingRewardCredits > 0) {
+                            Timber.w("Couldn't load ad after retries")
+                            pendingRewardCredits = 0
+                        }
+                    }
+                }
+                
+                override fun onAdClosed() {
+                    Timber.d("Rewarded ad closed, reloading")
+                    mainHandler.postDelayed({ loadRewardedAd() }, 1000)
+                }
+            }
+        )
     }
 
     private fun resetHourlyCounters() {
@@ -170,7 +356,7 @@ class AdManager private constructor(private val context: Context) {
     }
 
     /**
-     * Show rewarded ad for earning credits
+     * Show rewarded ad for earning credits (enhanced version)
      */
     fun showRewardedAd(
         activity: Activity, 
@@ -191,45 +377,50 @@ class AdManager private constructor(private val context: Context) {
             return
         }
 
-        mediationManager.loadRewardedAd(activity, object : com.cyberflux.qwinai.ads.mediation.RewardedAdListener {
-            override fun onAdLoaded(networkName: String) {
-                mediationManager.showRewardedAd(activity) { rewardAmount ->
-                    val creditsEarned = if (rewardAmount > 0) rewardAmount else {
-                        // Different credit amounts based on credit type
-                        when (creditType) {
-                            CreditManager.CreditType.IMAGE_GENERATION -> 2
-                            CreditManager.CreditType.CHAT -> 5
-                        }
-                    }
+        // Use the enhanced loading mechanism
+        if (mediationManager.isRewardedAdLoaded()) {
+            mediationManager.showRewardedAd(activity) { rewardAmount ->
+                // Each ad gives exactly 1 credit regardless of type
+                val creditsEarned = 1
+                
+                if (creditManager.addCreditsFromAd(creditType, creditsEarned)) {
+                    lastRewardedTime.set(now)
+                    rewardedCooldowns[trigger.name] = now
                     
-                    if (creditManager.addCreditsFromAd(creditType, creditsEarned)) {
-                        lastRewardedTime.set(now)
-                        rewardedCooldowns[trigger.name] = now
-                        
-                        Timber.d("User earned $creditsEarned credits from rewarded ad")
-                        callback?.onRewardEarned(trigger, creditsEarned)
-                        adCallbacks.forEach { it.onRewardEarned(trigger, creditsEarned) }
-                    } else {
-                        Timber.w("Failed to add credits from rewarded ad")
-                        callback?.onAdFailed(trigger, "Failed to add credits")
-                    }
+                    Timber.d("User earned $creditsEarned credits from rewarded ad")
+                    callback?.onRewardEarned(trigger, creditsEarned)
+                    adCallbacks.forEach { it.onRewardEarned(trigger, creditsEarned) }
+                } else {
+                    Timber.w("Failed to add credits from rewarded ad")
+                    callback?.onAdFailed(trigger, "Failed to add credits")
                 }
+                
+                // Reload for next time
+                loadRewardedAd()
             }
+            
+            callback?.onAdShown(trigger)
+            adCallbacks.forEach { it.onAdShown(trigger) }
+        } else {
+            // Load ad first
+            mediationManager.loadRewardedAd(activity, object : com.cyberflux.qwinai.ads.mediation.RewardedAdListener {
+                override fun onAdLoaded(networkName: String) {
+                    // Retry showing the ad
+                    showRewardedAd(activity, creditType, trigger, callback)
+                }
 
-            override fun onAdFailedToLoad(errorCode: Int, errorMessage: String) {
-                Timber.w("Rewarded ad failed to load: $errorMessage")
-                callback?.onAdFailed(trigger, errorMessage)
-                adCallbacks.forEach { it.onAdFailed(trigger, errorMessage) }
-            }
+                override fun onAdFailedToLoad(errorCode: Int, errorMessage: String) {
+                    Timber.w("Rewarded ad failed to load: $errorMessage")
+                    callback?.onAdFailed(trigger, errorMessage)
+                    adCallbacks.forEach { it.onAdFailed(trigger, errorMessage) }
+                }
 
-            override fun onAdClosed() {
-                callback?.onAdClosed(trigger)
-                adCallbacks.forEach { it.onAdClosed(trigger) }
-            }
-        })
-        
-        callback?.onAdShown(trigger)
-        adCallbacks.forEach { it.onAdShown(trigger) }
+                override fun onAdClosed() {
+                    callback?.onAdClosed(trigger)
+                    adCallbacks.forEach { it.onAdClosed(trigger) }
+                }
+            })
+        }
     }
 
     /**
@@ -302,6 +493,171 @@ class AdManager private constructor(private val context: Context) {
         return Math.random() < 0.4
     }
 
+    /**
+     * Watch ad for credits (from mediation AdManager)
+     */
+    fun watchAdForCredits(activity: Activity, credits: Int) {
+        if (credits != 1) {
+            Timber.e("Invalid credit amount: $credits - each ad should give exactly 1 credit")
+            if (activity is MainActivity) {
+                Toast.makeText(activity, "Invalid credit request", Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
+
+        if (PrefsManager.isSubscribed(activity)) {
+            if (activity is MainActivity) {
+                Toast.makeText(activity, "You're a premium user! No need to watch ads.", Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
+
+        // Check if user can earn more credits
+        if (!creditManager.canEarnMoreCredits(CreditManager.CreditType.CHAT)) {
+            if (activity is MainActivity) {
+                Toast.makeText(activity, "You've reached your maximum credits for today. Try again tomorrow.", Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
+
+        if (mediationManager.isRewardedAdLoaded()) {
+            showRewardedAdForCredits(activity, credits)
+        } else {
+            Timber.d("Rewarded ad not ready, starting load")
+            pendingRewardCredits = credits
+            if (!isLoadingRewardedAd.get()) {
+                showAdLoadingDialog(activity)
+                loadRewardedAd()
+            } else {
+                if (activity is MainActivity) {
+                    Toast.makeText(activity, "Still loading ad, please wait...", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+    
+    /**
+     * Show rewarded ad specifically for credits
+     */
+    private fun showRewardedAdForCredits(activity: Activity, credits: Int) {
+        if (mediationManager.isRewardedAdLoaded()) {
+            Timber.d("Showing rewarded ad for $credits credits")
+            mediationManager.showRewardedAd(activity) { rewardAmount ->
+                // Each ad gives exactly 1 credit
+                val actualReward = 1
+                creditManager.addCreditsFromAd(CreditManager.CreditType.CHAT, actualReward)
+                if (activity is MainActivity) {
+                    activity.updateFreeMessagesText()
+                    Toast.makeText(activity, "+$actualReward credits added!", Toast.LENGTH_SHORT).show()
+                }
+                loadRewardedAd()
+            }
+        } else {
+            Timber.d("Rewarded ad not ready when attempting to show")
+            if (activity is MainActivity) {
+                Toast.makeText(activity, "Ad not ready, please try again later.", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    
+    /**
+     * Show ad loading dialog (from mediation AdManager)
+     */
+    private fun showAdLoadingDialog(activity: Activity) {
+        try {
+            dismissLoadingDialog()
+            val builder = AlertDialog.Builder(activity)
+            builder.setTitle("Loading Rewarded Ad")
+            builder.setMessage("Please wait while we prepare your rewarded ad...")
+            builder.setCancelable(true)
+            builder.setNeutralButton("Cancel") { dialog, _ ->
+                dialog.dismiss()
+                pendingRewardCredits = 0
+            }
+            val progressBar = ProgressBar(activity)
+            builder.setView(progressBar)
+            loadingDialog = builder.create()
+            loadingDialog?.show()
+            mainHandler.postDelayed({
+                dismissLoadingDialog()
+                if (isLoadingRewardedAd.get()) {
+                    if (activity is MainActivity) {
+                        Toast.makeText(activity, "Couldn't load ad. Please check your internet connection and try again.", Toast.LENGTH_LONG).show()
+                    }
+                    pendingRewardCredits = 0
+                }
+            }, 15000)
+            checkAdLoaded(activity)
+        } catch (e: Exception) {
+            Timber.e(e, "Error showing loading dialog")
+            pendingRewardCredits = 0
+        }
+    }
+    
+    /**
+     * Check if ad is loaded and show if ready
+     */
+    private fun checkAdLoaded(activity: Activity) {
+        adLoadCheckRunnable = Runnable {
+            if (mediationManager.isRewardedAdLoaded()) {
+                dismissLoadingDialog()
+                if (pendingRewardCredits > 0) {
+                    showRewardedAdForCredits(activity, pendingRewardCredits)
+                    pendingRewardCredits = 0
+                }
+            } else if (isLoadingRewardedAd.get() && loadingDialog?.isShowing == true) {
+                mainHandler.postDelayed(adLoadCheckRunnable!!, 1000)
+            }
+        }
+        mainHandler.post(adLoadCheckRunnable!!)
+    }
+    
+    /**
+     * Dismiss loading dialog
+     */
+    private fun dismissLoadingDialog() {
+        try {
+            if (loadingDialog?.isShowing == true) {
+                loadingDialog?.dismiss()
+            }
+            loadingDialog = null
+        } catch (e: Exception) {
+            Timber.e(e, "Error dismissing dialog")
+        }
+    }
+    
+    /**
+     * Check if ads are loaded (from mediation AdManager)
+     */
+    fun areAdsLoaded(): Boolean {
+        return mediationManager.isRewardedAdLoaded() || mediationManager.isInterstitialAdLoaded()
+    }
+    
+    /**
+     * Cleanup resources (from mediation AdManager)
+     */
+    fun cleanup() {
+        try {
+            mainHandler.removeCallbacksAndMessages(null)
+            adLoadTimeoutRunnable = null
+            adLoadCheckRunnable = null
+            dismissLoadingDialog()
+            pendingRewardCredits = 0
+            isLoadingRewardedAd.set(false)
+            isLoadingInterstitialAd.set(false)
+            
+            try {
+                mediationManager.release()
+            } catch (e: Exception) {
+                Timber.e(e, "Error releasing mediation manager: ${e.message}")
+            }
+            
+            Timber.d("AdManager cleanup completed")
+        } catch (e: Exception) {
+            Timber.e(e, "Error during AdManager cleanup")
+        }
+    }
+
     fun getDebugInfo(): String {
         return """
             Interstitial Ready: ${isInterstitialReady()}
@@ -310,6 +666,9 @@ class AdManager private constructor(private val context: Context) {
             Time Until Next Rewarded: ${getTimeUntilNextRewarded()}ms
             Last Interstitial: ${lastInterstitialTime.get()}
             Last Rewarded: ${lastRewardedTime.get()}
+            Is Loading Interstitial: ${isLoadingInterstitialAd.get()}
+            Is Loading Rewarded: ${isLoadingRewardedAd.get()}
+            Pending Credits: $pendingRewardCredits
         """.trimIndent()
     }
 }

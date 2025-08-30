@@ -1,6 +1,6 @@
 package com.cyberflux.qwinai.network
 
-import com.google.gson.annotations.SerializedName
+import com.squareup.moshi.Json
 
 /**
  * Complete API response class handling ALL possible response formats
@@ -26,44 +26,44 @@ data class AimlApiResponse(
     val answer: String? = null,
 
     // Streaming specific
-    @SerializedName("finish_reason")
+    @Json(name = "finish_reason")
     val finishReason: String? = null,
     val done: Boolean? = null,
 
     // Audio responses
     val audio: AudioData? = null,
-    @SerializedName("audio_data")
+    @Json(name = "audio_data")
     val audioData: AudioData? = null,
-    @SerializedName("audio_url")
+    @Json(name = "audio_url")
     val audioUrl: String? = null,
 
     // Image generation responses
     val data: List<ImageData>? = null,
     val images: List<ImageData>? = null,
-    @SerializedName("image_data")
+    @Json(name = "image_data")
     val imageData: List<ImageData>? = null,
 
     // Web search results
-    @SerializedName("web_search_results")
+    @Json(name = "web_search_results")
     val webSearchResults: List<WebSearchResult>? = null,
-    @SerializedName("search_results")
+    @Json(name = "search_results")
     val searchResults: List<WebSearchResult>? = null,
     val results: List<WebSearchResult>? = null,
 
     // Reasoning/thinking
     val reasoning: String? = null,
     val thinking: String? = null,
-    @SerializedName("thought_process")
+    @Json(name = "thought_process")
     val thoughtProcess: String? = null,
-    @SerializedName("reasoning_content")
+    @Json(name = "reasoning_content")
     val reasoningContent: String? = null,
-    @SerializedName("chain_of_thought")
+    @Json(name = "chain_of_thought")
     val chainOfThought: String? = null,
 
     // Tool usage
-    @SerializedName("tool_calls")
+    @Json(name = "tool_calls")
     val toolCalls: List<ToolCall>? = null,
-    @SerializedName("function_calls")
+    @Json(name = "function_calls")
     val functionCalls: List<FunctionCall>? = null,
 
     // System information
@@ -72,7 +72,7 @@ data class AimlApiResponse(
     val type: String? = null,
 
     // Rate limiting
-    @SerializedName("rate_limit")
+    @Json(name = "rate_limit")
     val rateLimit: RateLimit? = null,
 
     // Metadata
@@ -80,9 +80,9 @@ data class AimlApiResponse(
     val headers: Map<String, String>? = null,
 
     // Provider specific
-    @SerializedName("anthropic_type")
+    @Json(name = "anthropic_type")
     val anthropicType: String? = null,
-    @SerializedName("openai_type")
+    @Json(name = "openai_type")
     val openaiType: String? = null,
 
     // Safety and moderation
@@ -90,15 +90,15 @@ data class AimlApiResponse(
     val moderation: ModerationResult? = null,
 
     // Conversation metadata
-    @SerializedName("conversation_id")
+    @Json(name = "conversation_id")
     val conversationId: String? = null,
-    @SerializedName("message_id")
+    @Json(name = "message_id")
     val messageId: String? = null,
-    @SerializedName("parent_id")
+    @Json(name = "parent_id")
     val parentId: String? = null,
 
     // Processing information
-    @SerializedName("processing_time")
+    @Json(name = "processing_time")
     val processingTime: Double? = null,
     val latency: Double? = null,
     val timestamp: Long? = null
@@ -108,7 +108,7 @@ data class AimlApiResponse(
         val index: Int? = null,
         val message: Message? = null,
         val delta: Message? = null,
-        @SerializedName("finish_reason")
+        @Json(name ="finish_reason")
         val finishReason: String? = null,
         val text: String? = null,
         val content: String? = null,
@@ -118,14 +118,14 @@ data class AimlApiResponse(
         val thinking: String? = null,
 
         // Tool usage
-        @SerializedName("tool_calls")
+        @Json(name ="tool_calls")
         val toolCalls: List<ToolCall>? = null,
 
         // Logprobs
         val logprobs: LogProbs? = null,
 
         // Safety
-        @SerializedName("content_filter_results")
+        @Json(name ="content_filter_results")
         val contentFilterResults: ContentFilterResults? = null
     )
 
@@ -136,25 +136,25 @@ data class AimlApiResponse(
 
         // Audio
         val audio: AudioData? = null,
-        @SerializedName("audio_data")
+        @Json(name ="audio_data")
         val audioData: AudioData? = null,
 
         // Function/tool calling
-        @SerializedName("tool_calls")
+        @Json(name ="tool_calls")
         val toolCalls: List<ToolCall>? = null,
-        @SerializedName("function_call")
+        @Json(name ="function_call")
         val functionCall: FunctionCall? = null,
 
         // Reasoning
         val reasoning: String? = null,
         val thinking: String? = null,
-        @SerializedName("thought_process")
+        @Json(name ="thought_process")
         val thoughtProcess: String? = null,
 
         // Web search
-        @SerializedName("web_search")
+        @Json(name ="web_search")
         val webSearch: String? = null,
-        @SerializedName("search_results")
+        @Json(name ="search_results")
         val searchResults: List<WebSearchResult>? = null,
 
         // Multimodal content
@@ -170,7 +170,7 @@ data class AimlApiResponse(
         val timestamp: Long? = null,
 
         // Safety
-        @SerializedName("content_filter_result")
+        @Json(name ="content_filter_result")
         val contentFilterResult: ContentFilterResult? = null
     )
 
@@ -179,16 +179,16 @@ data class AimlApiResponse(
         val content: String,  // Base64 encoded
         val data: String? = null,  // Alternative to content
         val url: String? = null,
-        @SerializedName("audio_url")
+        @Json(name ="audio_url")
         val audioUrl: String? = null,
 
         // Audio metadata
         val duration: Double? = null,
         val size: Long? = null,
-        @SerializedName("sample_rate")
+        @Json(name ="sample_rate")
         val sampleRate: Int? = null,
         val channels: Int? = null,
-        @SerializedName("bit_rate")
+        @Json(name ="bit_rate")
         val bitRate: Int? = null,
         val encoding: String? = null,
         val mime_type: String? = null,
@@ -202,7 +202,7 @@ data class AimlApiResponse(
 
     data class ImageData(
         val url: String? = null,
-        @SerializedName("b64_json")
+        @Json(name ="b64_json")
         val b64Json: String? = null,
         val data: String? = null,  // Base64
 
@@ -210,13 +210,13 @@ data class AimlApiResponse(
         val width: Int? = null,
         val height: Int? = null,
         val format: String? = null,
-        @SerializedName("mime_type")
+        @Json(name ="mime_type")
         val mimeType: String? = null,
         val size: Long? = null,
 
         // Generation metadata
         val prompt: String? = null,
-        @SerializedName("revised_prompt")
+        @Json(name ="revised_prompt")
         val revisedPrompt: String? = null,
         val seed: Long? = null,
         val steps: Int? = null,
@@ -229,7 +229,7 @@ data class AimlApiResponse(
         val function: FunctionCall? = null,
 
         // Web search
-        @SerializedName("web_search")
+        @Json(name ="web_search")
         val webSearch: WebSearchCall? = null,
 
         // Results
@@ -240,7 +240,7 @@ data class AimlApiResponse(
         // Metadata
         val status: String? = null,
         val error: String? = null,
-        @SerializedName("execution_time")
+        @Json(name ="execution_time")
         val executionTime: Double? = null
     )
 
@@ -257,20 +257,20 @@ data class AimlApiResponse(
         // Metadata
         val status: String? = null,
         val error: String? = null,
-        @SerializedName("execution_time")
+        @Json(name ="execution_time")
         val executionTime: Double? = null
     )
 
     data class WebSearchCall(
         val query: String? = null,
         val results: List<WebSearchResult>? = null,
-        @SerializedName("search_results")
+        @Json(name ="search_results")
         val searchResults: List<WebSearchResult>? = null,
         val status: String? = null,
         val error: String? = null,
-        @SerializedName("search_time")
+        @Json(name ="search_time")
         val searchTime: Double? = null,
-        @SerializedName("result_count")
+        @Json(name ="result_count")
         val resultCount: Int? = null
     )
 
@@ -304,7 +304,7 @@ data class AimlApiResponse(
         // Source metadata
         val source: String? = null,
         val author: String? = null,
-        @SerializedName("publish_date")
+        @Json(name ="publish_date")
         val publishDate: String? = null,
         val language: String? = null,
         val country: String? = null
@@ -313,7 +313,7 @@ data class AimlApiResponse(
     data class ContentPart(
         val type: String? = null,
         val text: String? = null,
-        @SerializedName("image_url")
+        @Json(name ="image_url")
         val imageUrl: ImageUrl? = null,
         val audio: AudioData? = null,
         val image: String? = null,  // Base64 or URL
@@ -329,74 +329,74 @@ data class AimlApiResponse(
 
     data class Usage(
         // Standard tokens
-        @SerializedName("prompt_tokens")
+        @Json(name ="prompt_tokens")
         val promptTokens: Int? = null,
-        @SerializedName("completion_tokens")
+        @Json(name ="completion_tokens")
         val completionTokens: Int? = null,
-        @SerializedName("total_tokens")
+        @Json(name ="total_tokens")
         val totalTokens: Int? = null,
 
         // Alternative names
-        @SerializedName("input_tokens")
+        @Json(name ="input_tokens")
         val inputTokens: Int? = null,
-        @SerializedName("output_tokens")
+        @Json(name ="output_tokens")
         val outputTokens: Int? = null,
-        @SerializedName("context_tokens")
+        @Json(name ="context_tokens")
         val contextTokens: Int? = null,
-        @SerializedName("generated_tokens")
+        @Json(name ="generated_tokens")
         val generatedTokens: Int? = null,
 
         // Reasoning tokens
-        @SerializedName("reasoning_tokens")
+        @Json(name ="reasoning_tokens")
         val reasoningTokens: Int? = null,
-        @SerializedName("thinking_tokens")
+        @Json(name ="thinking_tokens")
         val thinkingTokens: Int? = null,
 
         // Cost information
-        @SerializedName("prompt_cost")
+        @Json(name ="prompt_cost")
         val promptCost: Double? = null,
-        @SerializedName("completion_cost")
+        @Json(name ="completion_cost")
         val completionCost: Double? = null,
-        @SerializedName("total_cost")
+        @Json(name ="total_cost")
         val totalCost: Double? = null,
 
         // Time information
-        @SerializedName("processing_time")
+        @Json(name ="processing_time")
         val processingTime: Double? = null,
-        @SerializedName("inference_time")
+        @Json(name ="inference_time")
         val inferenceTime: Double? = null,
 
         // Model specific
-        @SerializedName("audio_tokens")
+        @Json(name ="audio_tokens")
         val audioTokens: Int? = null,
-        @SerializedName("image_tokens")
+        @Json(name ="image_tokens")
         val imageTokens: Int? = null,
-        @SerializedName("cache_tokens")
+        @Json(name ="cache_tokens")
         val cacheTokens: Int? = null
     )
 
     data class LogProbs(
         val tokens: List<String>? = null,
-        @SerializedName("token_logprobs")
+        @Json(name ="token_logprobs")
         val tokenLogprobs: List<Double>? = null,
-        @SerializedName("top_logprobs")
+        @Json(name ="top_logprobs")
         val topLogprobs: List<Map<String, Double>>? = null,
-        @SerializedName("text_offset")
+        @Json(name ="text_offset")
         val textOffset: List<Int>? = null
     )
 
     data class RateLimit(
-        @SerializedName("requests_per_minute")
+        @Json(name ="requests_per_minute")
         val requestsPerMinute: Int? = null,
-        @SerializedName("tokens_per_minute")
+        @Json(name ="tokens_per_minute")
         val tokensPerMinute: Int? = null,
-        @SerializedName("requests_remaining")
+        @Json(name ="requests_remaining")
         val requestsRemaining: Int? = null,
-        @SerializedName("tokens_remaining")
+        @Json(name ="tokens_remaining")
         val tokensRemaining: Int? = null,
-        @SerializedName("reset_time")
+        @Json(name ="reset_time")
         val resetTime: Long? = null,
-        @SerializedName("retry_after")
+        @Json(name ="retry_after")
         val retryAfter: Int? = null
     )
 
@@ -411,13 +411,13 @@ data class AimlApiResponse(
     data class ModerationResult(
         val flagged: Boolean? = null,
         val categories: Map<String, Boolean>? = null,
-        @SerializedName("category_scores")
+        @Json(name ="category_scores")
         val categoryScores: Map<String, Double>? = null
     )
 
     data class ContentFilterResults(
         val hate: ContentFilterResult? = null,
-        @SerializedName("self_harm")
+        @Json(name ="self_harm")
         val selfHarm: ContentFilterResult? = null,
         val sexual: ContentFilterResult? = null,
         val violence: ContentFilterResult? = null
@@ -437,7 +437,7 @@ data class AimlApiResponse(
         // Additional error info
         val details: String? = null,
         val suggestion: String? = null,
-        @SerializedName("error_code")
+        @Json(name ="error_code")
         val errorCode: Int? = null,
         val status: Int? = null,
 
@@ -445,13 +445,13 @@ data class AimlApiResponse(
         val error: InnerError? = null,
 
         // Provider specific
-        @SerializedName("anthropic_error")
+        @Json(name ="anthropic_error")
         val anthropicError: String? = null,
-        @SerializedName("openai_error")
+        @Json(name ="openai_error")
         val openaiError: String? = null,
 
         // Rate limiting errors
-        @SerializedName("retry_after")
+        @Json(name ="retry_after")
         val retryAfter: Int? = null
     )
 

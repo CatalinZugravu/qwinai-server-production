@@ -61,7 +61,7 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:textColor="?attr/colorOnSurface"
+                    android:textColor="@color/colorOnSurface"
                     android:textSize="14sp"
                     android:textStyle="bold"
                     android:maxLines="1"
@@ -103,7 +103,7 @@
                     android:id="@+id/textResolution"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     android:layout_marginEnd="8dp"
                     tools:text="1024×1024" />
@@ -112,7 +112,7 @@
                     android:id="@+id/textFileSize"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     tools:text="2.1 MB" />
 
@@ -122,7 +122,7 @@
                 android:id="@+id/textPrompt"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textColor="@color/text_secondary"
                 android:textSize="12sp"
                 android:maxLines="2"
                 android:ellipsize="end"
@@ -133,7 +133,7 @@
                 android:id="@+id/textTimestamp"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textColor="@color/text_secondary"
                 android:textSize="11sp"
                 tools:text="2 hours ago" />
 

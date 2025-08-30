@@ -83,7 +83,7 @@ class ModelGridAdapter(
         holder.iconView.setPadding(4, 4, 4, 4)
 
         // Check translation mode
-        val isTranslationMode = (context as? TranslationModeFetcher)?.isTranslationMode() ?: false
+        val isTranslationMode = (context as? TranslationModeFetcher)?.isTranslationMode() == true
         val isDisabledInTranslationMode = isTranslationMode && !TranslationUtils.supportsTranslation(model.id)
 
         if (isDisabledInTranslationMode) {

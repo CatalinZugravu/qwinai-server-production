@@ -3,9 +3,10 @@ package com.cyberflux.qwinai
 import android.app.Application
 import kotlinx.coroutines.cancel
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
-import androidx.lifecycle.liveData
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flow
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
 import androidx.lifecycle.viewModelScope
@@ -24,22 +25,29 @@ class ConversationsViewModel(application: Application) : AndroidViewModel(applic
     private val conversationDao = AppDatabase.getDatabase(application).conversationDao()
     private val chatMessageDao = AppDatabase.getDatabase(application).chatMessageDao()
 
-    private val _allConversations = MutableLiveData<List<Conversation>>()
-    val allConversations: LiveData<List<Conversation>> = _allConversations
+    private val _allConversations = MutableStateFlow<List<Conversation>>(emptyList())
+    val allConversations: StateFlow<List<Conversation>> = _allConversations.asStateFlow()
 
-    private val _filteredConversations = MutableLiveData<List<Conversation>>()
+    private val _filteredConversations = MutableStateFlow<List<Conversation>>(emptyList())
 
     // New LiveData for grouped conversations
-    private val _groupedConversations = MutableLiveData<List<ConversationGroup>>()
-    val groupedConversations: LiveData<List<ConversationGroup>> = _groupedConversations
+    private val _groupedConversations = MutableStateFlow<List<ConversationGroup>>(emptyList())
+    val groupedConversations: StateFlow<List<ConversationGroup>> = _groupedConversations.asStateFlow()
 
     private val inMemoryPrivateMessages = mutableListOf<ChatMessage>()
 
     private var currentSearchQuery: String = ""
 
-    // Add this property for saved conversations
-    private val _savedGroupedConversations = MutableLiveData<List<ConversationGroup>>()
-    val savedGroupedConversations: LiveData<List<ConversationGroup>> = _savedGroupedConversations
+    // Add this property for saved conversations  
+    private val _savedConversations = MutableStateFlow<List<Conversation>>(emptyList())
+    val savedConversations: StateFlow<List<Conversation>> = _savedConversations.asStateFlow()
+    
+    private val _savedGroupedConversations = MutableStateFlow<List<ConversationGroup>>(emptyList())
+    val savedGroupedConversations: StateFlow<List<ConversationGroup>> = _savedGroupedConversations.asStateFlow()
+    
+    // Loading state
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
     init {
         loadConversations()
     }
@@ -48,29 +56,36 @@ class ConversationsViewModel(application: Application) : AndroidViewModel(applic
     }
     fun loadConversations() {
         viewModelScope.launch {
+            _isLoading.value = true
             try {
                 val conversations = withContext(Dispatchers.IO) {
                     conversationDao.getAllConversations()
                 }
-                _allConversations.postValue(conversations)
+                _allConversations.value = conversations
+                
+                // Update saved conversations
+                val savedConversations = conversations.filter { it.saved }
+                _savedConversations.value = savedConversations
 
                 // Apply current search filter if exists
                 if (currentSearchQuery.isNotEmpty()) {
                     searchConversations(currentSearchQuery)
                 } else {
-                    _filteredConversations.postValue(conversations)
+                    _filteredConversations.value = conversations
                     // Group conversations by date and update the groupedConversations LiveData
                     groupConversationsByDate(conversations)
                 }
 
-                Timber.tag("ConversationsViewModel").d("Loaded ${conversations.size} conversations")
+                Timber.tag("ConversationsViewModel").d("Loaded ${conversations.size} conversations, ${savedConversations.size} saved")
             } catch (e: Exception) {
                 Timber.tag("ConversationsViewModel").e(e, "Error loading conversations")
+            } finally {
+                _isLoading.value = false
             }
         }
     }
     private fun groupConversationsByDate(conversations: List<Conversation>) {
-        val calendar = Calendar.getInstance()
+        Calendar.getInstance()
 
         // Set to beginning of today
         val todayStart = Calendar.getInstance().apply {
@@ -139,7 +154,7 @@ class ConversationsViewModel(application: Application) : AndroidViewModel(applic
             groups.add(ConversationGroup("Older", olderConversations))
         }
 
-        _groupedConversations.postValue(groups)
+        _groupedConversations.value = groups
 
         // Also filter saved conversations and group them separately
         val savedConversations = conversations.filter { it.saved }
@@ -147,7 +162,7 @@ class ConversationsViewModel(application: Application) : AndroidViewModel(applic
     }
 
     private fun groupSavedConversationsByDate(savedConversations: List<Conversation>) {
-        val calendar = Calendar.getInstance()
+        Calendar.getInstance()
 
         // Set to beginning of today
         val todayStart = Calendar.getInstance().apply {
@@ -216,7 +231,7 @@ class ConversationsViewModel(application: Application) : AndroidViewModel(applic
             groups.add(ConversationGroup("Older", olderConversations))
         }
 
-        _savedGroupedConversations.postValue(groups)
+        _savedGroupedConversations.value = groups
     }
 
     fun searchConversations(query: String) {
@@ -228,7 +243,7 @@ class ConversationsViewModel(application: Application) : AndroidViewModel(applic
 
                 if (currentSearchQuery.isEmpty()) {
                     // If search is empty, show all conversations
-                    _filteredConversations.postValue(allConvos)
+                    _filteredConversations.value = allConvos
                     // Also update grouped conversations
                     groupConversationsByDate(allConvos)
                     Timber.tag("ConversationsViewModel").d("Search cleared, showing all ${allConvos.size} conversations")
@@ -240,7 +255,7 @@ class ConversationsViewModel(application: Application) : AndroidViewModel(applic
                                 conversation.lastMessage.lowercase().contains(currentSearchQuery)
                     }
 
-                    _filteredConversations.postValue(filtered)
+                    _filteredConversations.value = filtered
                     // Update grouped conversations with the filtered results
                     groupConversationsByDate(filtered)
                     Timber.tag("ConversationsViewModel").d("Search for '$currentSearchQuery' found ${filtered.size} conversations")
@@ -248,7 +263,7 @@ class ConversationsViewModel(application: Application) : AndroidViewModel(applic
             } catch (e: Exception) {
                 Timber.tag("ConversationsViewModel").e(e, "Error searching conversations")
                 // In case of error, just show all conversations
-                _filteredConversations.postValue(_allConversations.value)
+                _filteredConversations.value = _allConversations.value
             }
         }
     }   fun toggleSavedStatus(conversation: Conversation) {
@@ -342,13 +357,13 @@ class ConversationsViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
-    fun getMessagesByConversationId(conversationId: String, page: Int): LiveData<List<ChatMessage>> {
+    fun getMessagesByConversationId(conversationId: String, page: Int): StateFlow<List<ChatMessage>> {
         // For private conversations, use in-memory storage
         if (conversationId.startsWith("private_")) {
             Timber.tag("VIEWMODEL").d("Getting messages for private conversation: $conversationId")
 
-            // Create a MutableLiveData with our filtered private messages
-            val liveData = MutableLiveData<List<ChatMessage>>()
+            // Create a MutableStateFlow with our filtered private messages
+            val stateFlow = MutableStateFlow<List<ChatMessage>>(emptyList())
 
             // Filter private messages by conversation ID
             val filteredMessages = inMemoryPrivateMessages.filter {
@@ -367,21 +382,25 @@ class ConversationsViewModel(application: Application) : AndroidViewModel(applic
                 emptyList()
             }
 
-            liveData.value = pageMessages
-            return liveData
+            stateFlow.value = pageMessages
+            return stateFlow.asStateFlow()
         }
 
         // For regular conversations, use the database
         val offset = (page - 1) * 20
-        return liveData(Dispatchers.IO) {
+        val stateFlow = MutableStateFlow<List<ChatMessage>>(emptyList())
+        
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val messages = chatMessageDao.getMessagesByConversationId(conversationId, offset)
-                emit(messages)
+                stateFlow.value = messages
             } catch (e: Exception) {
                 Timber.tag("VIEWMODEL").e(e, "Error getting messages for conversation: $conversationId")
-                emit(emptyList())
+                stateFlow.value = emptyList()
             }
         }
+        
+        return stateFlow.asStateFlow()
     }
 
     fun addChatMessage(message: ChatMessage) {
@@ -488,6 +507,65 @@ class ConversationsViewModel(application: Application) : AndroidViewModel(applic
             } catch (e: Exception) {
                 Timber.e(e, "Error loading all messages for conversation $conversationId")
                 emptyList()
+            }
+        }
+    }
+    
+    /**
+     * Clear all conversations (alias for deleteAllConversations)
+     */
+    suspend fun clearAllConversations() {
+        deleteAllConversations()
+    }
+    
+    /**
+     * Clear all saved conversations (removes saved status, doesn't delete)
+     */
+    suspend fun clearAllSavedConversations() {
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    val savedConversations = conversationDao.getAllConversations().filter { it.saved }
+                    savedConversations.forEach { conversation ->
+                        val updatedConversation = conversation.copy(saved = false)
+                        conversationDao.update(updatedConversation)
+                    }
+                }
+                // Reload conversations to update UI
+                loadConversations()
+                Timber.d("Cleared saved status from all conversations")
+            } catch (e: Exception) {
+                Timber.e(e, "Error clearing saved conversations")
+            }
+        }
+    }
+    
+    /**
+     * Clear search and show all conversations
+     */
+    fun clearSearch() {
+        currentSearchQuery = ""
+        _filteredConversations.value = _allConversations.value
+        groupConversationsByDate(_allConversations.value)
+    }
+    
+    /**
+     * Delete conversation by ID
+     */
+    suspend fun deleteConversation(conversationId: Long) {
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    // Delete all messages for this conversation first
+                    chatMessageDao.deleteMessagesForConversation(conversationId.toString())
+                    // Then delete the conversation
+                    conversationDao.deleteConversationById(conversationId)
+                }
+                // Reload conversations
+                loadConversations()
+                Timber.d("Deleted conversation with ID: $conversationId")
+            } catch (e: Exception) {
+                Timber.e(e, "Error deleting conversation $conversationId")
             }
         }
     }

@@ -194,7 +194,7 @@ class HuaweiAdProvider : BaseAdProvider() {
             if (ad != null) {
                 // Check if ad is loaded
                 val isLoadedMethod = interstitialAdClass?.getMethod("isLoaded")
-                val isLoaded = isLoadedMethod?.invoke(ad) as? Boolean ?: false
+                val isLoaded = isLoadedMethod?.invoke(ad) as? Boolean == true
 
                 if (isLoaded) {
                     // Show the ad
@@ -482,7 +482,7 @@ class HuaweiAdProvider : BaseAdProvider() {
         try {
             val ad = rewardedAd
             val isLoadedMethod = rewardAdClass?.getMethod("isLoaded")
-            return isLoadedMethod?.invoke(ad) as? Boolean ?: false
+            return isLoadedMethod?.invoke(ad) as? Boolean == true
         } catch (e: Exception) {
             Timber.e(e, "Error checking if Huawei rewarded ad is loaded")
             return false
@@ -497,7 +497,7 @@ class HuaweiAdProvider : BaseAdProvider() {
         try {
             val ad = interstitialAd
             val isLoadedMethod = interstitialAdClass?.getMethod("isLoaded")
-            return isLoadedMethod?.invoke(ad) as? Boolean ?: false
+            return isLoadedMethod?.invoke(ad) as? Boolean == true
         } catch (e: Exception) {
             Timber.e(e, "Error checking if Huawei interstitial ad is loaded")
             return false

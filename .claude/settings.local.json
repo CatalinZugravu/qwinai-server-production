@@ -16,8 +16,37 @@
       "Bash(mv:*)",
       "Bash(git init:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(cp:*)",
+      "Bash(sed:*)",
+      "Bash(awk:*)",
+      "Bash(ls:*)",
+      "Bash(mkdir:*)",
+      "Bash(cmd /c:*)",
+      "Bash(true)",
+      "Bash(echo $SHELL)",
+      "Bash(powershell:*)",
+      "Bash(git rm:*)",
+      "WebSearch",
+      "Bash(del /S /Q appbuild*)",
+      "Bash(del:*)",
+      "Bash(kotlinc:*)",
+      "Bash(git checkout:*)",
+      "Read(C:\\Users\\Catalin\\Downloads/**)",
+      "Read(C:\\Users\\Catalin\\Downloads/**)",
+      "Read(C:\\Users\\Catalin\\Downloads/**)",
+      "Read(C:\\Users\\Catalin\\Downloads/**)",
+      "Read(C:\\Users\\Catalin\\Pictures\\Screenshots/**)",
+      "Read(C:\\Users\\Catalin\\Pictures\\Screenshots/**)",
+      "Bash(adb logcat:*)",
+      "Bash(git push:*)",
+      "Bash(git remote add:*)"
     ],
-    "deny": []
+    "deny": [],
+    "defaultMode": "acceptEdits",
+    "additionalDirectories": [
+      "C:\\mnt\\c\\Users\\Catalin\\AndroidStudioProjects",
+      "C:\\c\\Users\\Catalin\\AndroidStudioProjects"
+    ]
   }
 }

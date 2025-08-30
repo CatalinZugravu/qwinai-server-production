@@ -44,8 +44,8 @@ class OCRCameraActivity : BaseThemedActivity() {
             binding.previewImage.setImageURI(Uri.parse("file://$currentPhotoPath"))
 
             // Show preview UI
-            binding.previewGroup.visibility = android.view.View.VISIBLE
-            binding.cameraInstructionsGroup.visibility = android.view.View.GONE
+            binding.previewGroup.visibility = View.VISIBLE
+            binding.cameraInstructionsGroup.visibility = View.GONE
         } else {
             // Failed to capture image
             Toast.makeText(
@@ -55,7 +55,7 @@ class OCRCameraActivity : BaseThemedActivity() {
             ).show()
 
             // Show retry UI
-            binding.btnRetry.visibility = android.view.View.VISIBLE
+            binding.btnRetry.visibility = View.VISIBLE
         }
     }
 
@@ -160,7 +160,7 @@ class OCRCameraActivity : BaseThemedActivity() {
 
                 // Show retry UI
                 binding.cameraInstructionsGroup.alpha = 0.5f
-                binding.btnRetry.visibility = android.view.View.VISIBLE
+                binding.btnRetry.visibility = View.VISIBLE
             }
         }
     }

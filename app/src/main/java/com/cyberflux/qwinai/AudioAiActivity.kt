@@ -3,6 +3,7 @@ package com.cyberflux.qwinai
 import android.Manifest
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
+import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Color
@@ -31,10 +32,15 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
 import androidx.lifecycle.lifecycleScope
+import com.cyberflux.qwinai.network.AimlApiResponse
 import com.cyberflux.qwinai.network.RetrofitInstance
+import com.cyberflux.qwinai.tools.WebSearchTool
 import com.cyberflux.qwinai.utils.BaseThemedActivity
 import com.cyberflux.qwinai.utils.PrefsManager
+import com.cyberflux.qwinai.utils.SimplifiedTokenManager
 import com.cyberflux.qwinai.views.LiquidMorphingView
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -63,6 +69,7 @@ class AudioAiActivity : BaseThemedActivity() {
     private lateinit var muteButton: CardView
     private lateinit var recordButton: CardView
     private lateinit var exitButton: CardView
+    private lateinit var btnSettings: android.widget.ImageButton
     private lateinit var muteIconContainer: FrameLayout
     private lateinit var micHead: View
     private lateinit var micStand: View
@@ -74,13 +81,23 @@ class AudioAiActivity : BaseThemedActivity() {
     private lateinit var statusDot: View
     private lateinit var muteLabel: TextView
 
-    // Audio Components - KEEPING ALL EXISTING LOGIC
+    // Audio Components - Enhanced with AI tools
     private var audioRecord: AudioRecord? = null
     private var audioTrack: AudioTrack? = null
     private var mediaPlayer: MediaPlayer? = null
     private var isRecording = false
     private var isPlaying = false
     private var isMuted = false
+    
+    // AI Tools
+    private var webSearchTool: WebSearchTool? = null
+    private var isSearching = false
+    
+    // Token Management
+    private lateinit var tokenManager: SimplifiedTokenManager
+    private val audioConversationId = "audio_session_${System.currentTimeMillis()}"
+    private val audioModelId = "gpt-4o-audio-preview"
+    private var totalTokensUsed = 0
 
     // Audio Settings - UNCHANGED
     private val sampleRate = 44100
@@ -100,21 +117,29 @@ class AudioAiActivity : BaseThemedActivity() {
     private var recordedAudioData: ByteArray? = null
     private var volumeLevelValue = 0f
 
-    // Playback audio configuration - UNCHANGED
-    private val playbackSampleRate = 44100
+    // Playback audio configuration - Enhanced for proper speed
+    private val playbackSampleRate = 24000 // Match API output sample rate
     private val playbackChannelConfig = AudioFormat.CHANNEL_OUT_MONO
     private val playbackAudioFormat = AudioFormat.ENCODING_PCM_16BIT
 
-    // API Settings - UNCHANGED
+    // API Settings - Enhanced with voice selection
     private val audioApiFormat = "wav"
-    private val voiceType = "coral"
+    private var voiceType = "coral"
 
     enum class CallState {
-        IDLE, RECORDING, PROCESSING, SPEAKING, LISTENING
+        IDLE, RECORDING, PROCESSING, SPEAKING, LISTENING, SEARCHING
     }
 
     companion object {
         private const val RECORD_AUDIO_PERMISSION_CODE = 101
+        private const val PREF_VOICE_TYPE = "audio_voice_type"
+        private const val PREF_USE_WEB_SEARCH = "audio_use_web_search"
+        
+        // Available voices for GPT-4 Audio
+        private val AVAILABLE_VOICES = arrayOf(
+            "alloy", "ash", "ballad", "coral", "echo", 
+            "fable", "nova", "onyx", "sage", "shimmer"
+        )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -127,8 +152,35 @@ class AudioAiActivity : BaseThemedActivity() {
         checkAudioPermission()
         createVolumeVisualizer()
 
+        // Initialize token manager first (needed by loadUserPreferences)
+        initializeTokenManager()
+        
+        // Load user preferences
+        loadUserPreferences()
+        
+        // Initialize AI tools
+        initializeAITools()
+        
         // Set initial state
         setState(CallState.IDLE)
+    }
+    
+    private fun initializeAITools() {
+        webSearchTool = WebSearchTool(this)
+    }
+    
+    private fun initializeTokenManager() {
+        tokenManager = SimplifiedTokenManager(this)
+        // Reset conversation on new session
+        tokenManager.resetConversation(audioConversationId)
+        Timber.d("📊 Token manager initialized for audio session: $audioConversationId")
+    }
+    
+    private fun loadUserPreferences() {
+        voiceType = PrefsManager.getAudioVoice(this, "coral")
+        
+        // Update UI to show current settings with token usage
+        updateTokenDisplay()
     }
 
     private fun initializeViews() {
@@ -139,6 +191,7 @@ class AudioAiActivity : BaseThemedActivity() {
         subtitleText = findViewById(R.id.subtitleText)
         volumeVisualizer = findViewById(R.id.volumeVisualizer)
         statusDot = findViewById(R.id.statusDot)
+        btnSettings = findViewById(R.id.btnSettings)
 
         // Control buttons
         muteButton = findViewById(R.id.muteButton)
@@ -168,13 +221,18 @@ class AudioAiActivity : BaseThemedActivity() {
         exitButton.setOnClickListener {
             endCall()
         }
+        
+        // Add voice settings access via settings button
+        btnSettings.setOnClickListener {
+            showAdvancedSettingsMenu()
+        }
 
         // Add beautiful touch animations
         setupTouchAnimations()
     }
 
     private fun setupTouchAnimations() {
-        listOf(muteButton, recordButton, exitButton).forEach { button ->
+        listOf(muteButton, recordButton, exitButton, btnSettings).forEach { button ->
             button.setOnTouchListener { view, motionEvent ->
                 when (motionEvent.action) {
                     android.view.MotionEvent.ACTION_DOWN -> {
@@ -487,9 +545,17 @@ class AudioAiActivity : BaseThemedActivity() {
                 setState(CallState.PROCESSING)
             }
 
-            // Process the recorded audio
+            // Process the recorded audio with validation
             recordedAudioData?.let { audioData ->
-                processAudioWithAI(audioData)
+                if (isAudioMeaningful(audioData)) {
+                    processAudioWithAI(audioData)
+                } else {
+                    runOnUiThread {
+                        showError("No speech detected. Please speak clearly into the microphone.")
+                        setState(CallState.IDLE)
+                        Timber.d("Audio recording was too quiet or empty - not sending to API")
+                    }
+                }
             } ?: run {
                 runOnUiThread {
                     showError("No audio data recorded")
@@ -504,6 +570,62 @@ class AudioAiActivity : BaseThemedActivity() {
             }
         }
     }
+    
+    /**
+     * Check if the recorded audio contains meaningful speech
+     * Analyzes volume levels and duration to prevent sending empty/silent audio
+     */
+    private fun isAudioMeaningful(audioData: ByteArray): Boolean {
+        if (audioData.size < 44) { // Minimum WAV header size
+            Timber.d("Audio data too small: ${audioData.size} bytes")
+            return false
+        }
+        
+        // Skip WAV header (44 bytes) and analyze actual audio data
+        val audioSamples = audioData.sliceArray(44 until audioData.size)
+        
+        if (audioSamples.size < sampleRate / 2) { // Less than 0.5 seconds of audio
+            Timber.d("Audio too short: ${audioSamples.size} samples (< 0.5 seconds)")
+            return false
+        }
+        
+        var totalVolume = 0.0
+        var peakVolume = 0.0
+        var significantSamples = 0
+        val volumeThreshold = 1000.0 // Threshold for meaningful audio
+        
+        // Analyze audio samples (16-bit PCM)
+        for (i in audioSamples.indices step 2) {
+            if (i + 1 < audioSamples.size) {
+                val sample = (audioSamples[i + 1].toInt() shl 8) or (audioSamples[i].toInt() and 0xFF)
+                val volume = kotlin.math.abs(sample.toDouble())
+                
+                totalVolume += volume
+                peakVolume = kotlin.math.max(peakVolume, volume)
+                
+                if (volume > volumeThreshold) {
+                    significantSamples++
+                }
+            }
+        }
+        
+        val sampleCount = audioSamples.size / 2
+        val averageVolume = totalVolume / sampleCount
+        val significantRatio = significantSamples.toDouble() / sampleCount
+        
+        val isMeaningful = averageVolume > volumeThreshold/2 && 
+                          peakVolume > volumeThreshold*2 && 
+                          significantRatio > 0.01 // At least 1% of samples above threshold
+        
+        Timber.d("Audio analysis:")
+        Timber.d("- Duration: ${sampleCount / sampleRate.toDouble()} seconds")
+        Timber.d("- Average volume: $averageVolume")
+        Timber.d("- Peak volume: $peakVolume")
+        Timber.d("- Significant samples ratio: ${significantRatio * 100}%")
+        Timber.d("- Is meaningful: $isMeaningful")
+        
+        return isMeaningful
+    }
 
     // KEEPING ALL EXISTING API PROCESSING LOGIC UNCHANGED
     fun processAudioWithAI(audioData: ByteArray) {
@@ -514,7 +636,9 @@ class AudioAiActivity : BaseThemedActivity() {
                 }
 
                 val base64Audio = java.util.Base64.getEncoder().encodeToString(audioData)
-                val requestJson = createAudioApiRequest(base64Audio)
+                
+                // Create enhanced request with AI capabilities
+                val requestJson = createEnhancedAudioApiRequest(base64Audio)
                 val requestBody = requestJson.toRequestBody("application/json".toMediaTypeOrNull())
 
                 val apiConfig = RetrofitInstance.apiConfigs[RetrofitInstance.ApiServiceType.AIMLAPI]
@@ -531,43 +655,60 @@ class AudioAiActivity : BaseThemedActivity() {
                     val responseBody = response.body
                     if (responseBody != null) {
                         val reader = BufferedReader(InputStreamReader(responseBody.byteStream()))
-                        val minBufferSize = AudioTrack.getMinBufferSize(
-                            playbackSampleRate, playbackChannelConfig, playbackAudioFormat
-                        )
-
+                        
                         withContext(Dispatchers.Main) {
-                            audioTrack = AudioTrack(
-                                AudioManager.STREAM_MUSIC,
-                                playbackSampleRate,
-                                playbackChannelConfig,
-                                playbackAudioFormat,
-                                minBufferSize,
-                                AudioTrack.MODE_STREAM
-                            )
-                            audioTrack?.play()
-                            isPlaying = true
-                            setState(CallState.SPEAKING)
+                            // Initialize audio with proper configuration for speech
+                            initializeAudioTrackForSpeech()
+                            
+                            // Show web search indicator proactively if enabled
+                            val prefs = getSharedPreferences("audio_settings", Context.MODE_PRIVATE)
+                            val useWebSearch = prefs.getBoolean(PREF_USE_WEB_SEARCH, false)
+                            if (useWebSearch && !isSearching) {
+                                showWebSearchIndicator()
+                            }
                         }
 
                         // Buffer to accumulate audio bytes
                         val audioBuffer = ByteArrayOutputStream()
 
-                        while (true) {
-                            val line = reader.readLine() ?: break
+                        var audioChunksReceived = 0
+                        var isStreamComplete = false
+                        
+                        while (!isStreamComplete) {
+                            val line = reader.readLine()
+                            if (line == null) {
+                                Timber.d("Stream ended naturally")
+                                break
+                            }
+                            
                             Timber.d("Received line: $line")
 
                             try {
                                 // Skip empty lines
                                 if (line.isBlank()) continue
 
-                                // Handle SSE format (lines starting with "data: ")
-                                val jsonStr = if (line.startsWith("data: ")) {
-                                    line.substring(6) // Remove "data: " prefix
-                                } else {
-                                    line
+                                // Handle different SSE formats and completion markers
+                                val jsonStr = when {
+                                    line.startsWith("data: ") -> line.substring(6)
+                                    line.startsWith("event: ") -> continue // Skip event lines
+                                    line == "data: [DONE]" -> {
+                                        Timber.d("Stream completion marker received")
+                                        isStreamComplete = true
+                                        break
+                                    }
+                                    else -> line
+                                }
+                                
+                                if (jsonStr.isBlank() || jsonStr == "[DONE]") {
+                                    isStreamComplete = true
+                                    break
                                 }
 
                                 val json = JSONObject(jsonStr)
+                                
+                                // Track token usage if present
+                                trackTokenUsage(json)
+                                
                                 val choices = json.optJSONArray("choices")
 
                                 if (choices != null && choices.length() > 0) {
@@ -582,14 +723,47 @@ class AudioAiActivity : BaseThemedActivity() {
                                             val audioDataStr = audio.optString("data")
                                             if (!audioDataStr.isNullOrEmpty()) {
                                                 val audioBytes = Base64.getDecoder().decode(audioDataStr)
-                                                audioTrack?.write(audioBytes, 0, audioBytes.size)
+                                                
+                                                // Write audio data with enhanced error handling
+                                                audioTrack?.let { track ->
+                                                    try {
+                                                        if (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
+                                                            val writeResult = track.write(audioBytes, 0, audioBytes.size)
+                                                            if (writeResult < 0) {
+                                                                Timber.w("AudioTrack write error: $writeResult")
+                                                                when (writeResult) {
+                                                                    AudioTrack.ERROR_INVALID_OPERATION -> {
+                                                                        Timber.e("AudioTrack invalid operation - recreating")
+                                                                        recreateAudioTrack()
+                                                                    }
+                                                                    AudioTrack.ERROR_BAD_VALUE -> {
+                                                                        Timber.e("AudioTrack bad value error")
+                                                                    }
+                                                                    else -> {
+                                                                        Timber.e("AudioTrack unknown error: $writeResult")
+                                                                    }
+                                                                }
+                                                            } else {
+                                                                Timber.v("Audio chunk written: ${audioBytes.size} bytes")
+                                                            }
+                                                        } else {
+                                                            Timber.w("AudioTrack not in playing state: ${track.playState}")
+                                                        }
+                                                    } catch (e: Exception) {
+                                                        Timber.e(e, "Exception writing audio data: ${e.message}")
+                                                        recreateAudioTrack()
+                                                    }
+                                                }
+                                                
                                                 audioBuffer.write(audioBytes)
+                                                audioChunksReceived++
                                             }
 
-                                            // For debugging - log transcript if available
+                                            // Process transcript for AI actions and debugging
                                             val transcript = audio.optString("transcript")
                                             if (!transcript.isNullOrEmpty()) {
                                                 Timber.d("Transcript: $transcript")
+                                                processTranscriptForAIActions(transcript)
                                             }
                                         }
                                     } else {
@@ -601,7 +775,15 @@ class AudioAiActivity : BaseThemedActivity() {
                                             val audioBytes = Base64.getDecoder().decode(audioDataStr)
                                             audioTrack?.write(audioBytes, 0, audioBytes.size)
                                             audioBuffer.write(audioBytes)
+                                            audioChunksReceived++
                                         }
+                                    }
+                                    
+                                    // Check for completion
+                                    val finishReason = choice.optString("finish_reason")
+                                    if (finishReason == "stop" || finishReason == "length") {
+                                        Timber.d("Stream finished with reason: $finishReason")
+                                        isStreamComplete = true
                                     }
                                 }
                             } catch (e: Exception) {
@@ -611,22 +793,23 @@ class AudioAiActivity : BaseThemedActivity() {
 
                         // Log total audio data received
                         val totalAudioBytes = audioBuffer.toByteArray()
-                        Timber.d("Total audio data received: ${totalAudioBytes.size} bytes")
+                        Timber.d("Enhanced audio streaming complete:")
+                        Timber.d("- Total audio chunks: $audioChunksReceived")
+                        Timber.d("- Total audio bytes: ${totalAudioBytes.size}")
 
-                        // If we didn't receive any audio data, but the request was successful,
-                        // the API might be returning only transcripts without audio
-                        if (totalAudioBytes.isEmpty()) {
-                            withContext(Dispatchers.Main) {
-                                showError("No audio data received from API. Check if your API key has TTS capabilities.")
-                            }
-                        }
-
+                        // Handle audio completion
                         withContext(Dispatchers.Main) {
-                            audioTrack?.stop()
-                            audioTrack?.release()
-                            audioTrack = null
-                            isPlaying = false
-                            setState(CallState.IDLE)
+                            if (totalAudioBytes.isEmpty()) {
+                                showError("No audio data received from API. Check if your API key has TTS capabilities.")
+                                cleanupAudioTrack()
+                                setState(CallState.IDLE)
+                            } else {
+                                // Calculate audio duration and wait for playback to complete
+                                val audioLengthMs = calculateAudioDuration(totalAudioBytes.size)
+                                Timber.d("Waiting for audio playback to complete: ${audioLengthMs}ms")
+                                
+                                finalizeAudioPlayback(audioLengthMs)
+                            }
                         }
                     }
                 } else {
@@ -650,54 +833,535 @@ class AudioAiActivity : BaseThemedActivity() {
         }
     }
 
-    private fun createAudioApiRequest(base64Audio: String): String {
+    private suspend fun createEnhancedAudioApiRequest(base64Audio: String): String = withContext(Dispatchers.IO) {
+        val prefs = getSharedPreferences("audio_settings", Context.MODE_PRIVATE)
+        val useWebSearch = prefs.getBoolean(PREF_USE_WEB_SEARCH, false)
+        
+        // Build enhanced system message
+        val systemMessage = buildEnhancedSystemMessage(useWebSearch)
+        
+        val messagesArray = JSONArray().apply {
+            // Add system message
+            put(JSONObject().apply {
+                put("role", "system")
+                put("content", systemMessage)
+            })
+            
+            // Add current audio input
+            put(JSONObject().apply {
+                put("role", "user")
+                put("content", JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("type", "input_audio")
+                        put("input_audio", JSONObject().apply {
+                            put("data", base64Audio)
+                            put("format", "wav")
+                        })
+                    })
+                })
+            })
+        }
+
         val requestJson = JSONObject().apply {
             put("model", "gpt-4o-audio-preview")
 
-            // Include both text and audio modalities (required by API)
+            // Include both text and audio modalities
             put("modalities", JSONArray().apply {
                 put("text")
                 put("audio")
             })
 
-            // Audio config at root level - Use a valid voice type
+            // Audio config with selected voice
             put("audio", JSONObject().apply {
                 put("format", "pcm16")
                 put("voice", voiceType)
             })
 
-            // Audio-only message format
-            put("messages", JSONArray().apply {
-                put(JSONObject().apply {
-                    put("role", "user")
-                    put("content", JSONArray().apply {
-                        put(JSONObject().apply {
-                            put("type", "input_audio")
-                            put("input_audio", JSONObject().apply {
-                                put("data", base64Audio)
-                                put("format", "wav")
-                            })
-                        })
-                    })
-                })
-            })
+            put("messages", messagesArray)
 
-            // Standard parameters
-            put("max_tokens", 512)
+            // Optimized parameters for audio responses  
+            put("max_tokens", 75) // Lower limit for shorter audio responses
             put("temperature", 0.7)
-            put("stream", true) // Enable streaming
+            put("top_p", 0.9)
+            put("frequency_penalty", 0.0)
+            put("presence_penalty", 0.0)
+            put("stream", true)
         }
 
         val requestString = requestJson.toString()
-        Timber.d("Audio API request created:")
+        Timber.d("Optimized Audio API request created:")
         Timber.d("- Model: gpt-4o-audio-preview")
-        Timber.d("- Modalities: [text, audio]")
-        Timber.d("- Audio format: pcm16")
-        Timber.d("- Audio voice: $voiceType")
+        Timber.d("- Voice: $voiceType")
+        Timber.d("- Max tokens: 75")
+        Timber.d("- Web search: $useWebSearch")
         Timber.d("- Audio data length: ${base64Audio.length}")
-        Timber.d("- Stream: true")
+        Timber.d("- System message length: ${systemMessage.length}")
 
-        return requestString
+        requestString
+    }
+    
+    private fun buildEnhancedSystemMessage(useWebSearch: Boolean): String {
+        val systemPrompt = StringBuilder()
+        
+        systemPrompt.append("You are a voice-only AI assistant. You can only receive audio input and respond with audio. ")
+        systemPrompt.append("You cannot see images, process visual content, or analyze any visual media. ")
+        systemPrompt.append("Give brief, natural spoken responses suitable for voice conversation. ")
+        systemPrompt.append("If asked about visual content, politely explain that you can only process audio. ")
+        
+        if (useWebSearch) {
+            systemPrompt.append("Search the web when asked about current information. ")
+        }
+        
+        return systemPrompt.toString()
+    }
+    
+    private fun showWebSearchIndicator() {
+        lifecycleScope.launch(Dispatchers.Main) {
+            if (!isSearching) {
+                Timber.d("Showing proactive web search indicator")
+                isSearching = true
+                setState(CallState.SEARCHING)
+                
+                // Show indicator briefly at the start of AI response
+                handler.postDelayed({
+                    if (isSearching && currentState == CallState.SEARCHING) {
+                        isSearching = false
+                        setState(CallState.SPEAKING)
+                        Timber.d("Web search indicator completed, returning to speaking")
+                    }
+                }, 2000) // Show search indicator for 2 seconds initially
+            }
+        }
+    }
+    
+    private fun initializeAudioTrackForSpeech() {
+        try {
+            val minBufferSize = AudioTrack.getMinBufferSize(
+                playbackSampleRate, playbackChannelConfig, playbackAudioFormat
+            )
+            
+            if (minBufferSize == AudioTrack.ERROR || minBufferSize == AudioTrack.ERROR_BAD_VALUE) {
+                Timber.e("Invalid AudioTrack buffer size: $minBufferSize")
+                showError("Audio system error. Please restart the app.")
+                return
+            }
+            
+            // Use optimal buffer size for speech (4x minimum for smoother playback)
+            val optimalBufferSize = minBufferSize * 4
+            
+            Timber.d("Audio track configuration:")
+            Timber.d("- Sample rate: $playbackSampleRate Hz")
+            Timber.d("- Channel config: $playbackChannelConfig")
+            Timber.d("- Audio format: $playbackAudioFormat")
+            Timber.d("- Min buffer size: $minBufferSize bytes")
+            Timber.d("- Optimal buffer size: $optimalBufferSize bytes")
+            
+            // Create AudioTrack with improved configuration
+            audioTrack = AudioTrack.Builder()
+                .setAudioAttributes(
+                    android.media.AudioAttributes.Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+                .setAudioFormat(
+                    android.media.AudioFormat.Builder()
+                        .setEncoding(playbackAudioFormat)
+                        .setSampleRate(playbackSampleRate)
+                        .setChannelMask(playbackChannelConfig)
+                        .build()
+                )
+                .setBufferSizeInBytes(optimalBufferSize)
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .build()
+                
+            if (audioTrack?.state != AudioTrack.STATE_INITIALIZED) {
+                Timber.e("AudioTrack failed to initialize. State: ${audioTrack?.state}")
+                showError("Failed to initialize audio playback")
+                return
+            }
+                
+            audioTrack?.play()
+            isPlaying = true
+            setState(CallState.SPEAKING)
+            
+            Timber.d("AudioTrack initialized and started successfully with improved config")
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Error initializing AudioTrack: ${e.message}")
+            showError("Audio initialization failed: ${e.message}")
+        }
+    }
+    
+    private fun recreateAudioTrack() {
+        lifecycleScope.launch(Dispatchers.Main) {
+            try {
+                Timber.d("Recreating AudioTrack due to I/O errors")
+                cleanupAudioTrack()
+                
+                // Small delay before recreating
+                handler.postDelayed({
+                    initializeAudioTrackForSpeech()
+                }, 100)
+            } catch (e: Exception) {
+                Timber.e(e, "Error recreating AudioTrack: ${e.message}")
+            }
+        }
+    }
+    
+    private fun finalizeAudioPlayback(durationMs: Long) {
+        try {
+            audioTrack?.let { track ->
+                Timber.d("Finalizing audio playback, waiting ${durationMs}ms for completion")
+                
+                // Wait for the calculated duration plus a small buffer
+                val waitTimeMs = durationMs + 500 // Add 500ms buffer
+                
+                handler.postDelayed({
+                    try {
+                        if (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
+                            Timber.d("Audio still playing, waiting additional 1000ms...")
+                            // Wait a bit more if still playing
+                            handler.postDelayed({
+                                cleanupAudioTrack()
+                                setState(CallState.IDLE)
+                            }, 1000)
+                        } else {
+                            Timber.d("Audio playback completed")
+                            cleanupAudioTrack()
+                            setState(CallState.IDLE)
+                        }
+                    } catch (e: Exception) {
+                        Timber.e(e, "Error in audio completion check: ${e.message}")
+                        cleanupAudioTrack()
+                        setState(CallState.IDLE)
+                    }
+                }, waitTimeMs)
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error finalizing audio playback: ${e.message}")
+            cleanupAudioTrack()
+            setState(CallState.IDLE)
+        }
+    }
+    
+    private fun calculateAudioDuration(audioSizeBytes: Int): Long {
+        // PCM 16-bit, mono, 24kHz
+        val bytesPerSample = 2 // 16-bit = 2 bytes
+        val samplesPerSecond = playbackSampleRate // 24000
+        val bytesPerSecond = samplesPerSecond * bytesPerSample
+        
+        val durationSeconds = audioSizeBytes.toDouble() / bytesPerSecond
+        val durationMs = (durationSeconds * 1000).toLong()
+        
+        Timber.d("Audio duration calculation:")
+        Timber.d("- Audio size: $audioSizeBytes bytes")
+        Timber.d("- Bytes per second: $bytesPerSecond")
+        Timber.d("- Duration: ${durationSeconds}s (${durationMs}ms)")
+        
+        return durationMs
+    }
+    
+    private fun cleanupAudioTrack() {
+        try {
+            audioTrack?.let { track ->
+                if (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
+                    track.stop()
+                }
+                track.release()
+                Timber.d("AudioTrack cleaned up successfully")
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error cleaning up AudioTrack: ${e.message}")
+        } finally {
+            audioTrack = null
+            isPlaying = false
+        }
+    }
+    
+    private fun showAdvancedSettingsMenu() {
+        val prefs = getSharedPreferences("audio_settings", Context.MODE_PRIVATE)
+        val useWebSearch = prefs.getBoolean(PREF_USE_WEB_SEARCH, false)
+        
+        val options = arrayOf(
+            "Change Voice",
+            "Web Search: ${if (useWebSearch) "ON" else "OFF"}",
+            "Token Usage Details"
+        )
+        
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Voice Assistant Settings")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> showVoiceSelectionMenu()
+                    1 -> toggleWebSearch()
+                    2 -> showTokenUsageDetails()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    private fun showVoiceSelectionMenu() {
+        val voiceOptions = AVAILABLE_VOICES
+        val currentIndex = voiceOptions.indexOf(voiceType)
+        
+        val items = voiceOptions.map { voice ->
+            if (voice == voiceType) "$voice (current)" else voice
+        }.toTypedArray()
+        
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Select Voice")
+            .setSingleChoiceItems(items, currentIndex) { dialog, which ->
+                voiceType = voiceOptions[which]
+                PrefsManager.setAudioVoice(this, voiceType)
+                updateTokenDisplay() // Update UI
+                
+                Toast.makeText(this, "Voice changed to: ${voiceType.capitalize()}", Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    private fun toggleWebSearch() {
+        val prefs = getSharedPreferences("audio_settings", Context.MODE_PRIVATE)
+        val current = prefs.getBoolean(PREF_USE_WEB_SEARCH, false)
+        val newValue = !current
+        
+        prefs.edit().putBoolean(PREF_USE_WEB_SEARCH, newValue).apply()
+        updateTokenDisplay() // Update UI
+        
+        Toast.makeText(this, "Web Search: ${if (newValue) "Enabled" else "Disabled"}", Toast.LENGTH_SHORT).show()
+    }
+    
+    
+    private fun processTranscriptForAIActions(transcript: String) {
+        lifecycleScope.launch(Dispatchers.Main) {
+            val prefs = getSharedPreferences("audio_settings", Context.MODE_PRIVATE)
+            val useWebSearch = prefs.getBoolean(PREF_USE_WEB_SEARCH, false)
+            
+            // Enhanced web search detection with more indicators
+            if (useWebSearch && detectWebSearchActivity(transcript) && !isSearching) {
+                Timber.d("Web search activity detected in transcript: $transcript")
+                isSearching = true
+                setState(CallState.SEARCHING)
+                
+                // Return to speaking after indication
+                handler.postDelayed({
+                    if (isSearching) {
+                        isSearching = false
+                        if (currentState == CallState.SEARCHING) {
+                            setState(CallState.SPEAKING)
+                        }
+                    }
+                }, 2500) // Show search for 2.5 seconds
+            }
+        }
+    }
+    
+    private fun detectWebSearchActivity(transcript: String): Boolean {
+        val searchIndicators = listOf(
+            // Direct search terms
+            "searching", "search", "looking up", "let me find", "checking", "finding",
+            "let me check", "I'll search", "I need to search", "searching for",
+            
+            // Current information indicators
+            "current", "latest", "recent", "today", "now", "this year", "2025",
+            "up to date", "most recent", "as of",
+            
+            // Specific search topics
+            "news", "weather", "price", "stock", "rate", "temperature",
+            "forecast", "market", "exchange rate",
+            
+            // Search result indicators
+            "according to", "based on my search", "I found", "search results",
+            "from my search", "web search shows", "online sources",
+            
+            // Research indicators
+            "let me research", "I'll look that up", "checking online",
+            "from the web", "internet search"
+        )
+        
+        val lowerTranscript = transcript.lowercase()
+        val hasSearchIndicator = searchIndicators.any { indicator -> lowerTranscript.contains(indicator) }
+        
+        if (hasSearchIndicator) {
+            Timber.d("Web search indicator detected: ${searchIndicators.find { lowerTranscript.contains(it) }}")
+        }
+        
+        return hasSearchIndicator
+    }
+    
+    private fun trackTokenUsage(json: JSONObject) {
+        try {
+            val usageJson = json.optJSONObject("usage")
+            if (usageJson != null) {
+                val promptTokens = usageJson.optInt("prompt_tokens", 0)
+                val completionTokens = usageJson.optInt("completion_tokens", 0)
+                val totalTokens = usageJson.optInt("total_tokens", 0)
+                val audioTokens = usageJson.optJSONObject("completion_tokens_details")?.optInt("audio_tokens", 0) ?: 0
+                
+                if (totalTokens > 0) {
+                    totalTokensUsed = totalTokens
+                    
+                    // Create AimlApiResponse for token manager
+                    val usage = AimlApiResponse.Usage(
+                        promptTokens = promptTokens,
+                        completionTokens = completionTokens,
+                        totalTokens = totalTokens,
+                        audioTokens = audioTokens
+                    )
+                    
+                    val apiResponse = AimlApiResponse(
+                        id = json.optString("id"),
+                        model = json.optString("model", audioModelId),
+                        created = json.optLong("created"),
+                        usage = usage
+                    )
+                    
+                    // Record with token manager
+                    val isSubscribed = PrefsManager.isSubscribed(this@AudioAiActivity)
+                    lifecycleScope.launch {
+                        tokenManager.recordApiResponse(
+                            conversationId = audioConversationId,
+                            modelId = audioModelId,
+                            apiResponse = apiResponse,
+                            isSubscribed = isSubscribed
+                        )
+                    }
+                    
+                    // Update UI on main thread
+                    runOnUiThread {
+                        updateTokenDisplay()
+                    }
+                    
+                    Timber.d("📊 Token usage tracked: prompt=$promptTokens, completion=$completionTokens, total=$totalTokens, audio=$audioTokens")
+                }
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error tracking token usage: ${e.message}")
+        }
+    }
+    
+    private fun updateTokenDisplay() {
+        try {
+            // Check if tokenManager is initialized
+            if (!::tokenManager.isInitialized) {
+                Timber.w("⚠️ TokenManager not initialized yet, skipping token display update")
+                return
+            }
+            
+            val isSubscribed = PrefsManager.isSubscribed(this)
+            val usageSummary = tokenManager.getUsageSummary(
+                conversationId = audioConversationId,
+                modelId = audioModelId,
+                isSubscribed = isSubscribed
+            )
+            
+            val (needsWarning, warningMessage) = tokenManager.checkNeedsWarning(
+                conversationId = audioConversationId,
+                modelId = audioModelId,
+                isSubscribed = isSubscribed
+            )
+            
+            // Update subtitle to show token usage
+            val prefs = getSharedPreferences("audio_settings", Context.MODE_PRIVATE)
+            val useWebSearch = prefs.getBoolean(PREF_USE_WEB_SEARCH, false)
+            
+            val features = mutableListOf<String>()
+            if (useWebSearch) features.add("Web Search")
+            
+            val baseText = if (features.isEmpty()) {
+                "Voice: ${voiceType.capitalize()}"
+            } else {
+                "${features.joinToString(" • ")} • Voice: ${voiceType.capitalize()}"
+            }
+            
+            // Add token usage if we have data
+            val fullText = if (totalTokensUsed > 0) {
+                "$baseText • $usageSummary"
+            } else {
+                baseText
+            }
+            
+            subtitleText.text = fullText
+            
+            // Change color if warning needed
+            if (needsWarning) {
+                subtitleText.setTextColor(ContextCompat.getColor(this, android.R.color.holo_orange_light))
+            } else {
+                subtitleText.setTextColor(ContextCompat.getColor(this, R.color.white))
+            }
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Error updating token display: ${e.message}")
+        }
+    }
+    
+    private fun showTokenUsageDetails() {
+        try {
+            val isSubscribed = PrefsManager.isSubscribed(this)
+            val conversationUsage = tokenManager.getConversationUsageDetails(audioConversationId)
+            val recentCalls = tokenManager.getRecentApiCalls(5)
+            
+            val details = StringBuilder()
+            details.append("🎙️ Audio Session Token Usage\n\n")
+            
+            if (conversationUsage != null) {
+                details.append("📊 Current Session:\n")
+                details.append("Total Tokens: ${conversationUsage.totalTokens}\n")
+                details.append("Input Tokens: ${conversationUsage.totalInputTokens.get()}\n")
+                details.append("Output Tokens: ${conversationUsage.totalOutputTokens.get()}\n")
+                details.append("Reasoning Tokens: ${conversationUsage.totalReasoningTokens.get()}\n")
+                details.append("Messages: ${conversationUsage.messageCount.get()}\n\n")
+            } else {
+                details.append("No token usage data yet\n\n")
+            }
+            
+            if (recentCalls.isNotEmpty()) {
+                details.append("📈 Recent API Calls:\n")
+                recentCalls.take(3).forEach { call ->
+                    val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
+                        .format(java.util.Date(call.timestamp))
+                    details.append("• $time: ${call.totalTokens} tokens\n")
+                }
+            }
+            
+            details.append("\n💡 Tip: Audio tokens count as both input (speech) and output (generated voice) tokens.")
+            
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Token Usage Details")
+                .setMessage(details.toString())
+                .setPositiveButton("OK", null)
+                .setNeutralButton("Export Report") { _, _ ->
+                    exportTokenUsageReport()
+                }
+                .show()
+                
+        } catch (e: Exception) {
+            Timber.e(e, "Error showing token usage details: ${e.message}")
+            Toast.makeText(this, "Error loading token usage details", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private fun exportTokenUsageReport() {
+        try {
+            val report = tokenManager.exportUsageReport()
+            
+            // Simple way to share the report
+            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(android.content.Intent.EXTRA_TEXT, report)
+                putExtra(android.content.Intent.EXTRA_SUBJECT, "Audio AI Token Usage Report")
+            }
+            
+            startActivity(android.content.Intent.createChooser(intent, "Share Token Report"))
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Error exporting token usage report: ${e.message}")
+            Toast.makeText(this, "Error exporting report", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun startVolumeVisualizationForPlayback(mediaPlayer: MediaPlayer) {
@@ -738,6 +1402,7 @@ class AudioAiActivity : BaseThemedActivity() {
             CallState.IDLE -> LiquidMorphingView.State.IDLE
             CallState.RECORDING -> LiquidMorphingView.State.LISTENING
             CallState.PROCESSING -> LiquidMorphingView.State.PROCESSING
+            CallState.SEARCHING -> LiquidMorphingView.State.PROCESSING
             CallState.SPEAKING -> LiquidMorphingView.State.SPEAKING
             CallState.LISTENING -> LiquidMorphingView.State.LISTENING
         }
@@ -746,7 +1411,7 @@ class AudioAiActivity : BaseThemedActivity() {
         when (state) {
             CallState.IDLE -> {
                 statusText.text = "Tap to speak"
-                subtitleText.text = "Neural Voice Assistant"
+                loadUserPreferences() // Restore subtitle with settings
                 volumeVisualizer.visibility = View.GONE
                 recordingRing.visibility = View.GONE
                 stopAllAnimations()
@@ -765,10 +1430,17 @@ class AudioAiActivity : BaseThemedActivity() {
 
             CallState.PROCESSING -> {
                 statusText.text = "Processing"
-                subtitleText.text = "AI is thinking"
+                subtitleText.text = "AI is thinking..."
                 volumeVisualizer.visibility = View.GONE
                 recordingRing.visibility = View.GONE
-                // Processing animation is now handled by the liquid morphing view
+            }
+            
+            CallState.SEARCHING -> {
+                statusText.text = "Searching the web..."
+                subtitleText.text = "Finding current information"
+                volumeVisualizer.visibility = View.GONE
+                recordingRing.visibility = View.GONE
+                startSearchingAnimation()
             }
 
             CallState.SPEAKING -> {
@@ -780,7 +1452,7 @@ class AudioAiActivity : BaseThemedActivity() {
 
             CallState.LISTENING -> {
                 statusText.text = "Listening"
-                // Listening animation is now handled by the liquid morphing view
+                subtitleText.text = "Waiting for input"
             }
         }
     }
@@ -812,6 +1484,23 @@ class AudioAiActivity : BaseThemedActivity() {
         }
         handler.post(speakingRunnable)
     }
+    
+    private fun startSearchingAnimation() {
+        // Animate status text with search indication
+        val searchingRunnable = object : Runnable {
+            var dotCount = 0
+            override fun run() {
+                if (currentState == CallState.SEARCHING) {
+                    dotCount = (dotCount + 1) % 4
+                    val dots = ".".repeat(dotCount)
+                    statusText.text = "Searching the web$dots"
+                    handler.postDelayed(this, 500)
+                }
+            }
+        }
+        handler.post(searchingRunnable)
+    }
+    
 
     private fun stopAllAnimations() {
         recordingAnimator?.cancel()
@@ -858,10 +1547,10 @@ class AudioAiActivity : BaseThemedActivity() {
         }
 
         if (isPlaying) {
+            cleanupAudioTrack()
             mediaPlayer?.stop()
             mediaPlayer?.release()
             mediaPlayer = null
-            isPlaying = false
         }
 
         stopAllAnimations()
@@ -891,7 +1580,7 @@ class AudioAiActivity : BaseThemedActivity() {
         super.onDestroy()
 
         audioRecord?.release()
-        audioTrack?.release()
+        cleanupAudioTrack()
         mediaPlayer?.release()
 
         stopAllAnimations()
@@ -905,6 +1594,7 @@ class AudioAiActivity : BaseThemedActivity() {
         }
 
         if (isPlaying) {
+            audioTrack?.pause()
             mediaPlayer?.pause()
         }
     }

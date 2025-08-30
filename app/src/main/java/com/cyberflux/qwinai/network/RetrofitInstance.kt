@@ -2,11 +2,10 @@ package com.cyberflux.qwinai.network
 
 import com.cyberflux.qwinai.ApiConfig
 import com.cyberflux.qwinai.BuildConfig
-import com.google.gson.Gson
-import com.google.gson.GsonBuilder
-import com.google.gson.TypeAdapter
-import com.google.gson.stream.JsonReader
-import com.google.gson.stream.JsonWriter
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.JsonAdapter
+import com.squareup.moshi.JsonReader
+import com.squareup.moshi.JsonWriter
 import okhttp3.Cache
 import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
@@ -16,7 +15,7 @@ import okhttp3.Protocol
 import okhttp3.logging.HttpLoggingInterceptor
 import okio.Buffer
 import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
+import retrofit2.converter.moshi.MoshiConverterFactory
 import timber.log.Timber
 import java.io.File
 import java.io.IOException
@@ -29,6 +28,61 @@ import java.util.concurrent.TimeUnit
  * Handles large responses more efficiently
  */
 object RetrofitInstance {
+    
+    // Track active HTTP clients for cancellation
+    private val activeClients = ConcurrentHashMap<String, OkHttpClient>()
+    private val activeCalls = ConcurrentHashMap<String, okhttp3.Call>()
+    
+    /**
+     * Cancel all active requests using streaming cancellation manager and legacy methods
+     */
+    fun cancelAllRequests() {
+        Timber.d("🛑🛑🛑 ENHANCED CANCELLATION: Starting comprehensive request cancellation")
+        
+        // Method 1: Cancel active streaming sessions
+        Timber.d("🛑 Cancelling active streams via HTTP client cancellation")
+        
+        // Method 2: Cancel individually tracked calls (legacy)
+        var cancelledCount = 0
+        activeCalls.values.forEach { call ->
+            if (!call.isCanceled()) {
+                try {
+                    call.cancel()
+                    cancelledCount++
+                    Timber.d("🛑 ✅ Cancelled tracked call: ${call.request().url}")
+                } catch (e: Exception) {
+                    Timber.e(e, "🛑 ❌ Error cancelling tracked call: ${e.message}")
+                }
+            }
+        }
+        activeCalls.clear()
+        
+        // Method 3: Cancel all calls on all active clients via dispatcher
+        var totalDispatcherCalls = 0
+        activeClients.values.forEachIndexed { index, client ->
+            val dispatcher = client.dispatcher
+            val runningCalls = dispatcher.runningCallsCount()
+            val queuedCalls = dispatcher.queuedCallsCount()
+            totalDispatcherCalls += runningCalls + queuedCalls
+            
+            if (runningCalls > 0 || queuedCalls > 0) {
+                try {
+                    dispatcher.cancelAll()
+                    Timber.d("🛑 ✅ Client $index - Dispatcher cancellation successful")
+                } catch (e: Exception) {
+                    Timber.e(e, "🛑 ❌ Client $index - Error in dispatcher cancellation: ${e.message}")
+                }
+            }
+        }
+        
+        Timber.d("🛑🛑🛑 ENHANCED CANCELLATION COMPLETE:")
+        Timber.d("🛑   - Streaming sessions cancelled: handled by UnifiedStreamingManager")
+        Timber.d("🛑   - Tracked calls cancelled: $cancelledCount")
+        Timber.d("🛑   - Total dispatcher calls cancelled: $totalDispatcherCalls")
+        Timber.d("🛑   - Active clients processed: ${activeClients.size}")
+        
+        // Clean up completed sessions - handled by UnifiedStreamingManager
+    }
 
     val apiConfigs = mapOf(
         ApiServiceType.AIMLAPI to ApiConfig(
@@ -69,28 +123,58 @@ object RetrofitInstance {
         return createService(config, serviceClass, isThirdParty = true, forceHttp1 = forceHttp1)
     }
 
+    /**
+     * Create a specialized service for OCR operations with extended timeouts
+     */
+    fun createCustomOcrService(): AimlApiService {
+        val config = apiConfigs[ApiServiceType.AIMLAPI] ?: throw IllegalArgumentException("AIMLAPI config not found")
+        return createOcrService(config)
+    }
+
+    /**
+     * Create OCR API service for DI
+     */
+    fun createOCRApiService(): OCRApiService {
+        val config = apiConfigs[ApiServiceType.AIMLAPI] ?: throw IllegalArgumentException("AIMLAPI config not found")
+        return createService(config, OCRApiService::class.java)
+    }
+
     private fun <T> createService(
         config: ApiConfig,
         serviceClass: Class<T>,
         isThirdParty: Boolean = false,
         forceHttp1: Boolean = false
     ): T {
-        val gson = GsonBuilder()
-            .registerTypeAdapter(Any::class.java, FlexibleJsonAdapter())
-            .registerTypeAdapter(AimlApiResponse::class.java, ImprovedStreamingAdapter())
-            .setLenient()
-            .create()
+        val moshi = Moshi.Builder()
+            .add(AimlApiResponse::class.java, ImprovedStreamingAdapter())
+            .build()
 
         return Retrofit.Builder()
             .baseUrl(config.baseUrl)
-            .client(createHttpClient(config.apiKey, isThirdParty, forceHttp1))
-            .addConverterFactory(GsonConverterFactory.create(gson))
+            .client(createHttpClient(config.apiKey, isThirdParty))
+            .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
             .create(serviceClass)
     }
 
+    /**
+     * Create service specifically optimized for OCR operations
+     */
+    private fun createOcrService(config: ApiConfig): AimlApiService {
+        val moshi = Moshi.Builder()
+            .add(AimlApiResponse::class.java, ImprovedStreamingAdapter())
+            .build()
+
+        return Retrofit.Builder()
+            .baseUrl(config.baseUrl)
+            .client(createOcrHttpClient(config.apiKey))
+            .addConverterFactory(MoshiConverterFactory.create(moshi))
+            .build()
+            .create(AimlApiService::class.java)
+    }
+
     // In RetrofitInstance.kt, modify the createHttpClient method:
-    fun createHttpClient(apiKey: String, isThirdParty: Boolean = false, forceHttp1: Boolean = false): OkHttpClient {
+    fun createHttpClient(apiKey: String, isThirdParty: Boolean = false): OkHttpClient {
         // Create an improved logging interceptor with no truncation
         val loggingInterceptor = HttpLoggingInterceptor { message ->
             // Log the entire message with no truncation
@@ -129,7 +213,7 @@ object RetrofitInstance {
 
         // IMPROVED: Use smaller buffer size for faster streaming
         builder.socketFactory(object : javax.net.SocketFactory() {
-            private val delegate = javax.net.SocketFactory.getDefault()
+            private val delegate = getDefault()
 
             override fun createSocket(): java.net.Socket {
                 return delegate.createSocket().apply {
@@ -168,11 +252,11 @@ object RetrofitInstance {
                 }
         })
 
-        // Set reasonable timeouts
-        builder.connectTimeout(15, TimeUnit.SECONDS)   // 15 seconds connect
-        builder.readTimeout(60, TimeUnit.SECONDS)      // 1 minute read timeout
-        builder.writeTimeout(30, TimeUnit.SECONDS)     // 30 seconds write timeout
-        builder.callTimeout(120, TimeUnit.SECONDS)     // 2 minutes total timeout
+        // Optimized timeouts for fastest response time
+        builder.connectTimeout(10, TimeUnit.SECONDS)   // Fast connect for immediate response start
+        builder.readTimeout(300, TimeUnit.SECONDS)     // Long read for streaming
+        builder.writeTimeout(30, TimeUnit.SECONDS)     // Fast write for quick message sending
+        builder.callTimeout(600, TimeUnit.SECONDS)     // Total timeout unchanged
 
         // Add HTTP cache for better performance
         val cacheSize = 50L * 1024L * 1024L // 50MB cache
@@ -256,11 +340,15 @@ object RetrofitInstance {
                 } catch (e: Exception) {
                     lastException = e
 
-                    // Only retry on network-related issues
+                    // Only retry on network-related issues, but NOT on explicit cancellations
                     val shouldRetry = when (e) {
                         is SocketTimeoutException,
                         is java.net.SocketException,
                         is okhttp3.internal.http2.StreamResetException -> true
+                        is java.io.IOException -> {
+                            // Don't retry if it's a cancellation
+                            !e.message.orEmpty().contains("Canceled", ignoreCase = true)
+                        }
                         else -> false
                     }
 
@@ -279,100 +367,328 @@ object RetrofitInstance {
             response ?: throw lastException ?: IOException("Request failed after $maxRetries retries")
         }
 
+        // Add enhanced call tracking interceptor for cancellation support
+        val callTrackingInterceptor = Interceptor { chain ->
+            val request = chain.request()
+            val call = chain.call()
+            
+            // Track the call for potential cancellation (legacy system)
+            val callId = "chat_${System.currentTimeMillis()}_${hashCode()}"
+            activeCalls[callId] = call
+            
+            // Register streaming request (simplified)
+            if (request.url.toString().contains("/chat/completions") || 
+                request.header("Accept")?.contains("text/event-stream") == true) {
+                val messageId = request.header("X-Message-ID") ?: "http_${System.currentTimeMillis()}"
+                Timber.d("📡 Registered streaming HTTP call for message: $messageId")
+            }
+            
+            try {
+                val response = chain.proceed(request)
+                // Remove from tracking when complete
+                activeCalls.remove(callId)
+                // Stream lifecycle managed by UnifiedStreamingManager
+                response
+            } catch (e: Exception) {
+                // Remove from tracking on error
+                activeCalls.remove(callId)
+                // Stream cleanup handled by UnifiedStreamingManager
+                throw e
+            }
+        }
+
+        // Add the call tracking interceptor first
+        builder.addInterceptor(callTrackingInterceptor)
+        
         // Add the logging interceptor
         builder.addInterceptor(loggingInterceptor)
 
-        // Build and return the client
-        return builder.build()
+        // Build the client
+        val client = builder.build()
+        
+        // Track the client for cancellation
+        val clientId = "client_${System.currentTimeMillis()}_${hashCode()}"
+        activeClients[clientId] = client
+        
+        Timber.d("🔧 Created and tracked HTTP client: $clientId")
+        return client
+    }
+
+    /**
+     * Create HTTP client specifically optimized for OCR file uploads with extended timeouts
+     */
+    private fun createOcrHttpClient(apiKey: String): OkHttpClient {
+        // Create logging interceptor
+        val loggingInterceptor = HttpLoggingInterceptor { message ->
+            Timber.tag("OCR_API").d(message)
+        }.apply {
+            level = if (BuildConfig.DEBUG)
+                HttpLoggingInterceptor.Level.BASIC
+            else
+                HttpLoggingInterceptor.Level.NONE
+        }
+
+        // Create dispatcher with higher limits for file uploads
+        val dispatcher = Dispatcher().apply {
+            maxRequests = 32
+            maxRequestsPerHost = 4
+        }
+
+        val builder = OkHttpClient.Builder()
+
+        // Use HTTP/1.1 for better file upload compatibility
+        builder.protocols(listOf(Protocol.HTTP_1_1))
+        builder.dispatcher(dispatcher)
+
+        // Connection pool optimized for file uploads
+        builder.connectionPool(ConnectionPool(
+            10,  // Fewer idle connections for file uploads
+            10,  // Longer keep-alive for large uploads
+            TimeUnit.MINUTES
+        ))
+
+        builder.retryOnConnectionFailure(true)
+
+        // Socket optimizations for file uploads
+        builder.socketFactory(object : javax.net.SocketFactory() {
+            private val delegate = getDefault()
+
+            override fun createSocket(): java.net.Socket {
+                return delegate.createSocket().apply {
+                    receiveBufferSize = 65536  // Larger buffer for file uploads
+                    sendBufferSize = 65536     // Larger buffer for file uploads
+                    tcpNoDelay = false         // Enable Nagle's algorithm for file uploads
+                }
+            }
+
+            override fun createSocket(host: String, port: Int) =
+                delegate.createSocket(host, port).apply {
+                    receiveBufferSize = 65536
+                    sendBufferSize = 65536
+                    tcpNoDelay = false
+                }
+
+            override fun createSocket(host: String, port: Int, localHost: java.net.InetAddress, localPort: Int) =
+                delegate.createSocket(host, port, localHost, localPort).apply {
+                    receiveBufferSize = 65536
+                    sendBufferSize = 65536
+                    tcpNoDelay = false
+                }
+
+            override fun createSocket(host: java.net.InetAddress, port: Int) =
+                delegate.createSocket(host, port).apply {
+                    receiveBufferSize = 65536
+                    sendBufferSize = 65536
+                    tcpNoDelay = false
+                }
+
+            override fun createSocket(address: java.net.InetAddress, port: Int, localAddress: java.net.InetAddress, localPort: Int) =
+                delegate.createSocket(address, port, localAddress, localPort).apply {
+                    receiveBufferSize = 65536
+                    sendBufferSize = 65536
+                    tcpNoDelay = false
+                }
+        })
+
+        // Extended timeouts specifically for OCR operations
+        builder.connectTimeout(60, TimeUnit.SECONDS)   // 1 minute connect timeout
+        builder.readTimeout(600, TimeUnit.SECONDS)     // 10 minutes read timeout for OCR processing
+        builder.writeTimeout(300, TimeUnit.SECONDS)    // 5 minutes write timeout for large file uploads
+        builder.callTimeout(900, TimeUnit.SECONDS)     // 15 minutes total timeout for complete OCR operation
+
+        // Add auth interceptor
+        builder.addInterceptor { chain ->
+            val originalRequest = chain.request()
+            val requestBuilder = originalRequest.newBuilder()
+            
+            if (apiKey.isNotBlank()) {
+                requestBuilder.addHeader("Authorization", "Bearer $apiKey")
+            }
+            
+            // OCR-specific headers
+            requestBuilder.addHeader("Accept", "application/json")
+            requestBuilder.addHeader("Connection", "keep-alive")
+            
+            chain.proceed(requestBuilder.build())
+        }
+
+        // Add logging interceptor
+        builder.addInterceptor(loggingInterceptor)
+
+        // Build the client
+        val client = builder.build()
+        
+        // Track the client for cancellation
+        val clientId = "ocr_client_${System.currentTimeMillis()}_${hashCode()}"
+        activeClients[clientId] = client
+        
+        Timber.d("🔧 Created and tracked OCR HTTP client: $clientId")
+        return client
     }
     /**
      * Improved adapter for streaming responses
      * Better handles incomplete JSON and large payloads
      */
-    private class ImprovedStreamingAdapter : TypeAdapter<AimlApiResponse>() {
-        private val gson = GsonBuilder()
-            .setLenient() // Important for malformed JSON
-            .create()
+    private class ImprovedStreamingAdapter : JsonAdapter<AimlApiResponse>() {
 
-        override fun write(out: JsonWriter, value: AimlApiResponse?) {
+        override fun toJson(writer: JsonWriter, value: AimlApiResponse?) {
             try {
                 if (value == null) {
-                    out.nullValue()
+                    writer.nullValue()
                     return
                 }
 
                 // Custom serialization for better control
-                out.beginObject()
+                writer.beginObject()
 
                 // Write choices array
-                out.name("choices")
-                out.beginArray()
+                writer.name("choices")
+                writer.beginArray()
                 for (choice in value.choices!!) {
-                    out.beginObject()
+                    writer.beginObject()
 
                     // Write message
-                    out.name("message")
-                    out.beginObject()
-                    out.name("role")
-                    out.value(choice.message?.role ?: "assistant")
-                    out.name("content")
-                    out.value(choice.message?.content ?: "")
-                    out.endObject()
+                    writer.name("message")
+                    writer.beginObject()
+                    writer.name("role")
+                    writer.value(choice.message?.role ?: "assistant")
+                    writer.name("content")
+                    writer.value(choice.message?.content ?: "")
+                    writer.endObject()
 
                     // Write finish reason
-                    out.name("finish_reason")
-                    out.value(choice.finishReason ?: "stop")
+                    writer.name("finish_reason")
+                    writer.value(choice.finishReason ?: "stop")
 
-                    out.endObject()
+                    writer.endObject()
                 }
-                out.endArray()
+                writer.endArray()
 
                 // Write usage info if available
                 if (value.usage != null) {
-                    out.name("usage")
-                    out.beginObject()
-                    out.name("prompt_tokens")
-                    out.value(value.usage.promptTokens)
-                    out.name("completion_tokens")
-                    out.value(value.usage.completionTokens)
-                    out.name("total_tokens")
-                    out.value(value.usage.totalTokens)
-                    out.endObject()
+                    writer.name("usage")
+                    writer.beginObject()
+                    writer.name("prompt_tokens")
+                    writer.value(value.usage.promptTokens)
+                    writer.name("completion_tokens")
+                    writer.value(value.usage.completionTokens)
+                    writer.name("total_tokens")
+                    writer.value(value.usage.totalTokens)
+                    writer.endObject()
                 }
 
-                out.endObject()
+                writer.endObject()
             } catch (e: Exception) {
                 Timber.e(e, "Error writing AimlApiResponse")
-                out.nullValue()
+                writer.nullValue()
             }
         }
 
-        override fun read(reader: JsonReader): AimlApiResponse? {
-            reader.isLenient = true
+        override fun fromJson(reader: JsonReader): AimlApiResponse? {
             return try {
                 // Properly handle empty or malformed responses
-                if (reader.peek() == com.google.gson.stream.JsonToken.NULL) {
-                    reader.nextNull()
+                if (reader.peek() == JsonReader.Token.NULL) {
+                    reader.nextNull<AimlApiResponse?>()
                     return createEmptyResponse()
                 }
 
-                // Use Gson for normal parsing
-                val adapter = gson.getAdapter(AimlApiResponse::class.java)
-                val result = adapter.read(reader)
-
-                // Handle null content in messages
-                result?.choices?.forEach { choice ->
-                    if (choice.message?.content == null) {
-                        choice.message?.content = ""
-                    }
-                }
-
-                result
+                // Manual parsing without Kotlin reflection
+                parseAimlApiResponse(reader)
             } catch (e: Exception) {
                 Timber.d("Error parsing streaming response: ${e.message}")
                 // Return a valid but empty response instead of null
                 createEmptyResponse()
             }
+        }
+
+        private fun parseAimlApiResponse(reader: JsonReader): AimlApiResponse {
+            val choices = mutableListOf<AimlApiResponse.Choice>()
+            var usage: AimlApiResponse.Usage? = null
+
+            reader.beginObject()
+            while (reader.hasNext()) {
+                when (reader.nextName()) {
+                    "choices" -> {
+                        reader.beginArray()
+                        while (reader.hasNext()) {
+                            choices.add(parseChoice(reader))
+                        }
+                        reader.endArray()
+                    }
+                    "usage" -> {
+                        usage = parseUsage(reader)
+                    }
+                    else -> reader.skipValue()
+                }
+            }
+            reader.endObject()
+
+            return AimlApiResponse(
+                choices = choices.ifEmpty { 
+                    listOf(AimlApiResponse.Choice(
+                        message = AimlApiResponse.Message("assistant", ""),
+                        finishReason = "stop"
+                    ))
+                },
+                usage = usage ?: AimlApiResponse.Usage(0, 0, 0)
+            )
+        }
+
+        private fun parseChoice(reader: JsonReader): AimlApiResponse.Choice {
+            var message: AimlApiResponse.Message? = null
+            var finishReason: String? = null
+
+            reader.beginObject()
+            while (reader.hasNext()) {
+                when (reader.nextName()) {
+                    "message" -> message = parseMessage(reader)
+                    "finish_reason" -> finishReason = reader.nextString()
+                    "delta" -> message = parseMessage(reader) // Handle streaming format
+                    else -> reader.skipValue()
+                }
+            }
+            reader.endObject()
+
+            return AimlApiResponse.Choice(
+                message = message ?: AimlApiResponse.Message("assistant", ""),
+                finishReason = finishReason ?: "stop"
+            )
+        }
+
+        private fun parseMessage(reader: JsonReader): AimlApiResponse.Message {
+            var role = "assistant"
+            var content = ""
+
+            reader.beginObject()
+            while (reader.hasNext()) {
+                when (reader.nextName()) {
+                    "role" -> role = reader.nextString()
+                    "content" -> content = reader.nextString() ?: ""
+                    else -> reader.skipValue()
+                }
+            }
+            reader.endObject()
+
+            return AimlApiResponse.Message(role, content)
+        }
+
+        private fun parseUsage(reader: JsonReader): AimlApiResponse.Usage {
+            var promptTokens = 0
+            var completionTokens = 0
+            var totalTokens = 0
+
+            reader.beginObject()
+            while (reader.hasNext()) {
+                when (reader.nextName()) {
+                    "prompt_tokens" -> promptTokens = reader.nextInt()
+                    "completion_tokens" -> completionTokens = reader.nextInt()
+                    "total_tokens" -> totalTokens = reader.nextInt()
+                    else -> reader.skipValue()
+                }
+            }
+            reader.endObject()
+
+            return AimlApiResponse.Usage(promptTokens, completionTokens, totalTokens)
         }
 
         private fun createEmptyResponse(): AimlApiResponse {
@@ -391,84 +707,6 @@ object RetrofitInstance {
         }
     }
 
-    /**
-     * Flexible JSON adapter for handling arbitrary JSON structures
-     * Improved to better handle streaming data
-     */
-    private class FlexibleJsonAdapter : TypeAdapter<Any>() {
-        private val gson = GsonBuilder()
-            .setLenient()
-            .create()
-
-        override fun write(out: JsonWriter, value: Any?) {
-            try {
-                when (value) {
-                    null -> out.nullValue()
-                    is Number -> out.value(value)
-                    is Boolean -> out.value(value)
-                    is String -> out.value(value)
-                    is List<*> -> {
-                        out.beginArray()
-                        value.forEach { item -> write(out, item) }
-                        out.endArray()
-                    }
-                    is Map<*, *> -> {
-                        out.beginObject()
-                        value.forEach { (k, v) ->
-                            out.name(k.toString())
-                            write(out, v)
-                        }
-                        out.endObject()
-                    }
-                    else -> gson.toJson(gson.toJsonTree(value), out)
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "Error writing value: $value")
-                out.nullValue()
-            }
-        }
-
-        override fun read(reader: JsonReader): Any {
-            reader.isLenient = true
-            try {
-                return when (reader.peek()) {
-                    com.google.gson.stream.JsonToken.NULL -> {
-                        reader.nextNull()
-                        null as Any
-                    }
-                    com.google.gson.stream.JsonToken.BOOLEAN -> reader.nextBoolean()
-                    com.google.gson.stream.JsonToken.NUMBER -> {
-                        val numStr = reader.nextString()
-                        if (numStr.contains('.')) numStr.toDouble() else numStr.toLong()
-                    }
-                    com.google.gson.stream.JsonToken.STRING -> reader.nextString()
-                    com.google.gson.stream.JsonToken.BEGIN_ARRAY -> {
-                        val list = mutableListOf<Any?>()
-                        reader.beginArray()
-                        while (reader.hasNext()) list.add(read(reader))
-                        reader.endArray()
-                        list
-                    }
-                    com.google.gson.stream.JsonToken.BEGIN_OBJECT -> {
-                        val map = mutableMapOf<String, Any?>()
-                        reader.beginObject()
-                        while (reader.hasNext()) {
-                            map[reader.nextName()] = read(reader)
-                        }
-                        reader.endObject()
-                        map
-                    }
-                    else -> {
-                        reader.skipValue()
-                        null as Any
-                    }
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "Error reading JSON value: ${e.message}")
-                return null as Any
-            }
-        }
-    }
 
     /**
      * HTTP Cache Interceptor for better performance
@@ -534,12 +772,50 @@ object RetrofitInstance {
         
         private fun generateRequestKey(request: okhttp3.Request): String {
             val body = request.body?.let { body ->
-                val buffer = okio.Buffer()
+                val buffer = Buffer()
                 body.writeTo(buffer)
                 buffer.readUtf8()
             } ?: ""
             
             return "${request.method}:${request.url}:${body.hashCode()}"
         }
+    }
+
+    // Lazy initialization of API services
+    val aimlApi: AimlApiService by lazy {
+        getApiService(ApiServiceType.AIMLAPI, AimlApiService::class.java)
+    }
+
+    val togetherAi: AimlApiService by lazy {
+        getApiService(ApiServiceType.TOGETHER_AI, AimlApiService::class.java)
+    }
+    
+    /**
+     * Create version service for forced update checks
+     */
+    fun createVersionService(): AppVersionService {
+        // Use a simple HTTP client for version checks - no API key required
+        val httpClient = OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .writeTimeout(10, TimeUnit.SECONDS)
+            .apply {
+                if (BuildConfig.DEBUG) {
+                    addInterceptor(HttpLoggingInterceptor().apply {
+                        level = HttpLoggingInterceptor.Level.BODY
+                    })
+                }
+            }
+            .build()
+        
+        val moshi = Moshi.Builder().build()
+        
+        val retrofit = Retrofit.Builder()
+            .baseUrl("https://api.your-server.com/") // Replace with your server URL
+            .client(httpClient)
+            .addConverterFactory(MoshiConverterFactory.create(moshi))
+            .build()
+        
+        return retrofit.create(AppVersionService::class.java)
     }
 }

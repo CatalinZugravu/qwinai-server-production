@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.edit
 import timber.log.Timber
+import java.lang.ref.WeakReference
 
 /**
  * Manages user consent for personalized advertising across different ad networks.
@@ -28,6 +29,9 @@ class ConsentManager(private val context: Context) {
     // Shared preferences to store consent
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    // Keep a weak reference to the current dialog to prevent window leaks
+    private var currentDialog: WeakReference<AlertDialog>? = null
+
     // Region detection (basic implementation)
     private val userRegion by lazy {
         detectUserRegion()
@@ -36,6 +40,21 @@ class ConsentManager(private val context: Context) {
     // Check if we need to show the consent dialog
     fun shouldShowConsentDialog(): Boolean {
         return !prefs.getBoolean(PREF_CONSENT_GIVEN, false)
+    }
+    
+    // Dismiss any active consent dialog to prevent window leaks
+    fun dismissDialog() {
+        try {
+            currentDialog?.get()?.let { dialog ->
+                if (dialog.isShowing) {
+                    dialog.dismiss()
+                    Timber.d("🚫 Dismissed consent dialog to prevent window leak")
+                }
+            }
+            currentDialog = null
+        } catch (e: Exception) {
+            Timber.e(e, "Error dismissing consent dialog")
+        }
     }
 
     // Save user consent
@@ -200,6 +219,9 @@ class ConsentManager(private val context: Context) {
                 return
             }
 
+            // Dismiss any existing dialog first
+            dismissDialog()
+
             // Determine message based on region
             val title = when (userRegion) {
                 REGION_EEA -> "Your Privacy Choices (GDPR)"
@@ -223,25 +245,35 @@ class ConsentManager(private val context: Context) {
 
             // Only create and show the dialog if the activity is still valid
             if (!activity.isFinishing && !activity.isDestroyed) {
-                AlertDialog.Builder(activity)
+                val dialog = AlertDialog.Builder(activity)
                     .setTitle(title)
                     .setMessage(message)
                     .setCancelable(false) // User must make a choice
                     .setPositiveButton("Allow Personalized Ads") { _, _ ->
+                        currentDialog = null
                         saveConsent(true)
                         onComplete()
                     }
                     .setNegativeButton("Use Non-Personalized Ads") { _, _ ->
+                        currentDialog = null
                         saveConsent(false)
                         onComplete()
                     }
-                    .show()
+                    .setOnDismissListener {
+                        currentDialog = null
+                    }
+                    .create()
+                
+                // Store weak reference before showing
+                currentDialog = WeakReference(dialog)
+                dialog.show()
             } else {
                 // If activity is no longer valid, just call the completion handler
                 onComplete()
             }
         } catch (e: Exception) {
             Timber.e(e, "Error showing consent dialog")
+            currentDialog = null
             // Still call onComplete in case of error to avoid blocking the app
             onComplete()
         }

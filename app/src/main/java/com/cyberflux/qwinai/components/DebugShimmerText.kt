@@ -2,13 +2,11 @@ package com.cyberflux.qwinai.components
 
 import android.content.Context
 import android.util.AttributeSet
-import android.view.View
 import android.widget.LinearLayout
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -58,19 +56,4 @@ class DebugShimmerText @JvmOverloads constructor(
         }
     }
 
-    fun setStatus(status: String, color: Int, active: Boolean) {
-        currentStatus = status
-        isActive = active
-        
-        android.util.Log.d("DebugShimmerText", "setStatus: '$status', active: $active")
-        
-        visibility = if (status.isNotEmpty()) View.VISIBLE else View.GONE
-        updateContent()
-    }
-
-    fun hideStatus() {
-        isActive = false
-        visibility = View.GONE
-        updateContent()
-    }
 }

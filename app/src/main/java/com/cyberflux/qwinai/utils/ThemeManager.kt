@@ -3,16 +3,20 @@ package com.cyberflux.qwinai.utils
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
 import com.cyberflux.qwinai.R
 import android.os.Build
 import android.util.Log
 import android.view.View
+import android.view.Window
 import android.view.WindowInsetsController
+import timber.log.Timber
 
 /**
- * Enhanced theme manager that applies complete themes instead of overlays
+ * Simplified Material Design 3 Theme Manager
+ * Supports Light/Dark/System modes with customizable accent colors
  */
 object ThemeManager {
     private const val TAG = "ThemeManager"
@@ -25,10 +29,19 @@ object ThemeManager {
     const val MODE_LIGHT = AppCompatDelegate.MODE_NIGHT_NO
     const val MODE_DARK = AppCompatDelegate.MODE_NIGHT_YES
 
-    // Theme style constants
-    const val THEME_DEFAULT = 0
+    // Accent color constants
+    const val ACCENT_INDIGO = 0     // Default
+    const val ACCENT_BLUE = 1
+    const val ACCENT_PURPLE = 2
+    const val ACCENT_PINK = 3
+    const val ACCENT_GREEN = 4
+    const val ACCENT_ORANGE = 5
+    const val ACCENT_RED = 6
+    const val ACCENT_TEAL = 7
+    const val ACCENT_CYAN = 8
 
-    // Elegant Themes
+    // Theme style constants for compatibility
+    const val THEME_NEON = 0
     const val THEME_SLATE = 1
     const val THEME_OLIVE = 2
     const val THEME_BURGUNDY = 3
@@ -36,24 +49,18 @@ object ThemeManager {
     const val THEME_CARBON = 5
     const val THEME_TEAL = 6
     const val THEME_SERENITY = 7
-
-    // Vibrant Themes
-    const val THEME_NEON = 8
-    const val THEME_AURORA = 9
-    const val THEME_ROYAL = 10
-    const val THEME_TROPICAL = 11
-    const val THEME_MONOCHROME = 12
-    const val THEME_COSMIC = 13
-    const val THEME_VIVID = 14
-
-    // Optional features
-    private const val GRADIENTS_ENABLED = "gradients_enabled"
+    const val THEME_AURORA = 8
+    const val THEME_ROYAL = 9
+    const val THEME_TROPICAL = 10
+    const val THEME_MONOCHROME = 11
+    const val THEME_COSMIC = 12
+    const val THEME_VIVID = 13
+    const val THEME_DEFAULT = 0
 
     // Preferences
     private const val THEME_PREFS = "app_settings"
     private const val KEY_THEME_MODE = "theme_mode"
-    private const val KEY_THEME_STYLE = "theme_style"
-    private const val KEY_THEME_FEATURES = "theme_features"
+    private const val KEY_ACCENT_COLOR = "accent_color"
 
     /**
      * Initialize theme from saved preferences
@@ -66,18 +73,16 @@ object ThemeManager {
     }
 
     /**
-     * Set theme mode and style
-     * This should be called when the user selects a new theme
+     * Set theme mode with optional accent color
      */
-    fun setTheme(context: Context, themeMode: Int, themeStyle: Int = THEME_DEFAULT, enableGradients: Boolean = false) {
-        Log.d(TAG, "Setting theme: mode=$themeMode, style=$themeStyle, gradients=$enableGradients")
+    fun setTheme(context: Context, themeMode: Int, accentColor: Int = ACCENT_INDIGO) {
+        Log.d(TAG, "Setting theme: mode=$themeMode, accent=$accentColor")
 
         // Save preferences
         context.getSharedPreferences(THEME_PREFS, Context.MODE_PRIVATE)
             .edit()
             .putInt(KEY_THEME_MODE, themeMode)
-            .putInt(KEY_THEME_STYLE, themeStyle)
-            .putBoolean(GRADIENTS_ENABLED, enableGradients)
+            .putInt(KEY_ACCENT_COLOR, accentColor)
             .apply()
 
         // Apply theme mode
@@ -89,12 +94,20 @@ object ThemeManager {
 
         // If this is an activity, recreate it to apply the new theme
         if (context is Activity) {
-            Log.d(TAG, "Recreating activity to apply theme")
+            Timber.tag(TAG).d("Recreating activity to apply theme")
             // Small delay to ensure preferences are saved
             context.window.decorView.postDelayed({
                 context.recreate()
             }, 100)
         }
+    }
+
+    /**
+     * Set only accent color without changing theme mode
+     */
+    fun setAccentColor(context: Context, accentColor: Int) {
+        val currentMode = getSavedThemeMode(context)
+        setTheme(context, currentMode, accentColor)
     }
 
     /**
@@ -106,129 +119,166 @@ object ThemeManager {
     }
 
     /**
-     * Get saved theme style
+     * Get saved accent color
      */
-    fun getSavedThemeStyle(context: Context): Int {
+    fun getSavedAccentColor(context: Context): Int {
         return context.getSharedPreferences(THEME_PREFS, Context.MODE_PRIVATE)
-            .getInt(KEY_THEME_STYLE, THEME_DEFAULT)
+            .getInt(KEY_ACCENT_COLOR, ACCENT_INDIGO)
     }
 
     /**
-     * Check if gradients are enabled
+     * Get display name for current theme mode
      */
-    fun areGradientsEnabled(context: Context): Boolean {
-        return context.getSharedPreferences(THEME_PREFS, Context.MODE_PRIVATE)
-            .getBoolean(GRADIENTS_ENABLED, false)
-    }
-
-    /**
-     * Get the theme resource ID for the current theme style
-     * This is used to apply the theme to activities
-     */
-    fun getThemeResourceId(context: Context): Int {
-        val themeStyle = getSavedThemeStyle(context)
-        return when (themeStyle) {
-            // Elegant Themes
-            THEME_SLATE -> R.style.Theme_Slate
-            THEME_OLIVE -> R.style.Theme_Olive
-            THEME_BURGUNDY -> R.style.Theme_Burgundy
-            THEME_COPPER -> R.style.Theme_Copper
-            THEME_CARBON -> R.style.Theme_Carbon
-            THEME_TEAL -> R.style.Theme_Teal
-            THEME_SERENITY -> R.style.Theme_Serenity
-
-            // Vibrant Themes
-            THEME_NEON -> R.style.Theme_Neon
-            THEME_AURORA -> R.style.Theme_Aurora
-            THEME_ROYAL -> R.style.Theme_Royal
-            THEME_TROPICAL -> R.style.Theme_Tropical
-            THEME_MONOCHROME -> R.style.Theme_Monochrome
-            THEME_COSMIC -> R.style.Theme_Cosmic
-            THEME_VIVID -> R.style.Theme_Vivid
-
-            // Default Theme
-            else -> R.style.AppTheme
-        }
-    }
-
-    /**
-     * Get display name for current theme
-     */
-    fun getThemeDisplayName(context: Context): String {
-        val mode = when (getSavedThemeMode(context)) {
+    fun getThemeModeDisplayName(context: Context): String {
+        return when (getSavedThemeMode(context)) {
             MODE_LIGHT -> "Light"
             MODE_DARK -> "Dark"
             else -> "System default"
         }
+    }
 
-        val style = when (getSavedThemeStyle(context)) {
-            // Elegant Themes
-            THEME_SLATE -> "Slate Blue"
-            THEME_OLIVE -> "Olive Garden"
-            THEME_BURGUNDY -> "Burgundy"
-            THEME_COPPER -> "Rustic Copper"
-            THEME_CARBON -> "Carbon"
-            THEME_TEAL -> "Teal Harbor"
-            THEME_SERENITY -> "Serenity"
-
-            // Vibrant Themes
-            THEME_NEON -> "Neon Cyberpunk"
-            THEME_AURORA -> "Aurora Borealis"
-            THEME_ROYAL -> "Royal Jewel"
-            THEME_TROPICAL -> "Tropical Paradise"
-            THEME_MONOCHROME -> "Monochrome Punch"
-            THEME_COSMIC -> "Cosmic Gradient"
-            THEME_VIVID -> "Vivid Gradient"
-
-            // Default Theme
-            else -> "Default"
-        }
-
-        val gradientsText = if (
-            areGradientsEnabled(context) &&
-            (getSavedThemeStyle(context) in arrayOf(
-                THEME_NEON, THEME_AURORA, THEME_ROYAL,
-                THEME_TROPICAL, THEME_COSMIC, THEME_VIVID
-            ))
-        ) {
-            " with Gradients"
-        } else {
-            ""
-        }
-
-        return if (getSavedThemeStyle(context) == THEME_DEFAULT) {
-            mode
-        } else {
-            "$style$gradientsText ($mode)"
+    /**
+     * Get display name for accent color
+     */
+    fun getAccentColorDisplayName(context: Context): String {
+        return when (getSavedAccentColor(context)) {
+            ACCENT_INDIGO -> "Indigo"
+            ACCENT_BLUE -> "Blue"
+            ACCENT_PURPLE -> "Purple"
+            ACCENT_PINK -> "Pink"
+            ACCENT_GREEN -> "Green"
+            ACCENT_ORANGE -> "Orange"
+            ACCENT_RED -> "Red"
+            ACCENT_TEAL -> "Teal"
+            ACCENT_CYAN -> "Cyan"
+            else -> "Indigo"
         }
     }
 
     /**
-     * Apply gradient background to a view if gradients are enabled
+     * Get accent color resource
      */
-    fun applyGradientBackground(context: Context, view: View) {
-        if (!areGradientsEnabled(context)) return
+    fun getAccentColorResource(context: Context): Int {
+        return when (getSavedAccentColor(context)) {
+            ACCENT_BLUE -> R.color.accent_blue
+            ACCENT_PURPLE -> R.color.accent_purple
+            ACCENT_PINK -> R.color.accent_pink
+            ACCENT_GREEN -> R.color.accent_green
+            ACCENT_ORANGE -> R.color.accent_orange
+            ACCENT_RED -> R.color.accent_red
+            ACCENT_TEAL -> R.color.accent_teal
+            ACCENT_CYAN -> R.color.accent_cyan
+            else -> R.color.md_theme_primary_seed // Default indigo
+        }
+    }
 
-        val themeStyle = getSavedThemeStyle(context)
-        val isDarkMode = context.resources.configuration.uiMode and
-                android.content.res.Configuration.UI_MODE_NIGHT_MASK ==
-                android.content.res.Configuration.UI_MODE_NIGHT_YES
-
-        // Only apply gradients to vibrant themes
-        if (themeStyle >= THEME_NEON) {
-            val gradientDrawable = when (themeStyle) {
-                THEME_NEON -> if (isDarkMode) R.drawable.bg_neon_gradient else R.drawable.bg_neon_gradient_light
-                THEME_AURORA -> if (isDarkMode) R.drawable.bg_aurora_gradient else R.drawable.bg_aurora_gradient_light
-                THEME_ROYAL -> if (isDarkMode) R.drawable.bg_royal_gradient else R.drawable.bg_royal_gradient_light
-                THEME_TROPICAL -> if (isDarkMode) R.drawable.bg_tropical_gradient else R.drawable.bg_tropical_gradient_light
-                THEME_COSMIC -> if (isDarkMode) R.drawable.bg_cosmic_gradient else R.drawable.bg_cosmic_gradient_light
-                THEME_VIVID -> if (isDarkMode) R.drawable.bg_vivid_gradient else R.drawable.bg_vivid_gradient_light
-                else -> null
-            }
-
-            gradientDrawable?.let {
-                view.setBackgroundResource(it)
+    /**
+     * Check if currently in dark mode
+     */
+    fun isDarkMode(context: Context): Boolean {
+        val savedMode = getSavedThemeMode(context)
+        return when (savedMode) {
+            MODE_DARK -> true
+            MODE_LIGHT -> false
+            else -> {
+                // System mode - check current configuration
+                val nightModeFlags = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+                nightModeFlags == Configuration.UI_MODE_NIGHT_YES
             }
         }
+    }
+
+    /**
+     * Apply proper status bar appearance for Material Design 3
+     */
+    fun applySystemUIAppearance(activity: Activity) {
+        val window = activity.window
+        val isDark = isDarkMode(activity)
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // Use new WindowInsetsController for API 30+
+            val controller = window.insetsController
+            if (controller != null) {
+                if (isDark) {
+                    // Dark mode - light status bar content
+                    controller.setSystemBarsAppearance(0, WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS)
+                    controller.setSystemBarsAppearance(0, WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS)
+                } else {
+                    // Light mode - dark status bar content
+                    controller.setSystemBarsAppearance(
+                        WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS,
+                        WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                    )
+                    controller.setSystemBarsAppearance(
+                        WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
+                        WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+                    )
+                }
+            }
+        } else {
+            // Use legacy approach for older APIs
+            @Suppress("DEPRECATION")
+            val flags = window.decorView.systemUiVisibility
+            if (isDark) {
+                // Dark mode
+                window.decorView.systemUiVisibility = flags and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+            } else {
+                // Light mode
+                window.decorView.systemUiVisibility = flags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+            }
+        }
+
+        // Set status bar and navigation bar colors from theme
+        val surface = if (isDark) {
+            ContextCompat.getColor(activity, R.color.md_theme_dark_surface)
+        } else {
+            ContextCompat.getColor(activity, R.color.md_theme_light_surface)
+        }
+        
+        window.statusBarColor = surface
+        window.navigationBarColor = surface
+    }
+
+    /**
+     * Get all available accent color options
+     */
+    fun getAvailableAccentColors(): List<Pair<Int, String>> {
+        return listOf(
+            ACCENT_INDIGO to "Indigo",
+            ACCENT_BLUE to "Blue",
+            ACCENT_PURPLE to "Purple",
+            ACCENT_PINK to "Pink",
+            ACCENT_GREEN to "Green",
+            ACCENT_ORANGE to "Orange",
+            ACCENT_RED to "Red",
+            ACCENT_TEAL to "Teal",
+            ACCENT_CYAN to "Cyan"
+        )
+    }
+
+    /**
+     * Get all available theme mode options
+     */
+    fun getAvailableThemeModes(): List<Pair<Int, String>> {
+        return listOf(
+            MODE_SYSTEM to "System default",
+            MODE_LIGHT to "Light",
+            MODE_DARK to "Dark"
+        )
+    }
+    
+    /**
+     * Compatibility methods for missing functionality
+     */
+    fun getSavedThemeStyle(context: Context): Int {
+        return getSavedThemeMode(context)
+    }
+    
+    fun areGradientsEnabled(context: Context): Boolean {
+        return false // Gradients disabled for simplicity
+    }
+    
+    fun applyGradientBackground(context: Context, view: android.view.View) {
+        // No-op for simplicity
     }
 }

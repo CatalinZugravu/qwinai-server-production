@@ -6,20 +6,19 @@ import androidx.recyclerview.widget.RecyclerView
 import com.cyberflux.qwinai.ConversationsViewModel
 import com.cyberflux.qwinai.adapter.ChatAdapter
 import com.cyberflux.qwinai.model.ChatMessage
-import com.cyberflux.qwinai.utils.ConversationTokenManager
+import com.cyberflux.qwinai.utils.SimplifiedTokenManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
-import java.util.UUID
 
 class MessageManager(
     private val viewModel: ConversationsViewModel,
     private val adapter: ChatAdapter,
     private val lifecycleScope: CoroutineScope,
     private val chatAdapter: ChatAdapter,
-    private val tokenManager: ConversationTokenManager,
+    private val tokenManager: SimplifiedTokenManager,
     private var recyclerViewRef: RecyclerView? = null,
     var isStreamingActive: Boolean = false,
     private val internalMessageList: MutableList<ChatMessage> = mutableListOf<ChatMessage>()
@@ -33,21 +32,79 @@ class MessageManager(
         // CRITICAL FIX: Clean up any messages with interruption text before initializing
         val cleanedMessages = cleanupInterruptionMessages(conversationMessages)
         
-        // CRITICAL FIX: Fix loading states for messages with content
+        // CRITICAL FIX: Fix loading states - NEVER show loading when generation is complete
         val fixedMessages = cleanedMessages.map { message ->
-            if (!message.isUser && message.message.isNotEmpty()) {
-                // CRITICAL: Any message with content should show content, not loading - even if marked as generating
-                message.copy(isLoading = false)
+            if (!message.isUser) {
+                val messageAge = System.currentTimeMillis() - message.lastModified
+                val hasContent = message.message.isNotEmpty()
+                val isStuckGenerating = message.isGenerating && messageAge > 60_000 // 1 minute old
+                
+                when {
+                    // Case 1: Message is stuck in generating state
+                    isStuckGenerating -> {
+                        Timber.d("🔧 MessageManager: Fixing stuck generating message ${message.id} (${messageAge/1000}s old)")
+                        message.copy(
+                            isLoading = false,
+                            isGenerating = false,
+                            showButtons = true,
+                            canContinueStreaming = false
+                        )
+                    }
+                    
+                    // Case 2: Generation completed (isGenerating = false) - NEVER show loading!
+                    !message.isGenerating -> {
+                        Timber.d("✅ MessageManager: Message ${message.id} generation COMPLETE - forcing isLoading=false")
+                        message.copy(
+                            isLoading = false,  // CRITICAL: Never loading when generation done!
+                            showButtons = true  // Always show buttons when complete
+                        )
+                    }
+                    
+                    // Case 3: Still generating with content - show content
+                    message.isGenerating && hasContent -> {
+                        Timber.d("🔄 MessageManager: Message ${message.id} still generating with content (${message.message.length} chars)")
+                        message.copy(
+                            isLoading = false,  // Show content, not loading
+                            showButtons = false // Hide buttons during generation
+                        )
+                    }
+                    
+                    // Case 4: Still generating without content - show loading
+                    message.isGenerating && !hasContent -> {
+                        Timber.d("⏳ MessageManager: Message ${message.id} generating without content yet")
+                        message.copy(
+                            isLoading = true,   // Only case where we show loading
+                            showButtons = false
+                        )
+                    }
+                    
+                    else -> {
+                        Timber.d("📝 MessageManager: Message ${message.id} default case")
+                        message.copy(isLoading = false)
+                    }
+                }
             } else {
                 message
             }
+        }
+
+        // 🐛 DEBUG: Log what messages are being sent to adapter
+        Timber.d("🐛🐛🐛 MESSAGEMANAGER SENDING ${fixedMessages.size} MESSAGES TO ADAPTER:")
+        fixedMessages.forEach { message ->
+            Timber.d("🐛 Sending message ${message.id}:")
+            Timber.d("🐛   - isUser: ${message.isUser}")
+            Timber.d("🐛   - isGenerating: ${message.isGenerating}")
+            Timber.d("🐛   - isLoading: ${message.isLoading}")
+            Timber.d("🐛   - showButtons: ${message.showButtons}")
+            Timber.d("🐛   - content length: ${message.message.length}")
+            Timber.d("🐛   - content preview: '${message.message.take(100)}...'")
         }
 
         internalMessageList.clear()
         internalMessageList.addAll(fixedMessages)
         synchronizeWithAdapter(fixedMessages)
 
-        Timber.d("Initialized message manager with ${fixedMessages.size} messages for conversation $conversationId")
+        Timber.d("✅ Initialized message manager with ${fixedMessages.size} messages for conversation $conversationId")
     }
     
     /**
@@ -116,35 +173,7 @@ class MessageManager(
         adapter.submitList(newAdapterList)
     }
 
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-    fun updateStreamingContent(messageId: String, content: String) {
-        try {
-            val internalIndex = internalMessageList.indexOfFirst { it.id == messageId }
-            if (internalIndex != -1) {
-                val oldMessage = internalMessageList[internalIndex]
 
-                val updatedMessage = oldMessage.copy(
-                    message = content
-                )
-                internalMessageList[internalIndex] = updatedMessage
-
-                lifecycleScope.launch(Dispatchers.Main) {
-                    // Pass content to adapter
-                    chatAdapter.updateStreamingContent(messageId, content)
-
-                    if (content.length - oldMessage.message.length > 30) {
-                        recyclerViewRef?.scrollToPosition(chatAdapter.itemCount - 1)
-                    }
-                }
-            } else {
-                Timber.w("⚠️ Cannot find message $messageId for streaming update")
-            }
-        } catch (e: Exception) {
-            Timber.e(e, "Error in streaming content update: ${e.message}")
-        }
-    }
-
-    // În MessageManager.kt, linia aproximativ 106
     fun updateLoadingState(
         messageId: String,
         isGenerating: Boolean,
@@ -234,7 +263,7 @@ class MessageManager(
         return conversationMessages
     }
 
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     fun addMessageWithValidation(message: ChatMessage, addToAdapter: Boolean = true): Any {
         if (message.conversationId.isBlank()) {
             Timber.e("Cannot add message with blank conversation ID: ${message.id}")
@@ -277,7 +306,7 @@ class MessageManager(
             }
         }
 
-        tokenManager.addMessage(message)
+        // Token management now handled by SimplifiedTokenManager automatically
         return message
     }
 
@@ -317,11 +346,11 @@ class MessageManager(
             }
         }
 
-        tokenManager.addMessage(message)
+        // Token management now handled by SimplifiedTokenManager automatically
         return message
     }
 
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     fun updateMessageContent(messageId: String, content: String) {
         val internalIndex = internalMessageList.indexOfFirst { it.id == messageId }
         if (internalIndex != -1) {
@@ -329,7 +358,7 @@ class MessageManager(
 
             // Allow empty content during streaming
             if (oldMessage.isGenerating || content.isNotEmpty()) {
-                tokenManager.removeMessage(oldMessage.id)
+                // Token management now handled by SimplifiedTokenManager automatically
 
                 val updatedMessage = oldMessage.copy(
                     message = content,
@@ -338,7 +367,7 @@ class MessageManager(
                 )
 
                 internalMessageList[internalIndex] = updatedMessage
-                tokenManager.addMessage(updatedMessage)
+                // Token management now handled by SimplifiedTokenManager automatically
 
                 lifecycleScope.launch(Dispatchers.Main) {
                     val adapterIndex = chatAdapter.currentList.indexOfFirst { it.id == messageId }
@@ -378,94 +407,6 @@ class MessageManager(
         return latestAiMessage?.id == messageId
     }
 
-    fun regenerateAiResponse(message: ChatMessage): ChatMessage {
-        val conversationId = message.conversationId
-        tokenManager.removeMessage(message.id)
-
-        val regeneratedMessage = message.copy(
-            id = UUID.randomUUID().toString(),
-            message = "",
-            timestamp = System.currentTimeMillis(),
-            parentMessageId = message.parentMessageId,
-            isGenerating = true,
-            isRegenerated = true,
-        )
-
-        val currentList = adapter.currentList.toMutableList()
-
-        val updatedList = currentList.map {
-            if (it.id == message.id) {
-                it.copy(isGenerating = false, showButtons = true)
-            } else {
-                it
-            }
-        }.toMutableList()
-
-        updatedList.add(regeneratedMessage)
-        adapter.submitList(updatedList)
-        internalMessageList.add(regeneratedMessage)
-
-        try {
-            adapter.notifyItemInserted(updatedList.size - 1)
-        } catch (e: Exception) {
-            Timber.e(e, "Error notifying regenerated message insertion: ${e.message}")
-        }
-
-        if (!conversationId.startsWith("private_")) {
-            lifecycleScope.launch {
-                viewModel.saveMessage(regeneratedMessage)
-                val originalMessage = currentList.find { it.id == message.id }
-                if (originalMessage != null) {
-                    viewModel.saveMessage(originalMessage)
-                }
-            }
-        }
-
-        Timber.d("✅ Created regenerated message ${regeneratedMessage.id} alongside ${message.id}")
-        return regeneratedMessage
-    }
-
-    fun editUserMessage(originalMessage: ChatMessage, newContent: String): ChatMessage {
-        if (!originalMessage.isUser) {
-            Timber.e("❌ Cannot edit AI message")
-            return originalMessage
-        }
-
-        val conversationId = originalMessage.conversationId
-        tokenManager.removeMessage(originalMessage.id)
-
-        val editedMessage = ChatMessage(
-            id = UUID.randomUUID().toString(),
-            conversationId = conversationId,
-            message = newContent,
-            isUser = true,
-            timestamp = System.currentTimeMillis(),
-            isEdited = true,
-        )
-
-        val currentList = chatAdapter.currentList.toMutableList()
-        currentList.add(editedMessage)
-        adapter.submitList(currentList)
-        internalMessageList.add(editedMessage)
-
-        try {
-            adapter.notifyItemInserted(currentList.size - 1)
-        } catch (e: Exception) {
-            Timber.e(e, "Error notifying edited message insertion: ${e.message}")
-        }
-
-        tokenManager.addMessage(editedMessage)
-
-        if (!conversationId.startsWith("private_")) {
-            lifecycleScope.launch {
-                viewModel.saveMessage(editedMessage)
-            }
-        }
-
-        Timber.d("✅ Created edited message ${editedMessage.id} to replace ${originalMessage.id}")
-        return editedMessage
-    }
-
     fun preloadMessagesForContext(conversationId: String) {
         val existingMessages = internalMessageList.filter { it.conversationId == conversationId }
         Timber.d("Preloading context: currently have ${existingMessages.size} messages for conversation $conversationId")
@@ -494,6 +435,14 @@ class MessageManager(
     fun getCurrentMessages(): List<ChatMessage> {
         Timber.d("getCurrentMessages() returning ${internalMessageList.size} messages from internal list")
         return internalMessageList.toList()
+    }
+    
+    /**
+     * Clears all messages from internal state (for new conversations)
+     */
+    fun clearAll() {
+        internalMessageList.clear()
+        Timber.d("MessageManager cleared all messages")
     }
 
     fun ensureFullSynchronizationForApi(): List<ChatMessage> {
@@ -554,7 +503,7 @@ class MessageManager(
 
         if (newMessages.isNotEmpty()) {
             newMessages.forEach { message ->
-                tokenManager.addMessage(message)
+                // Token management now handled by SimplifiedTokenManager automatically
             }
 
             internalMessageList.addAll(0, newMessages)
@@ -582,6 +531,33 @@ class MessageManager(
         isStreamingActive = false
         lifecycleScope.launch(Dispatchers.Main) {
             chatAdapter.stopStreamingMode()
+        }
+    }
+    
+    /**
+     * IMPLEMENTED: Update MessageManager internal list without triggering adapter updates
+     * This method synchronizes the internal list with the provided messages without
+     * causing unnecessary UI updates or adapter notifications.
+     */
+    fun updateInternalListSilently(messages: List<ChatMessage>) {
+        try {
+            internalMessageList.clear()
+            internalMessageList.addAll(messages)
+            
+            Timber.d("📝 MessageManager: Updated internal list silently with ${messages.size} messages")
+            
+            // Update token count silently if token manager is available
+            try {
+                val totalTokens = messages.sumOf { message ->
+                    message.message.length / 4 // Simple token estimation based on message length
+                }
+                Timber.v("🔢 Updated token count: $totalTokens tokens")
+            } catch (e: Exception) {
+                Timber.w(e, "Failed to update token count: ${e.message}")
+            }
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Error updating MessageManager internal list silently: ${e.message}")
         }
     }
 }

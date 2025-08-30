@@ -286,7 +286,8 @@ object FileUtil {
             val isExtracting: Boolean = false,
             val isExtracted: Boolean = false,
             val extractedContentId: String = "",  // Reference to cached extracted content
-            var hasError: Boolean = false  // Error state for UI indication
+            var hasError: Boolean = false,  // Error state for UI indication
+            val processingInfo: String = ""  // Store processing status and token info
         ) {
             /**
              * Create a persistent copy of this file

@@ -44,11 +44,18 @@ abstract class BaseConversationsFragment : Fragment() {
     }
 
     private fun setupRecyclerView() {
+        val database = com.cyberflux.qwinai.database.AppDatabase.getDatabase(requireContext())
+        val attachmentsManager = com.cyberflux.qwinai.utils.ConversationAttachmentsManager(
+            requireContext(),
+            database.chatMessageDao()
+        )
+        
         groupedConversationAdapter = GroupedConversationAdapter(
             onConversationClick = { conversation -> openConversation(conversation) },
             onConversationLongClick = { view, conversation ->
                 showConversationMenu(view, conversation)
-            }
+            },
+            attachmentsManager = attachmentsManager
         )
 
         recyclerView.apply {
@@ -142,5 +149,12 @@ abstract class BaseConversationsFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         viewModel.loadConversations()
+    }
+    
+    override fun onDestroyView() {
+        super.onDestroyView()
+        if (::groupedConversationAdapter.isInitialized) {
+            groupedConversationAdapter.cleanup()
+        }
     }
 }

@@ -1,159 +1,122 @@
 [versions]
 # Gradle and Kotlin
 agconnect-core-version = "1.9.1.304"
-androidsvg-version = "1.4"
-circleimageview-version = "3.1.0"
-commons-codec-version = "1.15"
-commons-compress-version = "1.24.0"
-commons-io = "2.16.1"
-commons-io-version = "2.16.1"
-commons-logging-version = "1.2"
-compiler = "4.16.0"
-compiler-version = "4.16.0"
-core-ktx-version = "1.16.0"
+animation-graphics-version = "1.9.0"
+benchmark-common-version = "1.4.0"
+biometric-version = "1.1.0"
 core-version = "4.6.2"
-documentfile-version = "1.1.0"
-editor-version = "0.21.1"
 flexbox-version = "3.0.0"
-github-glide = "4.16.0"
-glide-version = "4.16.0"
-google-play-services-ads = "22.6.0"
-gradle = "8.1.4"
-gradle-version = "8.10.1"
+glance-material3-version = "1.1.1"
+hilt-android-version = "2.51.1"
+hilt-navigation-compose-version = "1.2.0"
 kotlin = "2.0.0"
+ksp = "2.0.0-1.0.24"
 
-play-services-ads = "24.4.0"
-applovin-sdk = "13.3.1"
-ironsource-sdk = "7.6.0"
+navigation-ui-ktx-version = "2.9.3"
+play-services-ads = "24.5.0"
 # Huawei HMS/AGConnect - Single version for each library
-agcp = "1.9.1.304"
 hms-base = "6.13.0.302"
 hms-iap = "6.10.0.300"
 hms-update = "4.0.4.301"
 
 # AndroidX Core
-androidx-core-ktx = "1.16.0"
+androidx-core-ktx = "1.17.0"
 androidx-appcompat = "1.7.1"
 androidx-constraintlayout = "2.2.1"
 androidx-recyclerview = "1.4.0"
-androidx-fragment-ktx = "1.8.8"
-androidx-work-runtime = "2.10.2"
-androidx-datastore = "1.1.7"
+androidx-fragment-ktx = "1.8.9"
+androidx-work-runtime = "2.10.3"
 
 # AndroidX Lifecycle
-androidx-lifecycle-runtime = "2.9.2"
-androidx-lifecycle-viewmodel = "2.9.2"
-androidx-lifecycle-livedata = "2.9.2"
+androidx-lifecycle-runtime = "2.9.3"
+androidx-lifecycle-viewmodel = "2.9.3"
 
 # Room Database
 androidx-room = "2.7.2"
 
 # Compose
-androidx-compose-bom = "2025.07.00"
+androidx-compose-bom = "2025.08.01"
 androidx-activity-compose = "1.10.1"
-androidx-compose-ui = "1.8.3"
-androidx-compose-foundation = "1.8.3"
+androidx-compose-ui = "1.9.0"
+androidx-compose-foundation = "1.9.0"
 androidx-compose-material3 = "1.3.2"
-androidx-compose-runtime = "1.8.3"
+androidx-compose-runtime = "1.9.0"
 
-# Networking - Single version for each library
-kotlinx-coroutines-android = "1.10.2"
-kotlinx-coroutines-android-version = "1.10.2"
-kotlinx-coroutines-core-version = "1.7.3"
-log4j-api-version = "2.20.0"
-mathjax-android = "1.0.0"
-mathjax-android-version = "1.0.0"
+# Networking - Single version for each library - FIXED VERSION CONFLICT
+kotlinx-coroutines-android-version = "1.8.0"
+kotlinx-coroutines-core-version = "1.8.0"
 mathparser-org-mxparser-version = "5.2.1"
-mathview-version = "0.0.6"
-mediationsdk-version = "7.6.0"
 multidex-version = "2.0.1"
-okhttp-version = "4.12.0"
-opencsv = "5.8"
-opencsv-version = "5.8"
-pdfbox = "3.0.0"
-pdfbox-android-version = "2.0.27.0"
-pdfbox-version = "3.0.0"
-play-services-ads-version = "24.4.0"
-poi-ooxml-version = "5.2.3"
-preference-version = "1.2.1"
-prism4j-version = "2.0.0"
+# pdfbox-android-version = "2.0.27.0" # Removed - causes crashes on Android
 retrofit = "2.11.0"
 okhttp = "4.12.0"
-gson = "2.13.0"
+moshi = "1.15.1"
 
 # UI Libraries
 material = "1.12.0"
 glide = "4.16.0"
 lottie = "6.6.6"
-retrofit-version = "2.11.0"
-retrofit2-kotlin-coroutines-adapter-version = "0.9.2"
-shimmer = "0.5.0"
 photoview = "2.3.0"
-
-# Coroutines
-kotlinx-coroutines = "1.10.2"
-
-# Ads
-unity-ads = "4.15.0"
-audience-network-sdk = "6.20.0"
+retrofit2-kotlin-coroutines-adapter-version = "0.9.2"
+security-crypto-version = "1.1.0"
+juniversalchardet-version = "2.4.0"
 
 # Billing
-billing-ktx = "6.2.1"
+billing-ktx = "8.0.0"
 
 # Testing
 junit = "4.13.2"
-androidx-junit = "1.2.1"
-androidx-espresso = "3.6.1"
+androidx-junit = "1.3.0"
+androidx-espresso = "3.7.0"
 
 # Other
 app-update-ktx = "2.1.0"
-media3-datasource = "1.7.1"
+swiperefreshlayout-version = "1.1.0"
 timber = "5.0.1"
-core-animation-version = "1.0.0"
-adapters-version = "3.2.0-alpha11"
-kotlin-version = "2.0.0"
-play-services-appsearch-version = "16.0.1"
-play-services-mlkit-text-recognition-common-version = "19.1.0"
-image-labeling-default-common-version = "17.0.0"
-play-services-mlkit-text-recognition-version = "19.0.1"
-xmlbeans-version = "5.1.1"
+tracing-version = "1.3.0"
+window-core-version = "1.4.0"
 
 [libraries]
+androidx-animation-graphics = { module = "androidx.compose.animation:animation-graphics", version.ref = "animation-graphics-version" }
+androidx-benchmark-common = { module = "androidx.benchmark:benchmark-common", version.ref = "benchmark-common-version" }
+androidx-biometric = { module = "androidx.biometric:biometric", version.ref = "biometric-version" }
+androidx-glance-appwidget = { module = "androidx.glance:glance-appwidget", version.ref = "glance-material3-version" }
+androidx-glance-material3 = { module = "androidx.glance:glance-material3", version.ref = "glance-material3-version" }
+androidx-hilt-compiler = { module = "androidx.hilt:hilt-compiler", version.ref = "hilt-navigation-compose-version" }
+androidx-hilt-navigation-compose = { module = "androidx.hilt:hilt-navigation-compose", version.ref = "hilt-navigation-compose-version" }
+androidx-hilt-work = { module = "androidx.hilt:hilt-work", version.ref = "hilt-navigation-compose-version" }
+androidx-lifecycle-process = { module = "androidx.lifecycle:lifecycle-process", version.ref = "androidx-lifecycle-runtime" }
+androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "androidx-lifecycle-runtime" }
+androidx-material3-window-size-class1 = { module = "androidx.compose.material3:material3-window-size-class", version.ref = "androidx-compose-material3" }
+androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigation-ui-ktx-version" }
+androidx-navigation-ui-ktx = { module = "androidx.navigation:navigation-ui-ktx", version.ref = "navigation-ui-ktx-version" }
+androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "security-crypto-version" }
+androidx-security-crypto-ktx = { module = "androidx.security:security-crypto-ktx", version.ref = "security-crypto-version" }
+androidx-swiperefreshlayout = { module = "androidx.swiperefreshlayout:swiperefreshlayout", version.ref = "swiperefreshlayout-version" }
+androidx-tracing = { module = "androidx.tracing:tracing", version.ref = "tracing-version" }
+androidx-window = { module = "androidx.window:window", version.ref = "window-core-version" }
+androidx-window-core = { module = "androidx.window:window-core", version.ref = "window-core-version" }
+ext-tasklist = { module = "io.noties.markwon:ext-tasklist", version.ref = "core-version" }
+hilt-android = { module = "com.google.dagger:hilt-android", version.ref = "hilt-android-version" }
+hilt-compiler = { module = "com.google.dagger:hilt-compiler", version.ref = "hilt-android-version" }
+image = { module = "io.noties.markwon:image", version.ref = "core-version" }
+image-glide = { module = "io.noties.markwon:image-glide", version.ref = "core-version" }
+linkify = { module = "io.noties.markwon:linkify", version.ref = "core-version" }
+syntax-highlight = { module = "io.noties.markwon:syntax-highlight", version.ref = "core-version" }
+ext-latex = { module = "io.noties.markwon:ext-latex", version.ref = "core-version" }
+editor = { module = "io.noties.markwon:editor", version.ref = "core-version" }
+recycler-table = { module = "io.noties.markwon:recycler-table", version.ref = "core-version" }
 play-services-ads-v2260 = { module = "com.google.android.gms:play-services-ads", version.ref = "play-services-ads" }
-applovin-sdk-v1210 = { module = "com.applovin:applovin-sdk", version.ref = "applovin-sdk" }
-mediationsdk-v760 = { module = "com.ironsource.sdk:mediationsdk", version = "7.9.0" }
 # Gradle and Kotlin
 agconnect-core = { module = "com.huawei.agconnect:agconnect-core", version.ref = "agconnect-core-version" }
-androidsvg = { module = "com.caverock:androidsvg", version.ref = "androidsvg-version" }
-androidx-core-ktx-v1120 = { module = "androidx.core:core-ktx", version.ref = "core-ktx-version" }
-androidx-documentfile = { module = "androidx.documentfile:documentfile", version.ref = "documentfile-version" }
 androidx-multidex = { module = "androidx.multidex:multidex", version.ref = "multidex-version" }
-androidx-preference = { module = "androidx.preference:preference", version.ref = "preference-version" }
-circleimageview = { module = "de.hdodenhof:circleimageview", version.ref = "circleimageview-version" }
-commons-codec = { module = "commons-codec:commons-codec", version.ref = "commons-codec-version" }
-commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commons-compress-version" }
-commons-io = { module = "commons-io:commons-io", version.ref = "commons-io-version" }
-commons-io-v2140 = { module = "commons-io:commons-io", version.ref = "commons-io" }
-commons-logging = { module = "commons-logging:commons-logging", version.ref = "commons-logging-version" }
-compiler-v4151 = { module = "com.github.bumptech.glide:compiler", version.ref = "compiler-version" }
 core = { module = "io.noties.markwon:core", version.ref = "core-version" }
-editor = { module = "io.github.rosemoe.sora-editor:editor", version.ref = "editor-version" }
 ext-strikethrough = { module = "io.noties.markwon:ext-strikethrough", version.ref = "core-version" }
 ext-tables = { module = "io.noties.markwon:ext-tables", version.ref = "core-version" }
 flexbox = { module = "com.google.android.flexbox:flexbox", version.ref = "flexbox-version" }
-fontbox = { module = "org.apache.pdfbox:fontbox", version.ref = "pdfbox" }
-github-glide-v4151 = { module = "com.github.bumptech.glide:glide", version.ref = "github-glide" }
-glide-compiler-v4151 = { module = "com.github.bumptech.glide:compiler", version.ref = "compiler" }
-glide-v4151 = { module = "com.github.bumptech.glide:glide", version.ref = "glide-version" }
-gradle = { module = "com.android.tools.build:gradle", version.ref = "gradle" }
-gradle-v832 = { module = "com.android.tools.build:gradle", version.ref = "gradle-version" }
-gregpaw-mathjax-android = { module = "com.github.gregpaw:mathjax-android", version.ref = "mathjax-android" }
 html = { module = "io.noties.markwon:html", version.ref = "core-version" }
-jetbrains-kotlinx-coroutines-android-v173 = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinx-coroutines-android" }
 kotlin-gradle-plugin-v200 = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
 
-# Huawei HMS/AGConnect - Single definition for each
-agcp = { module = "com.huawei.agconnect:agcp", version.ref = "agcp" }
 
 # HMS SDK
 base = { module = "com.huawei.hms:base", version.ref = "hms-base" }
@@ -167,43 +130,27 @@ androidx-constraintlayout = { module = "androidx.constraintlayout:constraintlayo
 androidx-recyclerview = { module = "androidx.recyclerview:recyclerview", version.ref = "androidx-recyclerview" }
 androidx-fragment-ktx = { module = "androidx.fragment:fragment-ktx", version.ref = "androidx-fragment-ktx" }
 androidx-work-runtime = { module = "androidx.work:work-runtime", version.ref = "androidx-work-runtime" }
-androidx-datastore-core-android = { module = "androidx.datastore:datastore-core-android", version.ref = "androidx-datastore" }
 
 # AndroidX Lifecycle
 androidx-lifecycle-runtime-ktx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "androidx-lifecycle-runtime" }
 androidx-lifecycle-viewmodel-ktx = { module = "androidx.lifecycle:lifecycle-viewmodel-ktx", version.ref = "androidx-lifecycle-viewmodel" }
-androidx-lifecycle-livedata-ktx = { module = "androidx.lifecycle:lifecycle-livedata-ktx", version.ref = "androidx-lifecycle-livedata" }
 
 # Room Database
 androidx-room-runtime = { module = "androidx.room:room-runtime", version.ref = "androidx-room" }
 androidx-room-ktx = { module = "androidx.room:room-ktx", version.ref = "androidx-room" }
 androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref = "androidx-room" }
-androidx-room-external-antlr = { module = "androidx.room:room-external-antlr", version.ref = "androidx-room" }
 
 # Compose
 androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "androidx-compose-bom" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity-compose" }
 kotlinx-coroutines-android-v173 = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinx-coroutines-android-version" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines-core-version" }
-log4j-api = { module = "org.apache.logging.log4j:log4j-api", version.ref = "log4j-api-version" }
-mathjax-android = { module = "io.github.gregpaw:mathjax-android", version.ref = "mathjax-android-version" }
 mathparser-org-mxparser = { module = "org.mariuszgromada.math:MathParser.org-mXparser", version.ref = "mathparser-org-mxparser-version" }
-mathview = { module = "io.github.kexanie.library:mathview", version.ref = "mathview-version" }
-okhttp-v4100 = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp-version" }
-opencsv = { module = "com.opencsv:opencsv", version.ref = "opencsv-version" }
-opencsv-v58 = { module = "com.opencsv:opencsv", version.ref = "opencsv" }
-pdfbox = { module = "org.apache.pdfbox:pdfbox", version.ref = "pdfbox-version" }
-pdfbox-android = { module = "com.tom-roush:pdfbox-android", version.ref = "pdfbox-android-version" }
-pdfbox-v2029 = { module = "org.apache.pdfbox:pdfbox", version.ref = "pdfbox" }
-play-services-ads-v2300 = { module = "com.google.android.gms:play-services-ads", version.ref = "play-services-ads-version" }
-poi = { module = "org.apache.poi:poi", version.ref = "poi-ooxml-version" }
-poi-ooxml = { module = "org.apache.poi:poi-ooxml", version.ref = "poi-ooxml-version" }
-poi-ooxml-full = { module = "org.apache.poi:poi-ooxml-full", version.ref = "poi-ooxml-version" }
-poi-scratchpad = { module = "org.apache.poi:poi-scratchpad", version.ref = "poi-ooxml-version" }
-prism4j = { module = "io.noties:prism4j", version.ref = "prism4j-version" }
+# pdfbox-android = { module = "com.tom-roush:pdfbox-android", version.ref = "pdfbox-android-version" } # Removed
+recycler = { module = "io.noties.markwon:recycler", version.ref = "core-version" }
 retrofit2-kotlin-coroutines-adapter = { module = "com.jakewharton.retrofit:retrofit2-kotlin-coroutines-adapter", version.ref = "retrofit2-kotlin-coroutines-adapter-version" }
-retrofit2-retrofit-v290 = { module = "com.squareup.retrofit2:retrofit", version.ref = "retrofit-version" }
-syntax-highlight = { module = "io.noties.markwon:syntax-highlight", version.ref = "core-version" }
+simple-ext = { module = "io.noties.markwon:simple-ext", version.ref = "core-version" }
+inline-parser = { module = "io.noties.markwon:inline-parser", version.ref = "core-version" }
 ui = { module = "androidx.compose.ui:ui", version.ref = "androidx-compose-ui" }
 ui-tooling = { module = "androidx.compose.ui:ui-tooling", version.ref = "androidx-compose-ui" }
 ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview", version.ref = "androidx-compose-ui" }
@@ -213,26 +160,20 @@ androidx-runtime = { module = "androidx.compose.runtime:runtime", version.ref = 
 
 # Networking - Single definition for each
 retrofit-v290 = { module = "com.squareup.retrofit2:retrofit", version.ref = "retrofit" }
-converter-gson-v290 = { module = "com.squareup.retrofit2:converter-gson", version.ref = "retrofit" }
+converter-moshi = { module = "com.squareup.retrofit2:converter-moshi", version.ref = "retrofit" }
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
 logging-interceptor-v4100 = { module = "com.squareup.okhttp3:logging-interceptor", version.ref = "okhttp" }
-gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+moshi = { module = "com.squareup.moshi:moshi", version.ref = "moshi" }
+moshi-kotlin = { module = "com.squareup.moshi:moshi-kotlin", version.ref = "moshi" }
+moshi-codegen = { module = "com.squareup.moshi:moshi-kotlin-codegen", version.ref = "moshi" }
 
 # UI Libraries
 material = { module = "com.google.android.material:material", version.ref = "material" }
 glide = { module = "com.github.bumptech.glide:glide", version.ref = "glide" }
 glide-compiler = { module = "com.github.bumptech.glide:compiler", version.ref = "glide" }
 lottie = { module = "com.airbnb.android:lottie", version.ref = "lottie" }
-shimmer = { module = "com.facebook.shimmer:shimmer", version.ref = "shimmer" }
 photoview = { module = "com.github.chrisbanes:PhotoView", version.ref = "photoview" }
-
-# Coroutines
-kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinx-coroutines" }
-
-# Ads
-play-services-ads = { module = "com.google.android.gms:play-services-ads", version.ref = "play-services-ads" }
-unity-ads = { module = "com.unity3d.ads:unity-ads", version.ref = "unity-ads" }
-audience-network-sdk = { module = "com.facebook.android:audience-network-sdk", version.ref = "audience-network-sdk" }
+juniversalchardet = { module = "com.github.albfernandez:juniversalchardet", version.ref = "juniversalchardet-version" }
 
 # Billing
 billing-ktx = { module = "com.android.billingclient:billing-ktx", version.ref = "billing-ktx" }
@@ -244,14 +185,7 @@ androidx-espresso-core = { module = "androidx.test.espresso:espresso-core", vers
 
 # Other
 app-update-ktx = { module = "com.google.android.play:app-update-ktx", version.ref = "app-update-ktx" }
-androidx-media3-datasource = { module = "androidx.media3:media3-datasource", version.ref = "media3-datasource" }
 timber = { module = "com.jakewharton.timber:timber", version.ref = "timber" }
-androidx-core-animation = { group = "androidx.core", name = "core-animation", version.ref = "core-animation-version" }
-androidx-adapters = { group = "androidx.databinding", name = "adapters", version.ref = "adapters-version" }
-play-services-appsearch = { group = "com.google.android.gms", name = "play-services-appsearch", version.ref = "play-services-appsearch-version" }
-play-services-mlkit-text-recognition-common = { group = "com.google.android.gms", name = "play-services-mlkit-text-recognition-common", version.ref = "play-services-mlkit-text-recognition-common-version" }
-image-labeling-default-common = { group = "com.google.mlkit", name = "image-labeling-default-common", version.ref = "image-labeling-default-common-version" }
-play-services-mlkit-text-recognition = { group = "com.google.android.gms", name = "play-services-mlkit-text-recognition", version.ref = "play-services-mlkit-text-recognition-version" }
-xmlbeans = { module = "org.apache.xmlbeans:xmlbeans", version.ref = "xmlbeans-version" }
+
 [plugins]
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin-version" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

@@ -3,16 +3,18 @@ package com.cyberflux.qwinai.database
 import androidx.room.TypeConverter
 import com.cyberflux.qwinai.model.ChatMessage
 import com.cyberflux.qwinai.network.AimlApiResponse
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
-import java.util.ArrayList
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.Types
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 
 /**
  * Type converters for complex types in the database
  * These converters allow Room to store complex types in SQLite
  */
 class Converters {
-    private val gson = Gson()
+    private val moshi = Moshi.Builder()
+        .add(KotlinJsonAdapterFactory())
+        .build()
 
     /**
      * Convert from String to List<String>
@@ -22,8 +24,9 @@ class Converters {
         if (value == null) {
             return emptyList()
         }
-        val listType = object : TypeToken<List<String>>() {}.type
-        return gson.fromJson(value, listType)
+        val listType = Types.newParameterizedType(List::class.java, String::class.java)
+        val adapter = moshi.adapter<List<String>>(listType)
+        return adapter.fromJson(value) ?: emptyList()
     }
 
     /**
@@ -31,7 +34,9 @@ class Converters {
      */
     @TypeConverter
     fun stringListToString(list: List<String>?): String {
-        return gson.toJson(list ?: emptyList<String>())
+        val listType = Types.newParameterizedType(List::class.java, String::class.java)
+        val adapter = moshi.adapter<List<String>>(listType)
+        return adapter.toJson(list ?: emptyList())
     }
 
     /**
@@ -39,7 +44,7 @@ class Converters {
      */
     @TypeConverter
     fun locationInfoToString(locationInfo: ChatMessage.LocationInfo?): String? {
-        return if (locationInfo == null) null else gson.toJson(locationInfo)
+        return if (locationInfo == null) null else moshi.adapter(ChatMessage.LocationInfo::class.java).toJson(locationInfo)
     }
 
     /**
@@ -47,7 +52,7 @@ class Converters {
      */
     @TypeConverter
     fun stringToLocationInfo(locationInfoString: String?): ChatMessage.LocationInfo? {
-        return if (locationInfoString == null) null else gson.fromJson(locationInfoString, ChatMessage.LocationInfo::class.java)
+        return if (locationInfoString == null) null else moshi.adapter(ChatMessage.LocationInfo::class.java).fromJson(locationInfoString)
     }
 
     /**
@@ -56,7 +61,9 @@ class Converters {
      */
     @TypeConverter
     fun mutableStringListToString(list: MutableList<String>?): String {
-        return gson.toJson(list ?: mutableListOf<String>())
+        val listType = Types.newParameterizedType(List::class.java, String::class.java)
+        val adapter = moshi.adapter<List<String>>(listType)
+        return adapter.toJson(list ?: mutableListOf())
     }
 
     /**
@@ -64,7 +71,7 @@ class Converters {
      */
     @TypeConverter
     fun audioDataToString(audioData: AimlApiResponse.AudioData?): String? {
-        return if (audioData == null) null else gson.toJson(audioData)
+        return if (audioData == null) null else moshi.adapter(AimlApiResponse.AudioData::class.java).toJson(audioData)
     }
 
     /**
@@ -72,7 +79,7 @@ class Converters {
      */
     @TypeConverter
     fun stringToAudioData(audioDataString: String?): AimlApiResponse.AudioData? {
-        return if (audioDataString == null) null else gson.fromJson(audioDataString, AimlApiResponse.AudioData::class.java)
+        return if (audioDataString == null) null else moshi.adapter(AimlApiResponse.AudioData::class.java).fromJson(audioDataString)
     }
 
     /**
@@ -84,8 +91,10 @@ class Converters {
         if (value == null) {
             return mutableListOf()
         }
-        val listType = object : TypeToken<MutableList<String>>() {}.type
-        return gson.fromJson(value, listType)
+        val listType = Types.newParameterizedType(List::class.java, String::class.java)
+        val adapter = moshi.adapter<List<String>>(listType)
+        val result = adapter.fromJson(value) ?: emptyList()
+        return result.toMutableList()
     }
 
     /**
@@ -96,7 +105,9 @@ class Converters {
         return if (map == null || map.isEmpty()) {
             ""
         } else {
-            gson.toJson(map)
+            val mapType = Types.newParameterizedType(Map::class.java, String::class.java, String::class.java)
+            val adapter = moshi.adapter<Map<String, String>>(mapType)
+            adapter.toJson(map)
         }
     }
 
@@ -109,8 +120,9 @@ class Converters {
             return emptyMap()
         }
 
-        val mapType = object : TypeToken<Map<String, String>>() {}.type
-        return gson.fromJson(value, mapType)
+        val mapType = Types.newParameterizedType(Map::class.java, String::class.java, String::class.java)
+        val adapter = moshi.adapter<Map<String, String>>(mapType)
+        return adapter.fromJson(value) ?: emptyMap()
     }
 
     /**
@@ -121,7 +133,9 @@ class Converters {
         return if (toolCalls == null || toolCalls.isEmpty()) {
             ""
         } else {
-            gson.toJson(toolCalls)
+            val listType = Types.newParameterizedType(List::class.java, ChatMessage.ToolCallResult::class.java)
+            val adapter = moshi.adapter<List<ChatMessage.ToolCallResult>>(listType)
+            adapter.toJson(toolCalls)
         }
     }
 
@@ -134,8 +148,9 @@ class Converters {
             return emptyList()
         }
 
-        val listType = object : TypeToken<List<ChatMessage.ToolCallResult>>() {}.type
-        return gson.fromJson(value, listType)
+        val listType = Types.newParameterizedType(List::class.java, ChatMessage.ToolCallResult::class.java)
+        val adapter = moshi.adapter<List<ChatMessage.ToolCallResult>>(listType)
+        return adapter.fromJson(value) ?: emptyList()
     }
 
     /**
@@ -146,7 +161,9 @@ class Converters {
         return if (map == null || map.isEmpty()) {
             ""
         } else {
-            gson.toJson(map)
+            val mapType = Types.newParameterizedType(Map::class.java, String::class.java, Any::class.java)
+            val adapter = moshi.adapter<Map<String, Any>>(mapType)
+            adapter.toJson(map)
         }
     }
 
@@ -159,7 +176,8 @@ class Converters {
             return emptyMap()
         }
 
-        val mapType = object : TypeToken<Map<String, Any>>() {}.type
-        return gson.fromJson(value, mapType)
+        val mapType = Types.newParameterizedType(Map::class.java, String::class.java, Any::class.java)
+        val adapter = moshi.adapter<Map<String, Any>>(mapType)
+        return adapter.fromJson(value) ?: emptyMap()
     }
 }

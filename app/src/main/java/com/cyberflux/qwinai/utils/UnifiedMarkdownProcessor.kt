@@ -1,715 +1,1083 @@
 package com.cyberflux.qwinai.utils
 
+import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Rect
-import android.graphics.Typeface
-import android.graphics.drawable.ColorDrawable
-import android.graphics.drawable.Drawable
-import android.net.Uri
-import android.text.Spannable
-import android.text.SpannableString
-import android.text.SpannableStringBuilder
-import android.text.Spanned
-import android.text.TextPaint
+import android.os.Handler
+import android.os.Looper
 import android.text.method.LinkMovementMethod
-import android.text.style.*
+import android.util.LruCache
+import android.util.Patterns
+import android.view.ContextThemeWrapper
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.annotation.ColorInt
-import androidx.annotation.NonNull
+import android.widget.Toast
 import androidx.core.content.ContextCompat
-import androidx.core.text.HtmlCompat
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import com.cyberflux.qwinai.CodeViewerActivity
 import com.cyberflux.qwinai.R
-import com.cyberflux.qwinai.utils.CodeSyntaxHighlighter
-import io.noties.markwon.*
+import com.cyberflux.qwinai.model.MarkdownConfig
+import com.cyberflux.qwinai.model.MessageContentBlock
+import com.cyberflux.qwinai.model.ParseResult
+import com.cyberflux.qwinai.model.SecurityMode
+import io.noties.markwon.AbstractMarkwonPlugin
+import io.noties.markwon.Markwon
+import io.noties.markwon.MarkwonConfiguration
 import io.noties.markwon.core.CorePlugin
-import io.noties.markwon.core.CoreProps
 import io.noties.markwon.core.MarkwonTheme
-import io.noties.markwon.editor.MarkwonEditor
-import io.noties.markwon.editor.MarkwonEditorTextWatcher
 import io.noties.markwon.ext.latex.JLatexMathPlugin
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
 import io.noties.markwon.ext.tables.TablePlugin
-import io.noties.markwon.ext.tables.TableTheme
 import io.noties.markwon.ext.tasklist.TaskListPlugin
 import io.noties.markwon.html.HtmlPlugin
-import io.noties.markwon.image.AsyncDrawableScheduler
-import io.noties.markwon.image.DefaultMediaDecoder
-import io.noties.markwon.image.glide.GlideImagesPlugin
 import io.noties.markwon.inlineparser.MarkwonInlineParserPlugin
 import io.noties.markwon.linkify.LinkifyPlugin
 import io.noties.markwon.movement.MovementMethodPlugin
-import io.noties.markwon.simple.ext.SimpleExtPlugin
-import org.commonmark.node.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import org.commonmark.node.AbstractVisitor
+import org.commonmark.node.BlockQuote
+import org.commonmark.node.BulletList
+import org.commonmark.node.Code
+import org.commonmark.node.Emphasis
+import org.commonmark.node.FencedCodeBlock
+import org.commonmark.node.HardLineBreak
+import org.commonmark.node.Heading
+import org.commonmark.node.Link
+import org.commonmark.node.ListItem
+import org.commonmark.node.Node
+import org.commonmark.node.OrderedList
+import org.commonmark.node.Paragraph
+import org.commonmark.node.SoftLineBreak
+import org.commonmark.node.StrongEmphasis
+import org.commonmark.node.Text
+import org.commonmark.node.ThematicBreak
 import org.commonmark.parser.Parser
-import org.commonmark.renderer.text.TextContentRenderer
 import timber.log.Timber
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Executors
+import java.security.MessageDigest
 import java.util.regex.Pattern
-import kotlin.math.min
+import androidx.core.net.toUri
+import io.noties.markwon.MarkwonVisitor
+import org.commonmark.node.IndentedCodeBlock
 
 /**
  * PRODUCTION-READY MARKDOWN PROCESSOR
- * 
- * Complete implementation with ALL markdown features:
- * - Standard markdown (headers, bold, italic, links, lists, etc.)
- * - Tables with proper styling
- * - Code blocks with syntax highlighting for 50+ languages
- * - LaTeX math formulas (inline and block)
- * - Task lists with checkboxes
- * - Strikethrough text
- * - HTML support
- * - Images with async loading
- * - Citations with web search integration
- * - Mermaid diagrams (rendered as code blocks with special styling)
- * - Footnotes
- * - Custom link handling
- * - Streaming optimization with state caching
- * - Thread-safe singleton pattern
- * 
- * FIXES ALL ISSUES:
- * - No flickering: Proper state management and caching
- * - No text/code confusion: Robust parsing with CommonMark
- * - Complete markdown support: All features implemented
- * - Production-ready: Error handling, performance optimization, memory management
+ *
+ * Block-based architecture that parses markdown into ordered content blocks
+ * and renders them inline using proper View layouts for interactive elements.
+ *
+ * Key Features:
+ * - Block-based parsing: Text and CodeBlock types maintain original order
+ * - Interactive code blocks: Real View layouts with working copy buttons
+ * - Security-first: HTML sanitization, URL validation, XSS prevention
+ * - Performance-optimized: LRU caching, efficient parsing, memory management
+ * - Thread-safe: Proper coroutine usage, no singleton antipattern
+ * - Lifecycle-aware: Automatic cleanup and resource management
+ * - Error recovery: Graceful fallbacks and comprehensive error handling
  */
-class UnifiedMarkdownProcessor private constructor(
-    private val context: Context
-) {
-    
+class UnifiedMarkdownProcessor(
+    private val context: Context,
+    private val lifecycle: Lifecycle? = null,
+    private val config: MarkdownConfig = MarkdownConfig()
+) : DefaultLifecycleObserver {
     companion object {
-        @Volatile
-        private var INSTANCE: UnifiedMarkdownProcessor? = null
-        
-        fun getInstance(context: Context): UnifiedMarkdownProcessor {
-            return INSTANCE ?: synchronized(this) {
-                INSTANCE ?: UnifiedMarkdownProcessor(context.applicationContext).also { 
-                    INSTANCE = it 
-                }
-            }
-        }
-        
-        // Constants for performance tuning
-        private const val CACHE_SIZE = 100
-        private const val MAX_IMAGE_SIZE = 1024 * 1024 * 5 // 5MB
-        private const val DEBOUNCE_DELAY_MS = 50L
-        
-        // Regex patterns for special content
+        private const val CACHE_SIZE = 200
+        private const val MAX_CONTENT_LENGTH = 100_000
+        private const val CACHE_CLEANUP_THRESHOLD = 250
         private val CITATION_PATTERN = Pattern.compile("\\[(\\d+)]")
-        private val MERMAID_PATTERN = Pattern.compile("```mermaid\\s*\\n([\\s\\S]*?)\\n```", Pattern.MULTILINE)
-        private val MATH_INLINE_PATTERN = Pattern.compile("\\$([^$]+)\\$")
-        private val MATH_BLOCK_PATTERN = Pattern.compile("\\$\\$([\\s\\S]+?)\\$\\$", Pattern.MULTILINE)
+        private val UNSAFE_HTML_PATTERN = Pattern.compile(
+            "<script[^>]*>[\\s\\S]*?</script>|javascript:|data:|vbscript:",
+            Pattern.CASE_INSENSITIVE
+        )
+        private val SAFE_PROTOCOLS = setOf("http", "https", "mailto", "ftp")
+        // Programming languages that should get interactive code blocks
+        private val PROGRAMMING_LANGUAGES = setOf(
+            // Web Technologies
+            "javascript", "js", "typescript", "ts", "html", "css", "scss", "sass", "less",
+            "json", "xml", "yaml", "yml", "toml", "ini", "php",
+            // Systems Programming
+            "c", "cpp", "c++", "cxx", "cc", "h", "hpp", "hxx", "rust", "rs", "go", "zig",
+            "assembly", "asm", "nasm", "masm",
+            // High-Level Languages
+            "python", "py", "java", "kotlin", "kt", "scala", "clojure", "clj", "groovy",
+            "csharp", "cs", "c#", "fsharp", "fs", "f#", "vb", "vbnet",
+            // Functional Languages
+            "haskell", "hs", "elm", "erlang", "erl", "elixir", "ex", "ocaml", "ml", "lisp",
+            "scheme", "racket",
+            // Mobile Development
+            "swift", "objc", "objectivec", "dart", "flutter",
+            // Data & Analytics
+            "r", "matlab", "octave", "julia", "jl", "sql", "postgresql", "mysql", "sqlite",
+            "nosql", "mongodb", "redis",
+            // Shell & Scripting
+            "bash", "sh", "zsh", "fish", "powershell", "ps1", "batch", "cmd", "perl", "pl",
+            "ruby", "rb", "lua",
+            // Build & Config
+            "dockerfile", "docker", "makefile", "make", "cmake", "gradle", "maven",
+            "ant", "sbt", "npm", "yarn", "pip",
+            // Infrastructure
+            "terraform", "tf", "hcl", "ansible", "vagrant", "puppet", "chef",
+            "kubernetes", "k8s", "helm",
+            // Game Development
+            "gdscript", "unity", "unreal", "hlsl", "glsl", "shader",
+            // Others
+            "latex", "tex", "bibtex", "prolog", "cobol", "fortran", "pascal", "ada",
+            "smalltalk", "forth", "tcl", "awk", "sed", "regex", "regexp",
+            // Markup that should be treated as code
+            "markdown", "md", "rst", "asciidoc", "textile"
+        )
+        // Non-programming content that should be rendered as text
+        private val TEXT_CONTENT_TYPES = setOf(
+            "text", "txt", "plain", "output", "console", "log", "diff", "patch",
+            "example", "sample", "demo", "snippet", "quote", "citation",
+            "description", "note", "comment", "explanation", "summary",
+            "", "null" // Empty or unspecified language
+        )
+        /**
+         * Check if a language should be rendered as an interactive code block.
+         */
+        fun isProgrammingLanguage(language: String?): Boolean {
+            if (language.isNullOrBlank()) return false
+            val normalizedLang = language.trim().lowercase()
+            return normalizedLang in PROGRAMMING_LANGUAGES && normalizedLang !in TEXT_CONTENT_TYPES
+        }
+        // Factory method for dependency injection
+        fun create(context: Context, lifecycle: Lifecycle? = null): UnifiedMarkdownProcessor {
+            return UnifiedMarkdownProcessor(context.applicationContext, lifecycle)
+        }
     }
-    
-    // Web search source for citations
+    // Web search source for citations (legacy compatibility)
     data class WebSearchSource(
         val title: String,
         val url: String,
         val shortDisplayName: String = ""
     )
-    
-    // Cache for rendered content to prevent re-processing
-    private val renderCache = ConcurrentHashMap<String, CharSequence>(CACHE_SIZE)
-    private val executor = Executors.newSingleThreadExecutor()
-    
-    // Markwon instances - lazy initialization
-    private val markwon: Markwon by lazy { createMarkwon() }
-    private val streamingMarkwon: Markwon by lazy { createStreamingMarkwon() }
-    private val editor: MarkwonEditor by lazy { createEditor() }
-    
-    // State management for streaming
-    private var lastStreamContent: String = ""
-    private var lastStreamResult: CharSequence? = null
-    
-    /**
-     * Main rendering method - handles both final and streaming content
-     */
-    fun render(
-        content: String,
-        textView: TextView,
-        webSearchSources: List<WebSearchSource>? = null,
-        isStreaming: Boolean = false,
-        enableMath: Boolean = true,
-        enableSyntaxHighlight: Boolean = true,
-        isDarkMode: Boolean = false
-    ) {
-        try {
-            // Quick return for empty content
-            if (content.isBlank()) {
-                textView.text = ""
-                textView.visibility = View.GONE
-                return
-            }
-            
-            textView.visibility = View.VISIBLE
-            
-            // Check cache first (for non-streaming content)
-            if (!isStreaming) {
-                val cacheKey = getCacheKey(content, webSearchSources, enableMath, enableSyntaxHighlight)
-                renderCache[cacheKey]?.let { cached ->
-                    textView.text = cached
-                    setupTextView(textView)
-                    Timber.d("✅ Rendered from cache: ${content.take(50)}")
-                    return
-                }
-            }
-            
-            // For streaming, use optimized incremental rendering
-            if (isStreaming) {
-                renderStreaming(content, textView, webSearchSources, enableMath, enableSyntaxHighlight, isDarkMode)
-            } else {
-                renderFinal(content, textView, webSearchSources, enableMath, enableSyntaxHighlight, isDarkMode)
-            }
-            
-        } catch (e: Exception) {
-            Timber.e(e, "❌ Markdown rendering failed")
-            // Fallback to plain text
-            textView.text = content
-            textView.setTextColor(ContextCompat.getColor(context, R.color.primary_text))
-        }
+    // Performance-optimized caches with lifecycle awareness
+    private val blockCache = LruCache<String, List<MessageContentBlock>>(CACHE_SIZE)
+    private val renderCache = LruCache<String, Boolean>(CACHE_SIZE / 2)
+    // Anti-flickering state tracking (per container)
+    private val containerStates = mutableMapOf<LinearLayout, ContainerRenderState>()
+    // Container render state to prevent flickering during streaming
+    private data class ContainerRenderState(
+        var lastRenderedContent: String = "",
+        var lastRenderedBlocks: List<MessageContentBlock> = emptyList(),
+        var renderedViewCount: Int = 0,
+        var lastRenderTime: Long = 0L
+    )
+    // Thread-safe execution context
+    private val processingScope = CoroutineScope(
+        Dispatchers.Default + SupervisorJob()
+    )
+    // Markwon parser for text blocks only
+    private val textParser: Markwon by lazy { createTextParser() }
+    private val commonMarkParser: Parser by lazy { createCommonMarkParser() }
+    // Security manager for safe content handling
+    private val securityManager = SecurityManager()
+    init {
+        lifecycle?.addObserver(this)
+        Timber.d("✅ UnifiedMarkdownProcessor initialized with security mode: ${config.securityMode}")
     }
-    
     /**
-     * Legacy method compatibility - adapts to new interface
+     * Main rendering method using block-based architecture with anti-flickering.
+     * Parses markdown into ordered blocks and renders them inline in the container.
+     * Uses incremental rendering during streaming to prevent flickering.
      */
-    fun renderToViews(
+    fun renderToContainer(
         content: String,
-        container: android.widget.LinearLayout,
+        container: LinearLayout,
         webSearchSources: List<WebSearchSource>? = null,
         isStreaming: Boolean = false
-    ) {
-        // For backward compatibility, create a TextView and add it to the container
-        container.removeAllViews()
-        val textView = TextView(context).apply {
-            layoutParams = android.widget.LinearLayout.LayoutParams(
-                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
-                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
-            )
+    ): ParseResult<Int> {
+        return try {
+            if (content.isBlank()) {
+                clearContainer(container)
+                container.visibility = View.GONE
+                return ParseResult.Success(0)
+            }
+            container.visibility = View.VISIBLE
+            // Get or create container state for anti-flickering
+            val containerState = containerStates.getOrPut(container) { ContainerRenderState() }
+            // REAL-TIME OPTIMIZATION: Check if content has changed significantly to avoid unnecessary re-renders
+            if (isStreaming && shouldSkipRender(content, containerState, isStreaming)) {
+                return ParseResult.Success(containerState.renderedViewCount)
+            }
+            // REAL-TIME PARSING: Parse content into ordered blocks with streaming optimizations
+            val parseResult = parseIntoBlocks(content, webSearchSources, isStreaming)
+            when (parseResult) {
+                is ParseResult.Success -> {
+                    val blocksRendered = if (isStreaming) {
+                        renderBlocksIncremental(parseResult.data, container, containerState)
+                    } else {
+                        renderBlocksComplete(parseResult.data, container)
+                    }
+                    // Update container state
+                    containerState.lastRenderedContent = content
+                    containerState.lastRenderedBlocks = parseResult.data
+                    containerState.renderedViewCount = blocksRendered
+                    containerState.lastRenderTime = System.currentTimeMillis()
+                    ParseResult.Success(blocksRendered)
+                }
+                is ParseResult.Error -> {
+                    Timber.e("Parse error: ${parseResult.message}")
+                    parseResult.fallback?.let { fallbackBlocks ->
+                        val blocksRendered = if (isStreaming) {
+                            renderBlocksIncremental(fallbackBlocks, container, containerState)
+                        } else {
+                            renderBlocksComplete(fallbackBlocks, container)
+                        }
+                        ParseResult.Success(blocksRendered)
+                    } ?: run {
+                        renderFallbackText(content, container)
+                        ParseResult.Success(1)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Critical error in renderToContainer")
+            renderFallbackText(content, container)
+            ParseResult.Error(e.message ?: "Unknown error", null)
         }
-        container.addView(textView)
-        render(content, textView, webSearchSources, isStreaming)
     }
-    
     /**
-     * Legacy method compatibility
+     * Legacy compatibility methods
      */
     fun renderSimple(
         content: String,
-        container: android.widget.LinearLayout,
+        container: LinearLayout,
         webSearchSources: List<WebSearchSource>? = null
     ) {
-        renderToViews(content, container, webSearchSources, false)
+        renderToContainer(content, container, webSearchSources, false)
     }
-    
-    /**
-     * Legacy method compatibility
-     */
     fun renderStreaming(
         content: String,
-        container: android.widget.LinearLayout,
+        container: LinearLayout,
         webSearchSources: List<WebSearchSource>? = null
     ) {
-        renderToViews(content, container, webSearchSources, true)
+        renderToContainer(content, container, webSearchSources, true)
     }
-    
     /**
-     * Optimized streaming renderer - prevents flickering
+     * REAL-TIME STREAMING: Parse markdown content into ordered content blocks with streaming optimizations
      */
-    private fun renderStreaming(
+    private fun parseIntoBlocks(
         content: String,
-        textView: TextView,
         webSearchSources: List<WebSearchSource>?,
-        enableMath: Boolean,
-        enableSyntaxHighlight: Boolean,
-        isDarkMode: Boolean
-    ) {
-        // Only re-render if content actually changed
-        if (content == lastStreamContent && lastStreamResult != null) {
-            textView.text = lastStreamResult
-            return
-        }
-        
-        try {
-            // Process the content
-            val processedContent = preprocessContent(content, webSearchSources)
-            
-            // Use streaming-optimized Markwon instance with defensive checks
-            val rendered = synchronized(this) {
-                try {
-                    // streamingMarkwon is lazy-initialized, so just access it directly
-                    streamingMarkwon.toMarkdown(processedContent)
-                } catch (e: NullPointerException) {
-                    Timber.e(e, "❌ NPE in streamingMarkwon.toMarkdown, using fallback rendering")
-                    // Fallback to plain text with basic formatting
-                    getFallbackRendering(processedContent, textView.context)
-                } catch (e: Exception) {
-                    Timber.e(e, "❌ Exception in streamingMarkwon.toMarkdown, using fallback rendering")
-                    getFallbackRendering(processedContent, textView.context)
+        isStreaming: Boolean = false
+    ): ParseResult<List<MessageContentBlock>> {
+        return try {
+            // Security validation
+            if (content.length > MAX_CONTENT_LENGTH) {
+                return ParseResult.Error(
+                    "Content too large: ${content.length} chars",
+                    listOf(MessageContentBlock.Text(content.take(MAX_CONTENT_LENGTH)))
+                )
+            }
+            // STREAMING OPTIMIZATION: Smart caching strategy for streaming vs complete content
+            val cacheKey = generateCacheKey(content, webSearchSources)
+
+            if (!isStreaming) {
+                // For non-streaming content, use full cache lookup
+                blockCache.get(cacheKey)?.let { cached ->
+                    return ParseResult.Success(cached)
+                }
+            } else {
+                // STREAMING CACHE: Look for similar content patterns to speed up incremental parsing
+                // For streaming, we're more conservative with cache usage to ensure real-time updates
+                if (content.length > 1000) { // Only cache larger streaming content
+                    blockCache.get(cacheKey)?.let { cached ->
+                        return ParseResult.Success(cached)
+                    }
                 }
             }
-            
-            // Apply to TextView
-            textView.text = rendered
-            
-            // Note: Syntax highlighting is now handled by custom code block views
-            
-            // Update streaming state
-            lastStreamContent = content
-            lastStreamResult = rendered
-            
-            Timber.d("📝 Streaming render: ${content.length} chars")
-            
-        } catch (e: Exception) {
-            Timber.e(e, "❌ Critical error in renderStreaming, using plain text fallback")
-            // Ultimate fallback - just show plain text
-            textView.text = content
-        }
-        
-        setupTextView(textView)
-    }
-    
-    /**
-     * Final content renderer with full features and caching
-     */
-    private fun renderFinal(
-        content: String,
-        textView: TextView,
-        webSearchSources: List<WebSearchSource>?,
-        enableMath: Boolean,
-        enableSyntaxHighlight: Boolean,
-        isDarkMode: Boolean
-    ) {
-        try {
-            // Process the content
-            val processedContent = preprocessContent(content, webSearchSources)
-            
-            // Render with full Markwon instance with defensive checks
-            val rendered = synchronized(this) {
-                try {
-                    // markwon is lazy-initialized, so just access it directly
-                    markwon.toMarkdown(processedContent)
-                } catch (e: NullPointerException) {
-                    Timber.e(e, "❌ NPE in markwon.toMarkdown, using fallback rendering")
-                    // Fallback to plain text with basic formatting
-                    getFallbackRendering(processedContent, textView.context)
-                } catch (e: Exception) {
-                    Timber.e(e, "❌ Exception in markwon.toMarkdown, using fallback rendering")
-                    getFallbackRendering(processedContent, textView.context)
+            // Preprocess content
+            var processedContent = preprocessContent(content, webSearchSources)
+            val allBlocks = mutableListOf<MessageContentBlock>()
+            // Parse remaining content with CommonMark AST
+            val document = commonMarkParser.parse(processedContent)
+            var currentTextBuilder = StringBuilder()
+            document.accept(object : AbstractVisitor() {
+                override fun visit(fencedCodeBlock: FencedCodeBlock) {
+                    // Add accumulated text before code block
+                    if (currentTextBuilder.isNotEmpty()) {
+                        allBlocks.add(MessageContentBlock.Text(
+                            currentTextBuilder.toString().trim()
+                        ))
+                        currentTextBuilder.clear()
+                    }
+                    // Add code block
+                    val language = fencedCodeBlock.info ?: "text"
+                    val code = fencedCodeBlock.literal ?: ""
+                    if (code.isNotBlank()) {
+                        allBlocks.add(MessageContentBlock.CodeBlock(
+                            code = code.trim(),
+                            language = language.trim()
+                        ))
+                    }
                 }
-            }
-            
-            // Cache the result
-            val cacheKey = getCacheKey(content, webSearchSources, enableMath, enableSyntaxHighlight)
-            renderCache[cacheKey] = rendered
-            
-            // Limit cache size
-            if (renderCache.size > CACHE_SIZE) {
-                renderCache.keys.take(10).forEach { renderCache.remove(it) }
-            }
-            
-            // Apply to TextView
-            textView.text = rendered
-            
-            // Note: Syntax highlighting is now handled by custom code block views
-            
-            setupTextView(textView)
-            
-            // Clear streaming state
-            lastStreamContent = ""
-            lastStreamResult = null
-            
-            Timber.d("✅ Final render: ${content.length} chars, cached: $cacheKey")
-            
-        } catch (e: Exception) {
-            Timber.e(e, "❌ Critical error in renderFinal, using plain text fallback")
-            // Ultimate fallback - just show plain text
-            textView.text = content
-        }
-    }
-    
-    /**
-     * Create main Markwon instance with all plugins
-     */
-    private fun createMarkwon(): Markwon {
-        
-        return Markwon.builder(context)
-            // Core functionality
-            .usePlugin(CorePlugin.create())
-            
-            // Enhanced markdown features
-            .usePlugin(StrikethroughPlugin.create())
-            .usePlugin(TablePlugin.create(createTableTheme()))
-            .usePlugin(TaskListPlugin.create(context))
-            .usePlugin(SimpleExtPlugin.create())
-            
-            // Inline code highlighting (not for blocks - they use custom layout)
-            .usePlugin(createCodeSyntaxHighlightPlugin())
-            
-            // Math support (LaTeX)
-            .usePlugin(MarkwonInlineParserPlugin.create())
-            .usePlugin(JLatexMathPlugin.create(44f) { builder ->
-                builder.inlinesEnabled(true)
-                builder.blocksEnabled(true)
+                override fun visit(paragraph: Paragraph) {
+                    // Accumulate paragraph text
+                    val text = extractTextFromNode(paragraph)
+                    if (text.isNotBlank()) {
+                        if (currentTextBuilder.isNotEmpty()) {
+                            currentTextBuilder.append("\n\n")
+                        }
+                        currentTextBuilder.append(text)
+                    }
+                }
+                override fun visit(heading: Heading) {
+                    val text = extractTextFromNode(heading)
+                    if (text.isNotBlank()) {
+                        if (currentTextBuilder.isNotEmpty()) {
+                            currentTextBuilder.append("\n\n")
+                        }
+                        val prefix = "#".repeat(heading.level) + " "
+                        currentTextBuilder.append(prefix + text)
+                    }
+                }
+                override fun visit(bulletList: BulletList) {
+                    if (currentTextBuilder.isNotEmpty()) {
+                        currentTextBuilder.append("\n\n")
+                    }
+                    var item = bulletList.firstChild
+                    while (item != null) {
+                        if (item is ListItem) {
+                            val itemText = extractTextFromNode(item).trim()
+                            if (itemText.isNotBlank()) {
+                                currentTextBuilder.append("- ")
+                                currentTextBuilder.append(itemText.replace("\n", "\n  "))
+                                currentTextBuilder.append("\n")
+                            }
+                        }
+                        item = item.next
+                    }
+                }
+                override fun visit(orderedList: OrderedList) {
+                    if (currentTextBuilder.isNotEmpty()) {
+                        currentTextBuilder.append("\n\n")
+                    }
+                    var num = orderedList.startNumber
+                    var item = orderedList.firstChild
+                    while (item != null) {
+                        if (item is ListItem) {
+                            val itemText = extractTextFromNode(item).trim()
+                            if (itemText.isNotBlank()) {
+                                currentTextBuilder.append("$num. ")
+                                currentTextBuilder.append(itemText.replace("\n", "\n   "))
+                                currentTextBuilder.append("\n")
+                            }
+                        }
+                        num++
+                        item = item.next
+                    }
+                }
+                override fun visit(blockQuote: BlockQuote) {
+                    val text = extractTextFromNode(blockQuote).trim()
+                    if (text.isNotBlank()) {
+                        if (currentTextBuilder.isNotEmpty()) {
+                            currentTextBuilder.append("\n\n")
+                        }
+                        currentTextBuilder.append(text.lines().joinToString("\n") { "> $it" })
+                    }
+                }
+                override fun visit(thematicBreak: ThematicBreak) {
+                    // Add accumulated text before horizontal rule
+                    if (currentTextBuilder.isNotEmpty()) {
+                        allBlocks.add(MessageContentBlock.Text(
+                            currentTextBuilder.toString().trim()
+                        ))
+                        currentTextBuilder.clear()
+                    }
+                    allBlocks.add(MessageContentBlock.HorizontalRule)
+                }
             })
-            
-            // HTML support
-            .usePlugin(HtmlPlugin.create())
-            
-            // Image loading
-            .usePlugin(GlideImagesPlugin.create(context))
-            
-            // Link handling
-            .usePlugin(LinkifyPlugin.create())
-            .usePlugin(createLinkHandlerPlugin())
-            
-            // Custom rendering
-            .usePlugin(createBasicThemePlugin())
-            .usePlugin(createCitationPlugin())
-            .usePlugin(createMermaidPlugin())
-            .usePlugin(createProperCodeBlockPlugin())
-            
-            // Movement method for clickable elements
-            .usePlugin(MovementMethodPlugin.create())
-            
-            .build()
+            // Add any remaining text
+            if (currentTextBuilder.isNotEmpty()) {
+                allBlocks.add(MessageContentBlock.Text(
+                    currentTextBuilder.toString().trim()
+                ))
+            }
+            // Handle edge case: no blocks parsed, add as text
+            if (allBlocks.isEmpty() && processedContent.isNotBlank()) {
+                allBlocks.add(MessageContentBlock.Text(processedContent.trim()))
+            }
+            // STREAMING CACHE: Smart caching strategy - only cache completed/stable content
+            if (!isStreaming || content.length > 2000) {
+                // Cache completed content or larger streaming content for performance
+                blockCache.put(cacheKey, allBlocks)
+                cleanupCacheIfNeeded()
+            }
+            Timber.d("✅ Parsed content into ${allBlocks.size} blocks")
+            ParseResult.Success(allBlocks)
+        } catch (e: Exception) {
+            Timber.e(e, "Error parsing content into blocks")
+            ParseResult.Error(
+                e.message ?: "Unknown parsing error",
+                listOf(MessageContentBlock.Text(content))
+            )
+        }
     }
-    
     /**
-     * Create optimized Markwon instance for streaming
+     * Render parsed blocks with complete refresh (non-streaming).
      */
-    private fun createStreamingMarkwon(): Markwon {
-        // Lighter configuration for streaming - no images, simpler rendering
+    private fun renderBlocksComplete(
+        blocks: List<MessageContentBlock>,
+        container: LinearLayout
+    ): Int {
+        container.removeAllViews()
+        blocks.forEach { block ->
+            renderSingleBlock(block, container)
+        }
+        Timber.d("✅ Complete render: ${blocks.size} blocks into container")
+        return blocks.size
+    }
+    /**
+     * Render blocks incrementally to prevent flickering during streaming.
+     * Only adds new content, updates last if necessary, doesn't rebuild existing content.
+     */
+    private fun renderBlocksIncremental(
+        newBlocks: List<MessageContentBlock>,
+        container: LinearLayout,
+        containerState: ContainerRenderState
+    ): Int {
+        val previousBlocks = containerState.lastRenderedBlocks
+        // If structure changed significantly, fallback to complete render
+        if (newBlocks.size < previousBlocks.size || !areBlocksPrefix(previousBlocks, newBlocks)) {
+            return renderBlocksComplete(newBlocks, container)
+        }
+        // Update the last block if it has changed (common in streaming)
+        if (previousBlocks.isNotEmpty() && newBlocks.size == previousBlocks.size) {
+            val lastIndex = previousBlocks.size - 1
+            if (newBlocks[lastIndex] != previousBlocks[lastIndex]) {
+                val lastView = container.getChildAt(lastIndex)
+                if (lastView != null) {
+                    updateViewWithBlock(lastView, newBlocks[lastIndex])
+                }
+            }
+        }
+        // Add any new blocks
+        val blocksToAdd = newBlocks.drop(previousBlocks.size)
+        blocksToAdd.forEach { block ->
+            renderSingleBlock(block, container)
+        }
+        if (blocksToAdd.isNotEmpty()) {
+            Timber.d("✅ Incremental render: ${blocksToAdd.size} new blocks added (${newBlocks.size} total)")
+        }
+        return newBlocks.size
+    }
+    /**
+     * Check if previous blocks are a prefix of new blocks (no major structural changes).
+     */
+    private fun areBlocksPrefix(previous: List<MessageContentBlock>, new: List<MessageContentBlock>): Boolean {
+        if (previous.size > new.size) return false
+        return previous == new.take(previous.size)
+    }
+    /**
+     * Update an existing view with new block content (for streaming updates).
+     */
+    private fun updateViewWithBlock(view: View, block: MessageContentBlock) {
+        when (block) {
+            is MessageContentBlock.Text -> {
+                if (view is TextView) {
+                    textParser.setMarkdown(view, block.text)
+                }
+            }
+            is MessageContentBlock.CodeBlock -> {
+                if (view is LinearLayout) {
+                    val tvCodeContent = view.findViewById<TextView>(R.id.tvCodeContent)
+                    tvCodeContent?.let {
+                        val highlightedCode = if (config.enableSyntaxHighlighting) {
+                            CodeSyntaxHighlighter.highlight(context, block.code, block.language)
+                        } else {
+                            block.code
+                        }
+                        it.text = highlightedCode
+                    }
+                }
+            }
+            else -> {
+                // For other types, no update - fallback to complete render if needed
+            }
+        }
+    }
+    /**
+     * REAL-TIME STREAMING: Ultra-fast rendering decision for fluid streaming experience
+     */
+    private fun shouldSkipRender(content: String, containerState: ContainerRenderState, isStreaming: Boolean = false): Boolean {
+        // Never skip if this is the first render
+        if (containerState.lastRenderedContent.isEmpty()) {
+            return false
+        }
+
+        // Skip if content hasn't changed
+        if (content == containerState.lastRenderedContent) {
+            return true
+        }
+        // STREAMING OPTIMIZATION: More aggressive rate limiting during streaming
+        val timeSinceLastRender = System.currentTimeMillis() - containerState.lastRenderTime
+        val minInterval = if (isStreaming) {
+            // 60 FPS target for streaming (16ms per frame)
+            when {
+                content.length < 500 -> 8L   // Ultra-fast for small content
+                content.length < 2000 -> 16L // Standard 60 FPS
+                content.length < 10000 -> 25L // Slightly slower for larger content
+                else -> 50L // Conservative for very large content
+            }
+        } else {
+            50L // Non-streaming default
+        }
+
+        if (timeSinceLastRender < minInterval) {
+            return true
+        }
+        return false
+    }
+    /**
+     * Render a single block into the container.
+     */
+    private fun renderSingleBlock(block: MessageContentBlock, container: LinearLayout) {
+        when (block) {
+            is MessageContentBlock.Text -> {
+                renderTextBlock(block, container)
+            }
+            is MessageContentBlock.CodeBlock -> {
+                // Only render as interactive code block for programming languages
+                if (isProgrammingLanguage(block.language)) {
+                    renderCodeBlock(block, container)
+                } else {
+                    // Render as formatted text for non-programming content
+                    renderCodeAsText(block, container)
+                }
+            }
+            is MessageContentBlock.HorizontalRule -> {
+                renderHorizontalRule(container)
+            }
+            else -> {
+                // Fallback for unsupported blocks
+                renderTextBlock(MessageContentBlock.Text(block.toString()), container)
+            }
+        }
+    }
+    /**
+     * Clear container and reset state.
+     */
+    private fun clearContainer(container: LinearLayout) {
+        container.removeAllViews()
+        containerStates.remove(container)
+    }
+    /**
+     * Render a text block using Markwon for inline formatting.
+     */
+    private fun renderTextBlock(block: MessageContentBlock.Text, container: LinearLayout) {
+        val textView = TextView(context).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = 8
+            }
+        }
+        if (block.text.isNotBlank()) {
+            // Use Markwon for inline formatting
+            textParser.setMarkdown(textView, block.text)
+        } else {
+            // Plain text
+            textView.text = block.text
+        }
+        setupTextView(textView)
+        container.addView(textView)
+    }
+    /**
+     * Render a code block using the item_code_block.xml layout.
+     */
+    private fun renderCodeBlock(block: MessageContentBlock.CodeBlock, container: LinearLayout) {
+        try {
+            // Create a themed context to ensure proper attribute resolution
+            val themedContext = getThemedContext(container.context)
+            val inflater = LayoutInflater.from(themedContext)
+            val codeBlockView = inflater.inflate(R.layout.item_code_block, container, false)
+            // Set language label
+            val tvLanguage = codeBlockView.findViewById<TextView>(R.id.tvLanguage)
+            tvLanguage.text = if (block.language.isNotBlank() && block.language != "text") {
+                block.language
+            } else {
+                "code"
+            }
+            // Set code content with syntax highlighting
+            val tvCodeContent = codeBlockView.findViewById<TextView>(R.id.tvCodeContent)
+            val highlightedCode = if (config.enableSyntaxHighlighting) {
+                CodeSyntaxHighlighter.highlight(context, block.code, block.language)
+            } else {
+                block.code
+            }
+            tvCodeContent.text = highlightedCode
+            // Set up copy button
+            val btnCopyCode = codeBlockView.findViewById<LinearLayout>(R.id.btnCopyCode)
+            val copyText = codeBlockView.findViewById<TextView>(R.id.copyText)
+            btnCopyCode.setOnClickListener {
+                copyToClipboard(block.code, copyText)
+            }
+            // Set up expand button (optional implementation)
+            val btnOpenCode = codeBlockView.findViewById<LinearLayout>(R.id.btnOpenCode)
+            btnOpenCode.setOnClickListener {
+                openCodeInViewer(block)
+            }
+            container.addView(codeBlockView)
+        } catch (e: Exception) {
+            Timber.e(e, "Error rendering code block with layout: ${e.message}")
+            // Fallback: create code block programmatically
+            createProgrammaticCodeBlock(block, container)
+        }
+    }
+    /**
+     * Render code block as formatted text for non-programming languages.
+     */
+    private fun renderCodeAsText(block: MessageContentBlock.CodeBlock, container: LinearLayout) {
+        val context = container.context
+        // Create a simple text view with monospace font
+        val codeTextView = TextView(context).apply {
+            text = block.code
+            textSize = 14f
+            setTextColor(ContextCompat.getColor(context, R.color.code_text))
+            typeface = android.graphics.Typeface.MONOSPACE
+            // Basic styling
+            setPadding(32, 24, 32, 24)
+            setBackgroundColor(ContextCompat.getColor(context, R.color.code_background))
+            // Make it selectable
+            setTextIsSelectable(true)
+            // Layout parameters
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 16, 0, 16)
+            }
+        }
+        container.addView(codeTextView)
+        Timber.d("✅ Rendered code block as text: ${block.language}")
+    }
+    /**
+     * Create code block programmatically when XML inflation fails.
+     */
+    @SuppressLint("SetTextI18n")
+    private fun createProgrammaticCodeBlock(block: MessageContentBlock.CodeBlock, container: LinearLayout) {
+        try {
+            val context = container.context
+            // Create main container
+            val codeBlockContainer = LinearLayout(context).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    setMargins(0, 16, 0, 16)
+                }
+                orientation = LinearLayout.VERTICAL
+                setPadding(24, 16, 24, 16)
+                setBackgroundColor(ContextCompat.getColor(context, R.color.code_background))
+            }
+            // Create header with language and copy button
+            val headerLayout = LinearLayout(context).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+            // Language label
+            val languageText = TextView(context).apply {
+                text = if (block.language.isNotBlank() && block.language != "text") {
+                    block.language
+                } else {
+                    "code"
+                }
+                textSize = 12f
+                setTextColor(ContextCompat.getColor(context, R.color.code_text))
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            }
+            // Spacer
+            val spacer = View(context).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    1f
+                )
+            }
+            // Copy button
+            val copyButton = TextView(context).apply {
+                text = "Copy"
+                textSize = 12f
+                setTextColor(ContextCompat.getColor(context, R.color.link_color))
+                setPadding(16, 8, 16, 8)
+                background = ContextCompat.getDrawable(context, android.R.drawable.btn_default)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    copyToClipboard(block.code, this)
+                }
+            }
+            headerLayout.addView(languageText)
+            headerLayout.addView(spacer)
+            headerLayout.addView(copyButton)
+            // Code content
+            val codeText = TextView(context).apply {
+                text = if (config.enableSyntaxHighlighting) {
+                    CodeSyntaxHighlighter.highlight(context, block.code, block.language)
+                } else {
+                    block.code
+                }
+                textSize = 14f
+                setTextColor(ContextCompat.getColor(context, R.color.code_text))
+                typeface = android.graphics.Typeface.MONOSPACE
+                setPadding(0, 16, 0, 0)
+                setTextIsSelectable(true)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            }
+            codeBlockContainer.addView(headerLayout)
+            codeBlockContainer.addView(codeText)
+            container.addView(codeBlockContainer)
+            Timber.d("✅ Created programmatic code block for ${block.language}")
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to create programmatic code block, falling back to text")
+            // Ultimate fallback: render as text
+            renderTextBlock(
+                MessageContentBlock.Text("```\${block.language}\n\${block.code}\n```"),
+                container
+            )
+        }
+    }
+    /**
+     * Render horizontal rule.
+     */
+    private fun renderHorizontalRule(container: LinearLayout) {
+        try {
+            // Create a visual horizontal rule
+            val divider = View(context).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    2
+                ).apply {
+                    topMargin = 16
+                    bottomMargin = 16
+                    leftMargin = 32
+                    rightMargin = 32
+                }
+                setBackgroundColor(ContextCompat.getColor(context, R.color.divider))
+            }
+            container.addView(divider)
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to render horizontal rule, falling back to text")
+            renderTextBlock(MessageContentBlock.Text("---"), container)
+        }
+    }
+    /**
+     * Create text parser for inline markdown formatting.
+     */
+    private fun createTextParser(): Markwon {
+        // adjust to match your TextView size (in sp)
+        val latexTextSize = 16f
+        val latexExecutor = java.util.concurrent.Executors.newCachedThreadPool()
         return Markwon.builder(context)
             .usePlugin(CorePlugin.create())
             .usePlugin(StrikethroughPlugin.create())
-            .usePlugin(TablePlugin.create(createTableTheme()))
-            .usePlugin(TaskListPlugin.create(context))
             .usePlugin(LinkifyPlugin.create())
-            .usePlugin(createLinkHandlerPlugin())
+            .usePlugin(HtmlPlugin.create())
+            .usePlugin(TaskListPlugin.create(context))
+            .usePlugin(TablePlugin.create(context))
+            // required to parse inline math like $$...$$
+            .usePlugin(MarkwonInlineParserPlugin.create())
+            // LaTeX math rendering (blocks + inline). Adjust executor / error handling as needed.
+            .usePlugin(
+                JLatexMathPlugin.create(latexTextSize) { builder ->
+                    builder.inlinesEnabled(true)               // enable inline $$..$$ rendering
+                    builder.executorService(latexExecutor)     // off-main-thread rendering
+                    builder.errorHandler { _latex, _throwable -> null } // fallback on error (return Drawable if desired)
+                }
+            )
             .usePlugin(MovementMethodPlugin.create())
-            
-            // Add basic theme and code block support for streaming
-            .usePlugin(createBasicThemePlugin())
-            .usePlugin(createCodeSyntaxHighlightPlugin())
-            
+            .usePlugin(createSecureLinkHandler())
+            .usePlugin(createThemePlugin())
+            .usePlugin(object : AbstractMarkwonPlugin() {
+                override fun configureVisitor(builder: MarkwonVisitor.Builder) {
+                    builder.on(FencedCodeBlock::class.java) { visitor, node ->
+                        // Skip rendering - we handle code blocks separately
+                        visitor.blockStart(node)
+                        visitor.blockEnd(node)
+                    }
+                    builder.on(IndentedCodeBlock::class.java) { visitor, node ->
+                        // Skip rendering - we handle code blocks separately
+                        visitor.blockStart(node)
+                        visitor.blockEnd(node)
+                    }
+                }
+            })
             .build()
     }
-    
     /**
-     * Create Markwon editor for live editing support
+     * Create CommonMark parser for AST-based block parsing.
      */
-    private fun createEditor(): MarkwonEditor {
-        return MarkwonEditor.create(markwon)
+    private fun createCommonMarkParser(): Parser {
+        return Parser.builder()
+            .build()
     }
-    
     /**
-     * Create basic theme configuration plugin
+     * Copy code to clipboard with user feedback.
      */
-    private fun createBasicThemePlugin(): AbstractMarkwonPlugin {
+    @SuppressLint("SetTextI18n")
+    private fun copyToClipboard(code: String, feedbackTextView: TextView) {
+        try {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = ClipData.newPlainText("Code", code)
+            clipboard.setPrimaryClip(clip)
+            // Visual feedback
+            val originalText = feedbackTextView.text.toString()
+            feedbackTextView.text = "Copied!"
+            Handler(Looper.getMainLooper()).postDelayed({
+                feedbackTextView.text = originalText
+            }, 1500)
+            // Optional toast feedback
+            Toast.makeText(context, "Code copied to clipboard", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to copy code to clipboard")
+            Toast.makeText(context, "Failed to copy code", Toast.LENGTH_SHORT).show()
+        }
+    }
+    /**
+     * Open code in full-screen viewer.
+     */
+    private fun openCodeInViewer(block: MessageContentBlock.CodeBlock) {
+        try {
+            Timber.d("Opening ${block.language} code in full screen viewer - code length: ${block.code.length}")
+            
+            val intent = CodeViewerActivity.createIntent(
+                context = context,
+                codeContent = block.code,
+                language = block.language.takeIf { it.isNotBlank() } ?: "Code"
+            )
+            
+            // Add FLAG_ACTIVITY_NEW_TASK to ensure it can launch properly
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            
+            context.startActivity(intent)
+            Timber.d("Successfully launched CodeViewerActivity")
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to open code viewer: ${e.message}")
+            // Fallback: copy to clipboard
+            try {
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val clip = ClipData.newPlainText("Code - ${block.language}", block.code)
+                clipboard.setPrimaryClip(clip)
+                Toast.makeText(context, "Failed to open viewer, code copied to clipboard", Toast.LENGTH_SHORT).show()
+            } catch (clipboardError: Exception) {
+                Timber.e(clipboardError, "Failed to copy to clipboard as fallback")
+                Toast.makeText(context, "Failed to open code viewer", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    /**
+     * Create theme plugin with beautiful ultra-thin styling and colors.
+     */
+    private fun createThemePlugin(): AbstractMarkwonPlugin {
         return object : AbstractMarkwonPlugin() {
             override fun configureTheme(builder: MarkwonTheme.Builder) {
                 builder
-                    // Basic colors
-                    .linkColor(ContextCompat.getColor(context, R.color.link_color))
-                    .blockQuoteColor(ContextCompat.getColor(context, R.color.accent_color))
-                    
-                    // Text sizes
-                    .headingTextSizeMultipliers(floatArrayOf(2f, 1.5f, 1.3f, 1.2f, 1.1f, 1f))
-                    
-                    // Spacing
-                    .blockMargin(24)
-                    .listItemColor(ContextCompat.getColor(context, R.color.primary_text))
-                    
-                    // Typography
-                    .headingTypeface(Typeface.DEFAULT_BOLD)
+                    // Beautiful Ultra-Thin Link Colors
+                    .linkColor(ContextCompat.getColor(context, R.color.ai_response_link_color))
+
+                    // Elegant Quote Styling
+                    .blockQuoteColor(ContextCompat.getColor(context, R.color.ai_response_quote_color))
+
+                    // Sophisticated Heading Sizes with Ultra-Thin Typography
+                    .headingTextSizeMultipliers(floatArrayOf(2.0f, 1.75f, 1.5f, 1.3f, 1.15f, 1.0f))
+
+                    // Premium Spacing for Ultra-Thin Appearance
+                    .blockMargin(20)
+                    .listItemColor(ContextCompat.getColor(context, R.color.ai_response_list_color))
+
+                    // Beautiful Ultra-Thin Text Color
+                    .headingBreakHeight(8)
+                    .thematicBreakColor(ContextCompat.getColor(context, R.color.ai_response_border_elegant))
+                    .thematicBreakHeight(1)
+
+                    // Enhanced Code Block Styling
+                    .codeTextColor(ContextCompat.getColor(context, R.color.ai_response_code_color))
+                    .codeBackgroundColor(ContextCompat.getColor(context, R.color.ai_response_highlight_subtle))
+                    .codeTypeface(android.graphics.Typeface.MONOSPACE)
+
+                    // Ultra-Elegant List Styling
+                    .bulletListItemStrokeWidth(2)
+                    .bulletWidth(6)
             }
         }
     }
-    
     /**
-     * Create table theme
+     * Create secure link handler that validates URLs.
      */
-    private fun createTableTheme(): TableTheme {
-        return TableTheme.Builder()
-            .tableBorderColor(ContextCompat.getColor(context, R.color.divider_color))
-            .tableBorderWidth(1)
-            .tableCellPadding(8)
-            .tableHeaderRowBackgroundColor(ContextCompat.getColor(context, R.color.table_background))
-            .tableEvenRowBackgroundColor(ContextCompat.getColor(context, R.color.table_background))
-            .tableOddRowBackgroundColor(ContextCompat.getColor(context, R.color.surface))
-            .build()
-    }
-    
-    /**
-     * Create citation plugin for web search sources
-     */
-    private fun createCitationPlugin(): AbstractMarkwonPlugin {
-        return object : AbstractMarkwonPlugin() {
-            override fun beforeSetText(textView: TextView, markdown: Spanned) {
-                // Citations are handled in preprocessing
-            }
-        }
-    }
-    
-    /**
-     * Create Mermaid diagram plugin
-     */
-    private fun createMermaidPlugin(): AbstractMarkwonPlugin {
-        return object : AbstractMarkwonPlugin() {
-            override fun processMarkdown(markdown: String): String {
-                // Convert mermaid blocks to special code blocks
-                return MERMAID_PATTERN.matcher(markdown).replaceAll { matchResult ->
-                    val mermaidCode = matchResult.group(1) ?: ""
-                    """
-                    ```mermaid
-                    $mermaidCode
-                    ```
-                    """.trimIndent()
-                }
-            }
-        }
-    }
-    
-    /**
-     * Create proper code block plugin that uses custom layout
-     */
-    private fun createProperCodeBlockPlugin(): AbstractMarkwonPlugin {
-        return object : AbstractMarkwonPlugin() {
-            override fun configureSpansFactory(builder: MarkwonSpansFactory.Builder) {
-                builder.setFactory(FencedCodeBlock::class.java) { configuration, renderProps ->
-                    val info = renderProps.get(io.noties.markwon.core.CoreProps.CODE_BLOCK_INFO)
-                    
-                    // Check if it's a mermaid diagram
-                    if (info?.startsWith("mermaid") == true) {
-                        // Return special span for mermaid
-                        MermaidDiagramSpan(context, configuration.theme())
-                    } else {
-                        // Use proper code block view span that will create the custom layout
-                        CodeBlockViewSpan(context, info ?: "text")
-                    }
-                }
-                
-                // Also handle indented code blocks
-                builder.setFactory(IndentedCodeBlock::class.java) { configuration, renderProps ->
-                    CodeBlockViewSpan(context, "text")
-                }
-            }
-        }
-    }
-    
-    /**
-     * Create link handler plugin
-     */
-    private fun createLinkHandlerPlugin(): AbstractMarkwonPlugin {
+    private fun createSecureLinkHandler(): AbstractMarkwonPlugin {
         return object : AbstractMarkwonPlugin() {
             override fun configureConfiguration(builder: MarkwonConfiguration.Builder) {
                 builder.linkResolver { view, link ->
-                    handleLink(link)
+                    handleLinkSecurely(link)
                 }
             }
         }
     }
-    
     /**
-     * Custom span for Mermaid diagrams
+     * Handle links with security validation.
      */
-    private class MermaidDiagramSpan(
-        private val context: Context,
-        private val theme: MarkwonTheme
-    ) : ReplacementSpan() {
-        
-        private val paint = Paint().apply {
-            color = ContextCompat.getColor(context, R.color.code_background)
-            isAntiAlias = true
+    private fun handleLinkSecurely(link: String) {
+        if (!securityManager.isUrlSafe(link)) {
+            Timber.w("Blocked unsafe URL: $link")
+            Toast.makeText(context, "Unsafe link blocked", Toast.LENGTH_SHORT).show()
+            return
         }
-        
-        private val textPaint = TextPaint().apply {
-            color = ContextCompat.getColor(context, R.color.code_text)
-            typeface = Typeface.MONOSPACE
-            textSize = 14f * context.resources.displayMetrics.scaledDensity
-            isAntiAlias = true
-        }
-        
-        override fun getSize(
-            paint: Paint,
-            text: CharSequence?,
-            start: Int,
-            end: Int,
-            fm: Paint.FontMetricsInt?
-        ): Int {
-            val bounds = Rect()
-            textPaint.getTextBounds(text.toString(), start, end, bounds)
-            return bounds.width() + 32 // Add padding
-        }
-        
-        override fun draw(
-            canvas: Canvas,
-            text: CharSequence?,
-            start: Int,
-            end: Int,
-            x: Float,
-            top: Int,
-            y: Int,
-            bottom: Int,
-            paint: Paint
-        ) {
-            // Draw background
-            val rect = Rect(x.toInt(), top, (x + getSize(paint, text, start, end, null)).toInt(), bottom)
-            canvas.drawRect(rect.left.toFloat(), rect.top.toFloat(), rect.right.toFloat(), rect.bottom.toFloat(), this.paint)
-            
-            // Draw "Mermaid Diagram" label
-            val label = "📊 Mermaid Diagram"
-            canvas.drawText(label, x + 16, y.toFloat() - 8, textPaint)
-            
-            // Draw diagram content (simplified)
-            val content = text?.subSequence(start, min(end, start + 50)).toString() + "..."
-            canvas.drawText(content, x + 16, y.toFloat() + 24, textPaint)
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, link.toUri()).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                addCategory(Intent.CATEGORY_BROWSABLE)
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to open link: $link")
+            Toast.makeText(context, "Failed to open link", Toast.LENGTH_SHORT).show()
         }
     }
-    
     /**
-     * Custom span for code blocks that uses the proper custom layout
+     * Extract text content from a CommonMark node.
      */
-    private class CodeBlockViewSpan(
-        private val context: Context,
-        private val language: String
-    ) : ReplacementSpan() {
-        
-        private var codeBlockView: View? = null
-        private var viewWidth = 0
-        private var viewHeight = 0
-        
-        private fun createCodeBlockView(codeContent: String): View {
-            val inflater = LayoutInflater.from(context)
-            val codeBlockView = inflater.inflate(R.layout.item_code_block, null, false)
-            
-            // Set the language
-            val tvLanguage = codeBlockView.findViewById<TextView>(R.id.tvLanguage)
-            tvLanguage.text = if (language.isNotBlank() && language != "text") language else "code"
-            
-            // Set the code content
-            val tvCodeContent = codeBlockView.findViewById<TextView>(R.id.tvCodeContent)
-            tvCodeContent.text = codeContent
-            
-            // Set up copy button
-            val btnCopyCode = codeBlockView.findViewById<LinearLayout>(R.id.btnCopyCode)
-            btnCopyCode.setOnClickListener {
-                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                val clip = ClipData.newPlainText("Code", codeContent)
-                clipboard.setPrimaryClip(clip)
-                
-                // Update copy button text
-                val copyText = codeBlockView.findViewById<TextView>(R.id.copyText)
-                copyText.text = "Copied!"
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    copyText.text = "Copy"
-                }, 1500)
+    private fun extractTextFromNode(node: Node): String {
+        val builder = StringBuilder()
+        fun visitNode(current: Node) {
+            when (current) {
+                is Text -> builder.append(current.literal)
+                is SoftLineBreak -> builder.append(" ")
+                is HardLineBreak -> builder.append("\n")
+                is Code -> builder.append("`${current.literal}`")
+                is Emphasis -> {
+                    builder.append("*")
+                    current.firstChild?.let { visitNode(it) }
+                    builder.append("*")
+                }
+                is StrongEmphasis -> {
+                    builder.append("**")
+                    current.firstChild?.let { visitNode(it) }
+                    builder.append("**")
+                }
+                is Link -> {
+                    builder.append("[")
+                    current.firstChild?.let { visitNode(it) }
+                    builder.append("](${current.destination})")
+                }
+                else -> {
+                    // Visit all children for other node types
+                    var child = current.firstChild
+                    while (child != null) {
+                        visitNode(child)
+                        child = child.next
+                    }
+                }
             }
-            
-            // Set up expand button
-            val btnOpenCode = codeBlockView.findViewById<LinearLayout>(R.id.btnOpenCode)
-            btnOpenCode.setOnClickListener {
-                // TODO: Implement full-screen code viewer
-                Timber.d("Opening code in full screen: $language")
-            }
-            
-            // Measure the view
-            val widthMeasureSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-            val heightMeasureSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-            codeBlockView.measure(widthMeasureSpec, heightMeasureSpec)
-            
-            viewWidth = codeBlockView.measuredWidth
-            viewHeight = codeBlockView.measuredHeight
-            
-            // Layout the view
-            codeBlockView.layout(0, 0, viewWidth, viewHeight)
-            
-            return codeBlockView
         }
-        
-        override fun getSize(
-            paint: Paint,
-            text: CharSequence?,
-            start: Int,
-            end: Int,
-            fm: Paint.FontMetricsInt?
-        ): Int {
-            val codeContent = text?.subSequence(start, end)?.toString() ?: ""
-            if (codeBlockView == null) {
-                codeBlockView = createCodeBlockView(codeContent)
+        visitNode(node)
+        return builder.toString()
+    }
+    /**
+     * Get a themed context for proper attribute resolution.
+     */
+    private fun getThemedContext(baseContext: Context): Context {
+        return try {
+            // Try to get the app theme from the application context
+            val packageManager = baseContext.packageManager
+            val applicationInfo = packageManager.getApplicationInfo(
+                baseContext.packageName,
+                0
+            )
+            // Use the application theme or fallback to Material theme
+            val themeResId = if (applicationInfo.theme != 0) {
+                applicationInfo.theme
+            } else {
+                // Fallback to a compatible Material theme
+                com.google.android.material.R.style.Theme_Material3_DayNight
             }
-            
-            // Set font metrics to accommodate the view height
-            fm?.let {
-                it.top = -viewHeight
-                it.ascent = -viewHeight
-                it.descent = 0
-                it.bottom = 0
-            }
-            
-            return viewWidth.coerceAtLeast(300) // Minimum width
+            ContextThemeWrapper(baseContext, themeResId)
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to create themed context, using base context")
+            // Fallback to base context if theming fails
+            baseContext
         }
-        
-        override fun draw(
-            canvas: Canvas,
-            text: CharSequence?,
-            start: Int,
-            end: Int,
-            x: Float,
-            top: Int,
-            y: Int,
-            bottom: Int,
-            paint: Paint
-        ) {
-            val codeContent = text?.subSequence(start, end)?.toString() ?: ""
-            if (codeBlockView == null) {
-                codeBlockView = createCodeBlockView(codeContent)
+    }
+    /**
+     * Security manager for safe content handling.
+     */
+    private inner class SecurityManager {
+        fun isUrlSafe(url: String): Boolean {
+            if (config.securityMode == SecurityMode.PERMISSIVE) {
+                return true
             }
-            
-            codeBlockView?.let { view ->
-                canvas.save()
-                canvas.translate(x, (y - viewHeight).toFloat())
-                view.draw(canvas)
-                canvas.restore()
+            return try {
+                val uri = url.toUri()
+                val scheme = uri.scheme?.lowercase()
+                when (config.securityMode) {
+                    SecurityMode.STRICT -> {
+                        scheme in SAFE_PROTOCOLS &&
+                                !url.contains("javascript:", ignoreCase = true) &&
+                                !url.contains("data:", ignoreCase = true) &&
+                                !url.startsWith("file://") &&
+                                Patterns.WEB_URL.matcher(url).matches()
+                    }
+                    SecurityMode.MODERATE -> {
+                        scheme in SAFE_PROTOCOLS &&
+                                !url.contains("javascript:", ignoreCase = true)
+                    }
+                    SecurityMode.PERMISSIVE -> true
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "Invalid URL: $url")
+                false
+            }
+        }
+        fun sanitizeHtml(html: String): String {
+            return if (config.securityMode == SecurityMode.STRICT) {
+                // Remove all potentially dangerous HTML
+                UNSAFE_HTML_PATTERN.matcher(html).replaceAll("")
+            } else {
+                html
             }
         }
     }
-    
     /**
-     * Preprocess content before markdown rendering
+     * Preprocess content before parsing.
      */
     private fun preprocessContent(
         content: String,
         webSearchSources: List<WebSearchSource>?
     ): String {
         var processed = content
-        
         // Handle citations
         if (!webSearchSources.isNullOrEmpty()) {
             processed = processCitations(processed, webSearchSources)
         }
-        
         // Normalize line endings
         processed = processed.replace("\r\n", "\n").replace("\r", "\n")
-        
-        // Fix common markdown issues
-        processed = fixCommonMarkdownIssues(processed)
-        
+        // Security sanitization
+        processed = securityManager.sanitizeHtml(processed)
         return processed
     }
-    
-    
     /**
-     * Process citations in content
+     * Process citations in content.
      */
     private fun processCitations(
         content: String,
@@ -718,386 +1086,137 @@ class UnifiedMarkdownProcessor private constructor(
         val result = StringBuilder()
         val matcher = CITATION_PATTERN.matcher(content)
         var lastEnd = 0
-        
         while (matcher.find()) {
-            // Append text before citation
             result.append(content.substring(lastEnd, matcher.start()))
-            
-            // Get citation number
             val citationNumber = matcher.group(1)?.toIntOrNull() ?: continue
             val sourceIndex = citationNumber - 1
-            
             if (sourceIndex in sources.indices) {
                 val source = sources[sourceIndex]
-                // Create clickable citation link
                 result.append("[${source.shortDisplayName.ifEmpty { citationNumber.toString() }}](${source.url})")
             } else {
-                // Keep original if source not found
                 result.append(matcher.group())
             }
-            
             lastEnd = matcher.end()
         }
-        
-        // Append remaining content
         result.append(content.substring(lastEnd))
-        
-        // Add source references at the end
+        // Add reference section
         if (sources.isNotEmpty()) {
             result.append("\n\n---\n### References\n")
             sources.forEachIndexed { index, source ->
                 result.append("${index + 1}. [${source.title}](${source.url})\n")
             }
         }
-        
         return result.toString()
     }
-    
     /**
-     * Fix common markdown parsing issues while preserving code block content
+     * Render fallback text when parsing fails.
      */
-    private fun fixCommonMarkdownIssues(content: String): String {
-        // First, extract and protect code blocks
-        val codeBlocks = mutableListOf<String>()
-        val codeBlockPlaceholders = mutableListOf<String>()
-        
-        // Find all fenced code blocks and replace them with placeholders
-        val fencedCodeRegex = Regex("```[\\s\\S]*?```", RegexOption.MULTILINE)
-        var processedContent = content
-        var matchIndex = 0
-        
-        fencedCodeRegex.findAll(content).forEach { match ->
-            val placeholder = "___CODE_BLOCK_${matchIndex}___"
-            codeBlocks.add(match.value)
-            codeBlockPlaceholders.add(placeholder)
-            processedContent = processedContent.replaceFirst(match.value, placeholder)
-            matchIndex++
+    private fun renderFallbackText(content: String, container: LinearLayout) {
+        container.removeAllViews()
+        val textView = TextView(context).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            text = content
         }
-        
-        // Find all inline code spans and protect them
-        val inlineCodeRegex = Regex("`[^`]+`")
-        val inlineCodeBlocks = mutableListOf<String>()
-        val inlineCodePlaceholders = mutableListOf<String>()
-        
-        inlineCodeRegex.findAll(processedContent).forEach { match ->
-            val placeholder = "___INLINE_CODE_${inlineCodeBlocks.size}___"
-            inlineCodeBlocks.add(match.value)
-            inlineCodePlaceholders.add(placeholder)
-            processedContent = processedContent.replaceFirst(match.value, placeholder)
-        }
-        
-        // Now fix markdown issues on the content without code blocks
-        processedContent = processedContent
-            // Fix nested bold/italic (but not inside code)
-            .replace("***", "**_")
-            .replace("___", "_**")
-            // Fix table formatting
-            .replace(Regex("\\|(\\s*)\\|"), "| |")
-            // Normalize spacing around headers
-            .replace(Regex("([^\n])#"), "$1\n#")
-            .replace(Regex("#([^\\s])"), "# $1")
-        
-        // Restore inline code spans first
-        inlineCodePlaceholders.forEachIndexed { index, placeholder ->
-            processedContent = processedContent.replace(placeholder, inlineCodeBlocks[index])
-        }
-        
-        // Restore code blocks
-        codeBlockPlaceholders.forEachIndexed { index, placeholder ->
-            processedContent = processedContent.replace(placeholder, codeBlocks[index])
-        }
-        
-        // Final fixes for code block boundaries
-        processedContent = processedContent
-            // Ensure blank lines around code blocks
-            .replace(Regex("([^\n])```"), "$1\n\n```")
-            .replace(Regex("```([^\n])"), "```\n$1")
-            // Fix unclosed code blocks at end of content
-            .replace(Regex("```([^`]*)$"), "```$1\n```")
-        
-        return processedContent
+        setupTextView(textView)
+        container.addView(textView)
     }
-    
     /**
-     * Setup TextView for proper rendering
+     * Setup TextView with beautiful ultra-thin AI message styling.
      */
     private fun setupTextView(textView: TextView) {
         textView.apply {
-            // Enable clicking on links
             movementMethod = LinkMovementMethod.getInstance()
-            
-            // Improve rendering performance
-            setTextIsSelectable(false) // Re-enable if needed
-            
-            // Set line spacing for better readability
-            setLineSpacing(0f, 1.2f)
-            
-            // Ensure proper text color
-            if (currentTextColor == 0) {
-                setTextColor(ContextCompat.getColor(context, R.color.primary_text))
-            }
+
+            // ULTRA-THIN BEAUTIFUL AI RESPONSE STYLING
+            textSize = 16f
+
+            // Ultra-thin typography for elegant appearance
+            typeface = android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.NORMAL)
+
+            // Beautiful sophisticated colors
+            setTextColor(ContextCompat.getColor(context, R.color.ai_response_text_primary))
+
+            // Enhanced line spacing for ultra-thin readability
+            setLineSpacing(6f, 1.3f) // Increased spacing for elegant appearance
+
+            // Sophisticated letter spacing for premium feel
+            letterSpacing = 0.02f
+
+            // Ultra-elegant alpha for refined appearance
+            alpha = 0.95f
+
+            // Premium padding for ultra-thin design
+            setPadding(
+                paddingLeft + 4,
+                paddingTop + 2,
+                paddingRight + 4,
+                paddingBottom + 2
+            )
+
+            // Enhanced text selection and readability
+            setTextIsSelectable(true)
+
+            // Beautiful link colors
+            setLinkTextColor(ContextCompat.getColor(context, R.color.ai_response_link_color))
+
+            // Ultra-smooth text rendering
+            // Enable beautiful text rendering on modern devices
+            paintFlags = paintFlags or android.graphics.Paint.ANTI_ALIAS_FLAG
+            paintFlags = paintFlags or android.graphics.Paint.SUBPIXEL_TEXT_FLAG
         }
     }
-    
     /**
-     * Handle link clicks
+     * Generate cache key for content and options.
      */
-    private fun handleLink(link: String) {
-        try {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(link)).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            context.startActivity(intent)
-            Timber.d("Opened link: $link")
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to open link: $link")
-        }
-    }
-    
-    /**
-     * Generate cache key for content
-     */
-    private fun getCacheKey(
+    private fun generateCacheKey(
         content: String,
-        sources: List<WebSearchSource>?,
-        enableMath: Boolean,
-        enableSyntax: Boolean
+        webSearchSources: List<WebSearchSource>?
     ): String {
-        val sourceHash = sources?.joinToString { it.url }.hashCode() ?: 0
-        return "${content.hashCode()}_${sourceHash}_${enableMath}_${enableSyntax}"
+        val sourceHash = webSearchSources?.joinToString { it.url }.hashCode()
+        val configHash = config.hashCode()
+        return try {
+            val digest = MessageDigest.getInstance("SHA-256")
+            val input = "$content|$sourceHash|$configHash"
+            val hash = digest.digest(input.toByteArray())
+            hash.joinToString("") { "%02x".format(it) }.take(16)
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to generate SHA-256 hash, using fallback")
+            "${content.hashCode()}_${sourceHash}_$configHash"
+        }
     }
-    
     /**
-     * Clear all caches
+     * Clean up cache if it exceeds threshold.
+     */
+    private fun cleanupCacheIfNeeded() {
+        if (blockCache.size() > CACHE_CLEANUP_THRESHOLD) {
+            blockCache.trimToSize(CACHE_SIZE)
+            Timber.d("Cache cleaned up, new size: ${blockCache.size()}")
+        }
+    }
+    // ==== Lifecycle Management ====
+    override fun onDestroy(owner: LifecycleOwner) {
+        cleanup()
+        super.onDestroy(owner)
+    }
+    /**
+     * Clear all caches.
      */
     fun clearCache() {
-        renderCache.clear()
-        lastStreamContent = ""
-        lastStreamResult = null
-        Timber.d("Cache cleared")
+        blockCache.evictAll()
+        renderCache.evictAll()
+        Timber.d("All caches cleared")
     }
-    
     /**
-     * Get memory usage stats
-     */
-    fun getMemoryStats(): Map<String, Any> {
-        return mapOf(
-            "cacheSize" to renderCache.size,
-            "lastStreamLength" to lastStreamContent.length,
-            "hasStreamResult" to (lastStreamResult != null)
-        )
-    }
-    
-    /**
-     * Get processing statistics for debugging
-     */
-    fun getStats(): Map<String, Any> {
-        return mapOf(
-            "markwonBased" to true,
-            "contextHashCode" to context.hashCode(),
-            "instance" to this.hashCode(),
-            "cacheSize" to renderCache.size
-        )
-    }
-    
-    /**
-     * Enable editor mode for a TextView
-     */
-    fun enableEditing(textView: TextView) {
-        textView.addTextChangedListener(
-            MarkwonEditorTextWatcher.withProcess(editor)
-        )
-    }
-    
-    /**
-     * Create simple inline code highlighting plugin (for inline code spans only)
-     */
-    private fun createCodeSyntaxHighlightPlugin(): MarkwonPlugin {
-        return object : AbstractMarkwonPlugin() {
-            override fun configureTheme(builder: MarkwonTheme.Builder) {
-                builder
-                    // Only configure inline code styling (not block code)
-                    .codeTypeface(Typeface.MONOSPACE)
-                    .codeTextColor(ContextCompat.getColor(context, R.color.code_text))
-                    .codeBackgroundColor(ContextCompat.getColor(context, R.color.code_background))
-                    .codeTextSize((14 * context.resources.displayMetrics.scaledDensity).toInt())
-            }
-        }
-    }
-    
-    /**
-     * Apply syntax highlighting to code blocks in TextView after Markwon rendering
-     */
-    private fun applySyntaxHighlighting(textView: TextView, originalContent: String) {
-        try {
-            val text = textView.text
-            if (text !is Spannable) return
-            
-            val spannable = SpannableStringBuilder(text)
-            
-            // Safety check for empty content
-            if (originalContent.isBlank() || spannable.isEmpty()) return
-            
-            // Find code blocks in original markdown content
-            val fencedCodeBlockRegex = Regex("```([a-zA-Z0-9+#-]*)?\\s*\\n([\\s\\S]*?)\\n?```")
-            val matches = fencedCodeBlockRegex.findAll(originalContent)
-            
-            for (match in matches) {
-                try {
-                    val language = match.groupValues[1].ifBlank { "text" }
-                    val code = match.groupValues[2]
-                    
-                    if (code.isNotBlank() && code.length < 10000) { // Safety: Skip very large code blocks
-                        // Find the code in the rendered text
-                        val codeStart = text.toString().indexOf(code)
-                        if (codeStart != -1 && codeStart + code.length <= spannable.length) {
-                            val codeEnd = codeStart + code.length
-                            
-                            // Apply CodeSyntaxHighlighter
-                            val highlighted = CodeSyntaxHighlighter.highlight(context, code, language)
-                            
-                            // Remove existing spans in this range (except background and typeface)
-                            val existingSpans = spannable.getSpans(codeStart, codeEnd, Any::class.java)
-                            for (span in existingSpans) {
-                                if (span !is BackgroundColorSpan && span !is TypefaceSpan) {
-                                    try {
-                                        spannable.removeSpan(span)
-                                    } catch (e: Exception) {
-                                        // Ignore span removal errors
-                                    }
-                                }
-                            }
-                            
-                            // Apply highlighted spans
-                            val highlightSpans = highlighted.getSpans(0, highlighted.length, ForegroundColorSpan::class.java)
-                            for (span in highlightSpans) {
-                                val spanStart = highlighted.getSpanStart(span)
-                                val spanEnd = highlighted.getSpanEnd(span)
-                                
-                                if (spanStart >= 0 && spanEnd <= code.length && 
-                                    codeStart + spanStart >= 0 && codeStart + spanEnd <= spannable.length) {
-                                    try {
-                                        spannable.setSpan(
-                                            ForegroundColorSpan(span.foregroundColor),
-                                            codeStart + spanStart,
-                                            codeStart + spanEnd,
-                                            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                                        )
-                                    } catch (e: Exception) {
-                                        // Ignore individual span application errors
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    // Continue with next match if this one fails
-                    Timber.w(e, "Failed to highlight single code block")
-                    continue
-                }
-            }
-            
-            // Update TextView with highlighted text
-            textView.text = spannable
-            
-        } catch (e: Exception) {
-            Timber.e(e, "Error applying syntax highlighting: ${e.message}")
-        }
-    }
-    
-    /**
-     * Fallback rendering method for when Markwon fails
-     * Provides basic text formatting using SpannableStringBuilder
-     */
-    private fun getFallbackRendering(content: String, context: Context): CharSequence {
-        return try {
-            val spannable = SpannableStringBuilder(content)
-            
-            // Apply basic formatting patterns
-            
-            // Bold text (**text** or __text__)
-            val boldPattern = Pattern.compile("\\*\\*(.*?)\\*\\*|__(.*?)__")
-            var matcher = boldPattern.matcher(content)
-            var adjustment = 0
-            while (matcher.find()) {
-                val start = matcher.start() - adjustment
-                val end = matcher.end() - adjustment
-                val text = matcher.group(1) ?: matcher.group(2) ?: ""
-                
-                if (start >= 0 && end <= spannable.length && start < end) {
-                    spannable.replace(start, end, text)
-                    spannable.setSpan(
-                        StyleSpan(Typeface.BOLD),
-                        start,
-                        start + text.length,
-                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                    )
-                    adjustment += (matcher.group(0)?.length ?: 0) - text.length
-                }
-            }
-            
-            // Italic text (*text* or _text_)
-            val italicPattern = Pattern.compile("\\*(.*?)\\*|_(.*?)_")
-            matcher = italicPattern.matcher(spannable.toString())
-            adjustment = 0
-            while (matcher.find()) {
-                val start = matcher.start() - adjustment
-                val end = matcher.end() - adjustment
-                val text = matcher.group(1) ?: matcher.group(2) ?: ""
-                
-                if (start >= 0 && end <= spannable.length && start < end) {
-                    spannable.replace(start, end, text)
-                    spannable.setSpan(
-                        StyleSpan(Typeface.ITALIC),
-                        start,
-                        start + text.length,
-                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                    )
-                    adjustment += (matcher.group(0)?.length ?: 0) - text.length
-                }
-            }
-            
-            // Code spans (`code`)
-            val codePattern = Pattern.compile("`([^`]+)`")
-            matcher = codePattern.matcher(spannable.toString())
-            adjustment = 0
-            while (matcher.find()) {
-                val start = matcher.start() - adjustment
-                val end = matcher.end() - adjustment
-                val text = matcher.group(1) ?: ""
-                
-                if (start >= 0 && end <= spannable.length && start < end) {
-                    spannable.replace(start, end, text)
-                    spannable.setSpan(
-                        TypefaceSpan("monospace"),
-                        start,
-                        start + text.length,
-                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                    )
-                    spannable.setSpan(
-                        BackgroundColorSpan(ContextCompat.getColor(context, R.color.code_background)),
-                        start,
-                        start + text.length,
-                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                    )
-                    adjustment += (matcher.group(0)?.length ?: 0) - text.length
-                }
-            }
-            
-            spannable
-            
-        } catch (e: Exception) {
-            Timber.w(e, "Even fallback rendering failed, using plain text")
-            // Ultimate fallback - just return the original content as-is
-            content
-        }
-    }
-    
-    /**
-     * Cleanup resources
+     * Cleanup resources and cancel any ongoing operations.
      */
     fun cleanup() {
-        executor.shutdown()
+        processingScope.cancel()
         clearCache()
+        containerStates.clear() // Prevent memory leaks from container references
+        lifecycle?.removeObserver(this)
+        Timber.d("UnifiedMarkdownProcessor cleaned up")
     }
 }
