@@ -188,6 +188,12 @@ class UserStateManager private constructor(private val context: Context) {
                 if (response.isSuccessful) {
                     val serverState = response.body()
                     if (serverState != null) {
+                        // NEW: Server now returns available credits directly!
+                        val availableToday = when (type) {
+                            CreditManager.CreditType.CHAT -> serverState.availableChatCredits ?: (15 - serverState.creditsConsumedTodayChat)
+                            CreditManager.CreditType.IMAGE_GENERATION -> serverState.availableImageCredits ?: (20 - serverState.creditsConsumedTodayImage)
+                        }
+                        
                         val consumedToday = when (type) {
                             CreditManager.CreditType.CHAT -> serverState.creditsConsumedTodayChat
                             CreditManager.CreditType.IMAGE_GENERATION -> serverState.creditsConsumedTodayImage
@@ -198,11 +204,13 @@ class UserStateManager private constructor(private val context: Context) {
                             CreditManager.CreditType.IMAGE_GENERATION -> 30 // 20 base + 10 from ads
                         }
                         
+                        Timber.d("✅ Server credit check: type=$type, available=$availableToday, consumed=$consumedToday, limit=$dailyLimit")
+                        
                         return@withContext DailyLimitResult(
-                            withinLimits = consumedToday < dailyLimit,
+                            withinLimits = availableToday > 0,
                             consumed = consumedToday,
                             limit = dailyLimit,
-                            remaining = maxOf(0, dailyLimit - consumedToday)
+                            remaining = availableToday
                         )
                     }
                 }
@@ -213,6 +221,108 @@ class UserStateManager private constructor(private val context: Context) {
             } catch (e: Exception) {
                 Timber.e(e, "❌ Failed to check daily limits from server")
                 getLocalDailyLimits(type)
+            }
+        }
+    }
+    
+    /**
+     * NEW: Consume credits using the new server endpoint
+     */
+    suspend fun consumeCreditsOnServer(type: CreditManager.CreditType, amount: Int): ConsumeResult {
+        return withContext(Dispatchers.IO) {
+            try {
+                val fingerprint = DeviceFingerprinter.getDeviceFingerprint(context)
+                val creditType = when (type) {
+                    CreditManager.CreditType.CHAT -> "chat"
+                    CreditManager.CreditType.IMAGE_GENERATION -> "image"
+                }
+                
+                val request = ConsumeCreditsRequest(
+                    creditType = creditType,
+                    amount = amount,
+                    fingerprint = fingerprint
+                )
+                
+                val response = userStateApi.consumeCredits(deviceId, request).execute()
+                
+                if (response.isSuccessful) {
+                    val result = response.body()
+                    if (result != null && result.success) {
+                        Timber.d("✅ Server credit consumption successful: ${result.message}")
+                        return@withContext ConsumeResult(
+                            success = true,
+                            availableAfter = result.data?.availableCredits ?: 0,
+                            message = result.message
+                        )
+                    }
+                }
+                
+                Timber.w("⚠️ Server credit consumption failed: ${response.code()} ${response.message()}")
+                return@withContext ConsumeResult(
+                    success = false,
+                    availableAfter = 0,
+                    message = "Server consumption failed: ${response.message()}"
+                )
+                
+            } catch (e: Exception) {
+                Timber.e(e, "❌ Failed to consume credits on server")
+                return@withContext ConsumeResult(
+                    success = false,
+                    availableAfter = 0,
+                    message = "Network error: ${e.message}"
+                )
+            }
+        }
+    }
+    
+    /**
+     * NEW: Add ad credits using the new server endpoint
+     */
+    suspend fun addAdCreditsOnServer(type: CreditManager.CreditType): AddAdCreditsResult {
+        return withContext(Dispatchers.IO) {
+            try {
+                val fingerprint = DeviceFingerprinter.getDeviceFingerprint(context)
+                val creditType = when (type) {
+                    CreditManager.CreditType.CHAT -> "chat"
+                    CreditManager.CreditType.IMAGE_GENERATION -> "image"
+                }
+                
+                val request = AddAdCreditsRequest(
+                    creditType = creditType,
+                    fingerprint = fingerprint
+                )
+                
+                val response = userStateApi.addAdCredits(deviceId, request).execute()
+                
+                if (response.isSuccessful) {
+                    val result = response.body()
+                    if (result != null && result.success) {
+                        Timber.d("✅ Server ad credit added successfully: ${result.message}")
+                        return@withContext AddAdCreditsResult(
+                            success = true,
+                            adCreditsToday = result.data?.adCreditsToday ?: 0,
+                            canWatchMore = result.data?.canWatchMore ?: false,
+                            message = result.message
+                        )
+                    }
+                }
+                
+                Timber.w("⚠️ Server ad credit addition failed: ${response.code()} ${response.message()}")
+                return@withContext AddAdCreditsResult(
+                    success = false,
+                    adCreditsToday = 0,
+                    canWatchMore = false,
+                    message = "Server ad credit failed: ${response.message()}"
+                )
+                
+            } catch (e: Exception) {
+                Timber.e(e, "❌ Failed to add ad credits on server")
+                return@withContext AddAdCreditsResult(
+                    success = false,
+                    adCreditsToday = 0,
+                    canWatchMore = false,
+                    message = "Network error: ${e.message}"
+                )
             }
         }
     }
@@ -459,6 +569,13 @@ interface UserStateApi {
     
     @POST("user-state/{deviceId}/reset")
     fun resetUserState(@Path("deviceId") deviceId: String): Call<ApiResponse>
+    
+    // NEW: Dedicated endpoints for credit operations
+    @POST("user-state/{deviceId}/consume-credits")
+    fun consumeCredits(@Path("deviceId") deviceId: String, @Body request: ConsumeCreditsRequest): Call<ConsumeCreditsResponse>
+    
+    @POST("user-state/{deviceId}/add-ad-credits")
+    fun addAdCredits(@Path("deviceId") deviceId: String, @Body request: AddAdCreditsRequest): Call<AddAdCreditsResponse>
 }
 
 /**
@@ -470,6 +587,13 @@ data class UserState(
     val deviceFingerprint: String,
     val creditsConsumedTodayChat: Int,
     val creditsConsumedTodayImage: Int,
+    // NEW: Available credits (what the client needs)
+    val availableChatCredits: Int? = null,
+    val availableImageCredits: Int? = null,
+    // NEW: Ad credits earned today
+    val adCreditsEarnedChat: Int? = null,
+    val adCreditsEarnedImage: Int? = null,
+    val canEarnMoreAdCredits: Boolean? = null,
     val hasActiveSubscription: Boolean,
     val subscriptionType: String? = null,
     val subscriptionEndTime: Long = 0L,
@@ -498,4 +622,64 @@ data class DailyLimitResult(
     val consumed: Int,
     val limit: Int,
     val remaining: Int
+)
+
+// NEW: Data classes for new API endpoints
+
+@JsonClass(generateAdapter = true)
+data class ConsumeCreditsRequest(
+    val creditType: String,    // "chat" or "image"
+    val amount: Int,
+    val fingerprint: String
+)
+
+@JsonClass(generateAdapter = true)
+data class ConsumeCreditsResponse(
+    val success: Boolean,
+    val message: String,
+    val data: ConsumeCreditsData? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class ConsumeCreditsData(
+    val creditType: String,
+    val amountConsumed: Int,
+    val totalConsumedToday: Int,
+    val availableCredits: Int,
+    val dailyLimit: Int
+)
+
+@JsonClass(generateAdapter = true)
+data class AddAdCreditsRequest(
+    val creditType: String,    // "chat" or "image"
+    val fingerprint: String
+)
+
+@JsonClass(generateAdapter = true)
+data class AddAdCreditsResponse(
+    val success: Boolean,
+    val message: String,
+    val data: AddAdCreditsData? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class AddAdCreditsData(
+    val creditType: String,
+    val adCreditsToday: Int,
+    val maxAdCredits: Int,
+    val canWatchMore: Boolean
+)
+
+// Result classes for the new methods
+data class ConsumeResult(
+    val success: Boolean,
+    val availableAfter: Int,
+    val message: String
+)
+
+data class AddAdCreditsResult(
+    val success: Boolean,
+    val adCreditsToday: Int,
+    val canWatchMore: Boolean,
+    val message: String
 )

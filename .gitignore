@@ -24,3 +24,7 @@ uploads/
 
 # Common
 .DS_Store
+*.apk
+app/debug/
+app/release/
+app/build/

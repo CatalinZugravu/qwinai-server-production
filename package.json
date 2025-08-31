@@ -23,7 +23,8 @@
     "tiktoken": "^1.0.7",
     "node-cron": "^3.0.2",
     "adm-zip": "^0.5.10",
-    "xml2js": "^0.4.23"
+    "xml2js": "^0.4.23",
+    "express-validator": "^7.0.1"
   },
   "devDependencies": {
     "nodemon": "^2.0.22"
