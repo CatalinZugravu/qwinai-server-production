@@ -291,12 +291,16 @@ class FileUploadBottomSheet : BottomSheetDialogFragment() {
             putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
             addCategory(Intent.CATEGORY_OPENABLE)
             
-            // Only allow supported file formats: PDF, CSV, TXT, and images
+            // Allow all supported file formats: PDF, DOCX, XLSX, PPTX, CSV, TXT, and images
             val mimeTypes = arrayOf(
                 "image/*",
                 "application/pdf",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // DOCX
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",      // XLSX
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation", // PPTX
                 "text/plain",
-                "text/csv"
+                "text/csv",
+                "application/rtf" // RTF support
             )
             putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes)
         }

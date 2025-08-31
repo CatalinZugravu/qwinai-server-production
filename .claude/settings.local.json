@@ -41,7 +41,8 @@
       "Bash(adb logcat:*)",
       "Bash(git push:*)",
       "Bash(git remote add:*)",
-      "Bash(git pull:*)"
+      "Bash(git pull:*)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits",

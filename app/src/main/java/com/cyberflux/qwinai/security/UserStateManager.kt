@@ -182,7 +182,8 @@ class UserStateManager private constructor(private val context: Context) {
         return withContext(Dispatchers.IO) {
             try {
                 // Get server data
-                val response = userStateApi.getUserState(deviceId).execute()
+                val fingerprint = DeviceFingerprinter.getDeviceFingerprint(context)
+                val response = userStateApi.getUserState(deviceId, fingerprint).execute()
                 
                 if (response.isSuccessful) {
                     val serverState = response.body()
@@ -451,7 +452,7 @@ class UserStateManager private constructor(private val context: Context) {
  */
 interface UserStateApi {
     @GET("user-state/{deviceId}")
-    fun getUserState(@Path("deviceId") deviceId: String): Call<UserState>
+    fun getUserState(@Path("deviceId") deviceId: String, @Query("fingerprint") fingerprint: String? = null): Call<UserState>
     
     @PUT("user-state/{deviceId}")
     fun updateUserState(@Path("deviceId") deviceId: String, @Body userState: UserState): Call<ApiResponse>

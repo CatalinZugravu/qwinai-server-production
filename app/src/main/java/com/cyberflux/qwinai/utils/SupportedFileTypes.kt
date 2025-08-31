@@ -6,31 +6,33 @@ package com.cyberflux.qwinai.utils
  */
 object SupportedFileTypes {
 
-    // Document MIME types that can be processed safely
+    // Document MIME types that can be processed safely with server-side processing
     val SUPPORTED_DOCUMENT_TYPES = arrayOf(
-        // PDF - sent directly to AI models that support them (no extraction)
+        // PDF - processed by server or sent directly to AI models
         "application/pdf",
+        
+        // Microsoft Office formats - processed by server
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // DOCX
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",      // XLSX  
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation", // PPTX
         
         // Text formats - content extracted and sent as text
         "text/plain",
-        "text/csv"
+        "text/csv",
+        "application/rtf" // RTF now supported by server
         
-        // Note: Only PDF, TXT, and CSV are supported for optimal stability
-        // Office formats removed to prevent crashes and processing issues
+        // Note: Server-side processing enables reliable Office document support
     )
 
-    // Office formats that are NOT supported (for user guidance)
+    // Office formats that are NOT supported (legacy formats only)
     val UNSUPPORTED_OFFICE_TYPES = arrayOf(
-        "application/msword",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/vnd.ms-excel", 
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "application/vnd.ms-powerpoint",
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        "application/vnd.oasis.opendocument.text",
-        "application/vnd.oasis.opendocument.spreadsheet", 
-        "application/vnd.oasis.opendocument.presentation",
-        "text/rtf"
+        "application/msword", // Legacy .doc format
+        "application/vnd.ms-excel", // Legacy .xls format
+        "application/vnd.ms-powerpoint", // Legacy .ppt format
+        "application/vnd.oasis.opendocument.text", // OpenDocument text
+        "application/vnd.oasis.opendocument.spreadsheet", // OpenDocument spreadsheet
+        "application/vnd.oasis.opendocument.presentation" // OpenDocument presentation
+        // Note: Modern Office formats (DOCX, XLSX, PPTX, RTF) are now supported via server processing
     )
 
     // Image MIME types
@@ -93,20 +95,23 @@ object SupportedFileTypes {
      */
     fun getSupportedDocumentFormatsDescription(): String {
         return """
-            📄 SUPPORTED FORMATS:
+            📄 SUPPORTED FORMATS (with server processing):
+            • Microsoft Word (.docx) - processed by server
+            • Microsoft Excel (.xlsx) - processed by server
+            • Microsoft PowerPoint (.pptx) - processed by server
+            • PDF files (.pdf) - processed by server or sent directly to AI
             • Text files (.txt) - content extracted and processed
-            • CSV files (.csv) - content extracted and processed  
-            • PDF files (.pdf) - sent directly to AI models (no extraction needed)
+            • CSV files (.csv) - content extracted and processed
+            • RTF files (.rtf) - processed by server
 
             ⚠️ UNSUPPORTED FORMATS:
-            • Microsoft Office (.doc, .docx, .xls, .xlsx, .ppt, .pptx)
-            • OpenDocument (.odt, .ods, .odp)  
-            • RTF files (.rtf)
+            • Legacy Office formats (.doc, .xls, .ppt) - please convert to newer formats
+            • OpenDocument (.odt, .ods, .odp) - please convert to Office or PDF formats
             • All other document formats
 
-            💡 ALTERNATIVES FOR UNSUPPORTED FILES:
-            • Convert Office files to PDF or TXT format
-            • Use AI models with native Office document support
+            💡 FOR UNSUPPORTED FILES:
+            • Convert legacy Office files to .docx, .xlsx, .pptx formats
+            • Convert OpenDocument files to Office or PDF formats
             • Copy/paste content directly into the chat
         """.trimIndent()
     }
@@ -116,18 +121,16 @@ object SupportedFileTypes {
      */
     fun getAlternativesForUnsupportedType(mimeType: String): String {
         return when {
-            mimeType.contains("word") -> 
-                "💡 Word Document: Convert to PDF or export as plain text (.txt)"
-            mimeType.contains("excel") || mimeType.contains("spreadsheet") ->
-                "💡 Excel/Spreadsheet: Export as CSV format or convert to PDF"
-            mimeType.contains("powerpoint") || mimeType.contains("presentation") ->
-                "💡 PowerPoint: Export as PDF or save slides as images"
+            mimeType.contains("msword") && !mimeType.contains("openxml") -> 
+                "💡 Legacy Word Document (.doc): Please convert to .docx format"
+            mimeType.contains("ms-excel") -> 
+                "💡 Legacy Excel Document (.xls): Please convert to .xlsx format"
+            mimeType.contains("ms-powerpoint") ->
+                "💡 Legacy PowerPoint (.ppt): Please convert to .pptx format"
             mimeType.contains("oasis") ->
-                "💡 OpenDocument: Convert to PDF or export as plain text"
-            mimeType.contains("rtf") ->
-                "💡 RTF Document: Save as plain text (.txt) format"
+                "💡 OpenDocument: Convert to Office format (.docx, .xlsx, .pptx) or PDF"
             else ->
-                "💡 Try converting to PDF, TXT, or CSV format for best compatibility"
+                "💡 Try converting to supported formats: .docx, .xlsx, .pptx, .pdf, .txt, .csv, .rtf"
         }
     }
 
