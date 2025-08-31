@@ -66,7 +66,7 @@ import java.util.UUID
 
 class FileHandler(private val activity: MainActivity) {
     private val animator = FileSendAnimator(activity)
-    private val fileProcessor = OptimizedFileProcessor(activity)
+    private val unifiedFileHandler = UnifiedFileHandler(activity)
     private val tokenManager = SimplifiedTokenManager(activity)
 
     fun openFilePicker(filePickerLauncher: ActivityResultLauncher<Intent>) {
@@ -224,14 +224,14 @@ class FileHandler(private val activity: MainActivity) {
     }
 
     /**
-     * NEW: Process file using OptimizedFileProcessor with token counting integration
+     * NEW: Process file using UnifiedFileHandler with server-side processing
      */
     suspend fun processFileOptimized(
         uri: Uri,
         tracker: FileProgressTracker? = null
-    ): Result<OptimizedFileProcessor.ProcessedFileResult> {
+    ): Result<UnifiedFileHandler.ProcessedFileResult> {
         val currentModelId = ModelManager.selectedModel.id
-        return fileProcessor.processFile(uri, currentModelId, tracker)
+        return unifiedFileHandler.processFileForModel(uri, currentModelId, tracker)
     }
 
     /**
@@ -526,9 +526,13 @@ class FileHandler(private val activity: MainActivity) {
 
                 if (result.isSuccess) {
                     val processedFile = result.getOrNull()!!
-                    val extractedContent = processedFile.extractedContent ?: "PDF processed directly by AI model"
+                    val extractedContent = when (processedFile.contentItem.type) {
+                        "text" -> processedFile.contentItem.text ?: "Document processed by server"
+                        "file" -> "Document processed directly by AI model"
+                        else -> "Document processed by server"
+                    }
                         
-                        Timber.d("✅ Document processing SUCCESS: ${processedFile.getSummary()}")
+                        Timber.d("✅ Document processing SUCCESS: ${processedFile.fileType} file processed")
 
                         withContext(Dispatchers.Main) {
                             // Progress is handled by processor
@@ -536,26 +540,28 @@ class FileHandler(private val activity: MainActivity) {
                             // Use the URI string consistently for the extractedContentId
                             val uriString = uri.toString()
 
-                            // Cache the processed content if it's extracted content (not PDF)
-                            if (processedFile.extractedContent != null) {
+                            // Cache the processed content if it's text content
+                            if (processedFile.contentItem.type == "text" && processedFile.contentItem.text != null) {
+                                val fileName = FileUtil.getFileName(activity, uri) ?: "document"
+                                val fileSize = FileUtil.getFileSize(activity, uri)
                                 val contentForCache = SimplifiedDocumentExtractor.ExtractedContent(
-                                    fileName = processedFile.fileName,
+                                    fileName = fileName,
                                     mimeType = mimeType,
-                                    fileSize = processedFile.fileSize,
-                                    textContent = processedFile.extractedContent,
+                                    fileSize = fileSize,
+                                    textContent = processedFile.contentItem.text!!,
                                     containsImages = false,
-                                    tokenCount = processedFile.tokenCount,
+                                    tokenCount = extractedContent.length / 4, // Rough token estimate
                                     pageCount = 1
                                 )
                                 SimplifiedDocumentExtractor.cacheContent(uriString, contentForCache)
                             }
                             
-                            // Update file status with token information
+                            // Update file status with processing information
                             val updatedFile = tempFile.copy(
                                 isExtracting = false,
                                 isExtracted = true,
                                 extractedContentId = uriString,
-                                processingInfo = "✅ ${processedFile.processingMessage} • ${processedFile.tokenCount} tokens"
+                                processingInfo = "✅ Document processed by server"
                             )
 
                             // Replace in selected files list
@@ -574,7 +580,7 @@ class FileHandler(private val activity: MainActivity) {
                             // Provide feedback with token count
                             Toast.makeText(
                                 activity,
-                                "📄 ${processedFile.fileName} ready • ${processedFile.tokenCount} tokens",
+                                "📄 Document ready • processed by server",
                                 Toast.LENGTH_SHORT
                             ).show()
                         }
@@ -1325,19 +1331,19 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
                                         isExtracted = true,
                                         extractedContentId = uriString,
                                         // Store token count and processing info
-                                        processingInfo = "✅ ${processedFile.processingMessage} • ${processedFile.tokenCount} tokens"
+                                        processingInfo = "✅ Document processed by server"
                                     )
 
                                     // Cache the processed content if it's extracted content (not PDF)
-                                    if (processedFile.extractedContent != null) {
+                                    if (processedFile.contentItem.type == "text" && processedFile.contentItem.text != null) {
                                         // For compatibility with existing system, create a simplified content object
                                         val contentForCache = SimplifiedDocumentExtractor.ExtractedContent(
-                                            fileName = processedFile.fileName,
+                                            fileName = FileUtil.getFileName(activity, uri) ?: "document",
                                             mimeType = activity.contentResolver.getType(uri) ?: "",
-                                            fileSize = processedFile.fileSize,
-                                            textContent = processedFile.extractedContent,
+                                            fileSize = FileUtil.getFileSize(activity, uri),
+                                            textContent = processedFile.contentItem.text ?: "Document processed by server",
                                             containsImages = false,
-                                            tokenCount = processedFile.tokenCount,
+                                            tokenCount = (processedFile.contentItem.text?.length ?: 0) / 4,
                                             pageCount = 1
                                         )
                                         SimplifiedDocumentExtractor.cacheContent(uriString, contentForCache)
@@ -1355,7 +1361,7 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
                                     // Update submit button state now that processing is complete
                                     activity.updateButtonVisibilityAndState()
                                     
-                                    Timber.d("✅ Document processing completed: ${processedFile.getSummary()}")
+                                    Timber.d("✅ Document processing completed: ${processedFile.fileType} file")
 
                                     // Hide progress after a short delay
                                     Handler(Looper.getMainLooper()).postDelayed({
@@ -1365,7 +1371,7 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
                                     // Show success message with token count
                                     Toast.makeText(
                                         activity, 
-                                        "📄 ${processedFile.fileName} ready • ${processedFile.tokenCount} tokens",
+                                        "📄 Document ready • processed by server",
                                         Toast.LENGTH_SHORT
                                     ).show()
                                 }
@@ -1443,14 +1449,14 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
                                 val uriString = uri.toString()
 
                                 // Cache the processed content if it's extracted content (not PDF)
-                                if (processedFile.extractedContent != null) {
+                                if (processedFile.contentItem.type == "text" && processedFile.contentItem.text != null) {
                                     val contentForCache = SimplifiedDocumentExtractor.ExtractedContent(
-                                        fileName = processedFile.fileName,
+                                        fileName = FileUtil.getFileName(activity, uri) ?: "document",
                                         mimeType = activity.contentResolver.getType(uri) ?: "",
-                                        fileSize = processedFile.fileSize,
-                                        textContent = processedFile.extractedContent,
+                                        fileSize = FileUtil.getFileSize(activity, uri),
+                                        textContent = processedFile.contentItem.text ?: "Document processed by server",
                                         containsImages = false,
-                                        tokenCount = processedFile.tokenCount,
+                                        tokenCount = (processedFile.contentItem.text?.length ?: 0) / 4,
                                         pageCount = 1
                                     )
                                     SimplifiedDocumentExtractor.cacheContent(uriString, contentForCache)
@@ -1463,7 +1469,7 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
                                         isExtracting = false,
                                         isExtracted = true,
                                         extractedContentId = uriString,
-                                        processingInfo = "✅ ${processedFile.processingMessage} • ${processedFile.tokenCount} tokens"
+                                        processingInfo = "✅ Document processed by server"
                                     )
 
                                     // Replace in selected files list
@@ -1478,7 +1484,7 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
                                 }
 
                                 // Log success
-                                Timber.d("✅ Background processing complete: ${processedFile.getSummary()}")
+                                Timber.d("✅ Background processing complete: ${processedFile.fileType} file")
                             } else {
                                 val error = result.exceptionOrNull()
                                 Timber.e("❌ Background processing failed: ${error?.message}")
@@ -3039,14 +3045,19 @@ private fun processDocumentWithExtractor(uri: Uri, fileName: String, mimeType: S
             .setMessage("""
                 📄 File: $fileName
                 
-                This file type cannot be processed directly due to compatibility issues with Android.
+                This file type cannot be processed with server-side processing.
                 
                 $alternatives
                 
-                📋 FULLY SUPPORTED FORMATS:
+                📋 FULLY SUPPORTED FORMATS (with server processing):
+                • Microsoft Word (.docx)
+                • Microsoft Excel (.xlsx) 
+                • Microsoft PowerPoint (.pptx)
+                • PDF files (.pdf)
                 • Text files (.txt)
                 • CSV files (.csv)
-                • PDF files (with compatible AI models)
+                • RTF files (.rtf)
+                • All image formats
                 
                 For the best experience, please convert your file to one of these formats.
             """.trimIndent())

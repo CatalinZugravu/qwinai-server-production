@@ -53,14 +53,16 @@ class UnifiedFileHandler(private val context: Context) {
                 )
             }
 
-            // Determine file type for processing
+            // Determine file type for processing - expanded with server-side support
             val isImage = mimeType.startsWith("image/")
             val isDocument = listOf(
                 "application/pdf",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // DOCX
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",      // XLSX
                 "application/vnd.openxmlformats-officedocument.presentationml.presentation", // PPTX
-                "text/plain"  // TXT
+                "text/plain",  // TXT
+                "text/csv",    // CSV
+                "application/rtf" // RTF
             ).contains(mimeType)
 
             when {
@@ -186,7 +188,7 @@ class UnifiedFileHandler(private val context: Context) {
                     return@withContext Result.failure(
                         UnsupportedOperationException(
                             "File type '$mimeType' not supported. " +
-                            "Supported: Images (JPG, PNG, WebP, GIF), Documents (PDF, DOCX, XLSX, PPTX, TXT)"
+                            "Supported: Images (JPG, PNG, WebP, GIF), Documents (PDF, DOCX, XLSX, PPTX, TXT, CSV, RTF)"
                         )
                     )
                 }

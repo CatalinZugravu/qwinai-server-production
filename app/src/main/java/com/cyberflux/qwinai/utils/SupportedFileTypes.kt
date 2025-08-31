@@ -66,9 +66,10 @@ object SupportedFileTypes {
 
     /**
      * Check if PDF is supported for the current AI model
+     * With server-side processing, all models support all file types
      */
     fun isPdfSupportedForModel(modelId: String?): Boolean {
-        return modelId?.let { ModelValidator.supportsPdfDirectly(it) } ?: false
+        return true // Server-side processing supports all file types for all models
     }
 
     /**
