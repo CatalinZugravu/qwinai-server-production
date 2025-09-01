@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_container"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:background="@drawable/modern_card_background">
+
+    <!-- Widget Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingBottom="12dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="DeepSeek Chat"
+            android:textColor="?android:textColorPrimary"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <ImageButton
+            android:id="@+id/widget_btn_refresh"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:background="@drawable/circular_button_background"
+            android:src="@drawable/ic_reload"
+            android:contentDescription="Refresh"
+            android:scaleType="centerInside" />
+
+    </LinearLayout>
+
+    <!-- Quick Action Buttons -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="12dp">
+
+        <Button
+            android:id="@+id/widget_btn_new_chat"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="4dp"
+            android:background="@drawable/modern_button_background"
+            android:text="New Chat"
+            android:textColor="?android:textColorPrimary"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/widget_btn_voice_chat"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp"
+            android:background="@drawable/modern_button_background"
+            android:text="Voice"
+            android:textColor="?android:textColorPrimary"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/widget_btn_image_chat"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:background="@drawable/modern_button_background"
+            android:text="Image"
+            android:textColor="?android:textColorPrimary"
+            android:textSize="12sp" />
+
+    </LinearLayout>
+
+    <!-- Recent Chats -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Recent Chats"
+        android:textColor="?android:textColorSecondary"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:paddingBottom="8dp" />
+
+    <TextView
+        android:id="@+id/widget_recent_chat_1"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="No recent chats"
+        android:textColor="?android:textColorPrimary"
+        android:textSize="12sp"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:paddingVertical="4dp"
+        android:background="?android:selectableItemBackground" />
+
+    <TextView
+        android:id="@+id/widget_recent_chat_2"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textColor="?android:textColorPrimary"
+        android:textSize="12sp"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:paddingVertical="4dp"
+        android:background="?android:selectableItemBackground"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/widget_recent_chat_3"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textColor="?android:textColorPrimary"
+        android:textSize="12sp"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:paddingVertical="4dp"
+        android:background="?android:selectableItemBackground"
+        android:visibility="gone" />
+
+    <!-- Last Updated -->
+    <TextView
+        android:id="@+id/widget_last_updated"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Updated: --:--"
+        android:textColor="?android:textColorTertiary"
+        android:textSize="10sp"
+        android:gravity="center"
+        android:layout_marginTop="12dp" />
+
+</LinearLayout>

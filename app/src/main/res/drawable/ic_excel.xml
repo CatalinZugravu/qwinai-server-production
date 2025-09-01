@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- Document background with Excel green -->
+    <path
+        android:fillColor="#217346"
+        android:pathData="M14,2H6C4.9,2 4,2.9 4,4v16c0,1.1 0.9,2 2,2h12c1.1,0 2,-0.9 2,-2V8L14,2z"/>
+
+    <!-- Folded corner -->
+    <path
+        android:fillColor="#18563B"
+        android:pathData="M14,2v6h6L14,2z"/>
+
+    <!-- Excel "X" logo - optimized placement and proportions -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M8,11.5h2l2,2.5l2,-2.5h2l-3,3.5l3,3.5h-2l-2,-2.5l-2,2.5H8l3,-3.5L8,11.5z"/>
+</vector>

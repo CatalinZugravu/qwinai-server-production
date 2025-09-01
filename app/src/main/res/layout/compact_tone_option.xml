@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.cardview.widget.CardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/optionCard"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    app:cardCornerRadius="8dp"
+    app:cardElevation="1dp"
+    app:cardUseCompatPadding="true"
+    app:cardBackgroundColor="#F5F5F5"
+    android:foreground="?attr/selectableItemBackground">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="8dp">
+
+        <!-- Tone Name - Left aligned as requested -->
+        <TextView
+            android:id="@+id/tvOptionName"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:textColor="#212121"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:gravity="start"
+            android:layout_marginEnd="20dp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toStartOf="@id/selectionIndicator"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <!-- Tone Description - Added for more details -->
+        <TextView
+            android:id="@+id/tvOptionDescription"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:textColor="#757575"
+            android:textSize="11sp"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:layout_marginTop="2dp"
+            android:layout_marginEnd="20dp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toStartOf="@id/selectionIndicator"
+            app:layout_constraintTop_toBottomOf="@id/tvOptionName"
+            app:layout_constraintBottom_toBottomOf="parent" />
+
+        <!-- Selection Indicator (Circle) -->
+        <View
+            android:id="@+id/selectionIndicator"
+            android:layout_width="12dp"
+            android:layout_height="12dp"
+            android:background="@drawable/selection_circle"
+            android:visibility="gone"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent" />
+
+        <!-- Hidden checkmark (for backward compatibility) -->
+        <ImageView
+            android:id="@+id/ivCheckmark"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:visibility="gone"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</androidx.cardview.widget.CardView>
