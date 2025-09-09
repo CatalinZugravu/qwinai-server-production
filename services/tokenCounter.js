@@ -30,7 +30,8 @@ class TokenCounter {
             console.log('✅ Token encoders initialized successfully');
         } catch (error) {
             console.error('❌ Failed to initialize token encoders:', error);
-            throw error;
+            // Use character-based estimation as fallback
+            this.fallbackEncoder = null;
         }
     }
 
