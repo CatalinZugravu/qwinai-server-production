@@ -1,7 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const crypto = require('crypto');
-const fs = require('fs');
+const fs = require('fs').promises; // Use promises API
 const path = require('path');
 
 // Import our services
@@ -17,13 +17,22 @@ const tokenCounter = new TokenCounter();
 const documentChunker = new DocumentChunker(tokenCounter);
 
 // Configure file upload with multer
+const storage = multer.diskStorage({
+    destination: 'uploads/',
+    filename: (req, file, cb) => {
+        // Generate unique filename to prevent conflicts
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+    }
+});
+
 const upload = multer({
-    dest: 'uploads/',
+    storage: storage,
     limits: { 
         fileSize: 50 * 1024 * 1024, // 50MB limit
         files: 1 // Only one file at a time
     },
-    fileFilter: (req, file, cb) => {
+    fileFilter: async (req, file, cb) => {
         console.log(`📤 File upload attempt: ${file.originalname} (${file.mimetype})`);
         
         // Check if file type is supported
@@ -36,9 +45,35 @@ const upload = multer({
     }
 });
 
+// Middleware to validate file content
+const validateFileContent = async (req, res, next) => {
+    if (!req.file) {
+        return next();
+    }
+    
+    try {
+        console.log(`🔍 Validating file content: ${req.file.originalname}`);
+        
+        // Read a sample of the file to check for binary content
+        const buffer = await fs.readFile(req.file.path, { start: 0, end: 4096 });
+        const binaryPercentage = fileExtractor.calculateBinaryPercentage(buffer);
+        
+        if (binaryPercentage > fileExtractor.BINARY_THRESHOLD) {
+            throw new Error(`File appears to contain binary data (${(binaryPercentage * 100).toFixed(1)}% binary content detected). Please upload a text-based file.`);
+        }
+        
+        next();
+    } catch (error) {
+        // Clean up the uploaded file
+        await fs.unlink(req.file.path).catch(console.error);
+        next(error);
+    }
+};
+
 // Main file processing endpoint
-router.post('/process', upload.single('file'), async (req, res) => {
+router.post('/process', upload.single('file'), validateFileContent, async (req, res) => {
     const startTime = Date.now();
+    let fileCleanupRequired = true;
     
     try {
         const { file } = req;
@@ -56,9 +91,10 @@ router.post('/process', upload.single('file'), async (req, res) => {
         console.log(`   🤖 Target model: ${model}`);
         console.log(`   ✂️ Max tokens per chunk: ${maxTokensPerChunk}`);
 
-        // Generate file hash for caching
+        // Generate file hash without reading the entire file synchronously
+        const fileBuffer = await fs.readFile(file.path);
         const fileHash = crypto.createHash('md5')
-            .update(fs.readFileSync(file.path))
+            .update(fileBuffer)
             .digest('hex');
 
         // Check cache first (if Redis is available)
@@ -71,7 +107,8 @@ router.post('/process', upload.single('file'), async (req, res) => {
                     console.log(`💨 Cache hit for file: ${file.originalname}`);
                     
                     // Clean up uploaded file
-                    fs.unlinkSync(file.path);
+                    await fs.unlink(file.path);
+                    fileCleanupRequired = false;
                     
                     return res.json({
                         ...JSON.parse(cached),
@@ -222,9 +259,9 @@ router.post('/process', upload.single('file'), async (req, res) => {
         });
     } finally {
         // Always clean up uploaded file
-        if (req.file && fs.existsSync(req.file.path)) {
+        if (fileCleanupRequired && req.file && await fileExists(req.file.path)) {
             try {
-                fs.unlinkSync(req.file.path);
+                await fs.unlink(req.file.path);
                 console.log(`🗑️ Cleaned up temp file: ${req.file.filename}`);
             } catch (cleanupError) {
                 console.warn('⚠️ Failed to clean up temp file:', cleanupError.message);
@@ -232,6 +269,16 @@ router.post('/process', upload.single('file'), async (req, res) => {
         }
     }
 });
+
+// Utility function to check if file exists
+async function fileExists(filePath) {
+    try {
+        await fs.access(filePath);
+        return true;
+    } catch {
+        return false;
+    }
+}
 
 // Get optimal chunks for specific model
 router.post('/optimize-chunks', async (req, res) => {
