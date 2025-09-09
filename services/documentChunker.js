@@ -72,7 +72,7 @@ class DocumentChunker {
             chunks.push(this.createChunk(currentChunk, currentTokens, chunkIndex));
         }
 
-        console.log(`✅ Document chunked into ${chunks.size} pieces`);
+        console.log(`✅ Document chunked into ${chunks.length} pieces`);
         console.log(`📊 Chunk sizes: ${chunks.map(c => c.tokenCount).join(', ')} tokens`);
         
         return chunks;
@@ -339,7 +339,9 @@ class DocumentChunker {
                 totalTokens: 0,
                 averageTokens: 0,
                 minTokens: 0,
-                maxTokens: 0
+                maxTokens: 0,
+                totalCharacters: 0,
+                totalWords: 0
             };
         }
 
