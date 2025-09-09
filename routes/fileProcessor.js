@@ -16,6 +16,64 @@ const fileExtractor = new FileExtractor();
 const tokenCounter = new TokenCounter();
 const documentChunker = new DocumentChunker(tokenCounter);
 
+/**
+ * CRITICAL FIX: Proper MIME type detection based on file extension
+ * This fixes the issue where all files are incorrectly identified as text/plain
+ */
+function detectMimeType(filename, multerMimeType) {
+    // Extract extension and normalize it
+    const ext = path.extname(filename).toLowerCase().replace('.', '');
+    
+    console.log(`🔍 MIME Detection for: ${filename}`);
+    console.log(`   Extension: ${ext}`);
+    console.log(`   Multer reported: ${multerMimeType}`);
+    
+    // COMPREHENSIVE MIME TYPE MAPPING - PRIORITY ON FILE EXTENSION
+    const mimeTypeMap = {
+        // PDF
+        'pdf': 'application/pdf',
+        
+        // Microsoft Office formats - THESE ARE CRITICAL
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'doc': 'application/msword',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'xls': 'application/vnd.ms-excel',
+        'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'ppt': 'application/vnd.ms-powerpoint',
+        
+        // Text formats
+        'txt': 'text/plain',
+        'csv': 'text/csv',
+        'rtf': 'application/rtf',
+        'md': 'text/markdown',
+        
+        // OpenDocument formats
+        'odt': 'application/vnd.oasis.opendocument.text',
+        'ods': 'application/vnd.oasis.opendocument.spreadsheet',
+        'odp': 'application/vnd.oasis.opendocument.presentation'
+    };
+    
+    // ALWAYS USE EXTENSION-BASED DETECTION FIRST
+    if (ext && mimeTypeMap[ext]) {
+        const detectedMime = mimeTypeMap[ext];
+        console.log(`✅ MIME type detected from extension: ${detectedMime}`);
+        return detectedMime;
+    }
+    
+    // Only use multer MIME if it's specific and not generic
+    if (multerMimeType && 
+        multerMimeType !== 'application/octet-stream' && 
+        multerMimeType !== 'text/plain' && // Don't trust text/plain for Office files
+        Object.values(mimeTypeMap).includes(multerMimeType)) {
+        console.log(`✅ Using validated multer MIME: ${multerMimeType}`);
+        return multerMimeType;
+    }
+    
+    // Log warning for unknown extension
+    console.warn(`⚠️ Unknown file extension '${ext}', cannot determine MIME type`);
+    throw new Error(`Unsupported file type: .${ext}`);
+}
+
 // Configure file upload with multer
 const upload = multer({
     dest: 'uploads/',
@@ -24,14 +82,23 @@ const upload = multer({
         files: 1 // Only one file at a time
     },
     fileFilter: (req, file, cb) => {
-        console.log(`📤 File upload attempt: ${file.originalname} (${file.mimetype})`);
+        console.log(`📤 File upload attempt: ${file.originalname}`);
         
-        // Check if file type is supported
-        if (fileExtractor.isSupported(file.mimetype)) {
-            cb(null, true);
-        } else {
-            const supportedTypes = fileExtractor.getSupportedTypes().join(', ');
-            cb(new Error(`Unsupported file type: ${file.mimetype}. Supported types: ${supportedTypes}`), false);
+        try {
+            // Detect correct MIME type
+            const correctMimeType = detectMimeType(file.originalname, file.mimetype);
+            
+            // Check if the correctly detected MIME type is supported
+            if (fileExtractor.isSupported(correctMimeType)) {
+                // Store the correct MIME type for later use
+                file.correctedMimeType = correctMimeType;
+                cb(null, true);
+            } else {
+                const supportedTypes = fileExtractor.getSupportedTypes().join(', ');
+                cb(new Error(`Unsupported file type: ${correctMimeType}. Supported types: ${supportedTypes}`), false);
+            }
+        } catch (error) {
+            cb(error, false);
         }
     }
 });
@@ -39,6 +106,7 @@ const upload = multer({
 // Main file processing endpoint
 router.post('/process', upload.single('file'), async (req, res) => {
     const startTime = Date.now();
+    const processingId = crypto.randomUUID().substring(0, 8);
     
     try {
         const { file } = req;
@@ -51,8 +119,13 @@ router.post('/process', upload.single('file'), async (req, res) => {
             });
         }
 
-        console.log(`🚀 Processing file: ${file.originalname}`);
+        // CRITICAL: Use the corrected MIME type, not the multer-provided one
+        const correctMimeType = file.correctedMimeType || detectMimeType(file.originalname, file.mimetype);
+
+        console.log(`\n🚀 [${processingId}] Processing file: ${file.originalname}`);
         console.log(`   📊 Size: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+        console.log(`   🎯 Correct MIME type: ${correctMimeType}`);
+        console.log(`   ❌ Multer MIME (incorrect): ${file.mimetype}`);
         console.log(`   🤖 Target model: ${model}`);
         console.log(`   ✂️ Max tokens per chunk: ${maxTokensPerChunk}`);
 
@@ -68,7 +141,7 @@ router.post('/process', upload.single('file'), async (req, res) => {
                 const cached = await req.redis.get(cacheKey);
                 
                 if (cached) {
-                    console.log(`💨 Cache hit for file: ${file.originalname}`);
+                    console.log(`💨 [${processingId}] Cache hit for file: ${file.originalname}`);
                     
                     // Clean up uploaded file
                     fs.unlinkSync(file.path);
@@ -80,32 +153,38 @@ router.post('/process', upload.single('file'), async (req, res) => {
                     });
                 }
             } catch (cacheError) {
-                console.warn('⚠️ Cache check failed:', cacheError.message);
+                console.warn(`⚠️ [${processingId}] Cache check failed:`, cacheError.message);
             }
         }
 
-        // Step 1: Extract content from file
-        console.log(`📄 Step 1: Extracting content from ${file.mimetype} file...`);
-        const extractedContent = await fileExtractor.extractContent(file.path, file.mimetype);
+        // Step 1: Extract content from file WITH CORRECT MIME TYPE
+        console.log(`📄 [${processingId}] Step 1: Extracting content from ${correctMimeType} file...`);
+        const extractedContent = await fileExtractor.extractContent(file.path, correctMimeType);
+        
+        // Check for extraction errors
+        if (extractedContent.metadata?.extractionError) {
+            console.error(`❌ [${processingId}] Extraction failed:`, extractedContent.text);
+            throw new Error(extractedContent.metadata.errorMessage || 'Content extraction failed');
+        }
         
         if (!extractedContent.text || extractedContent.text.trim().length === 0) {
             throw new Error('No extractable text content found in file');
         }
 
-        console.log(`✅ Content extracted: ${extractedContent.text.length} characters, ${extractedContent.pageCount} pages`);
+        console.log(`✅ [${processingId}] Content extracted: ${extractedContent.text.length} characters, ${extractedContent.pageCount} pages`);
 
         // Step 2: Analyze tokens
-        console.log(`🧮 Step 2: Analyzing tokens for model ${model}...`);
+        console.log(`🧮 [${processingId}] Step 2: Analyzing tokens for model ${model}...`);
         const tokenAnalysis = tokenCounter.analyzeText(extractedContent.text, model);
         
-        console.log(`📊 Token analysis:`);
+        console.log(`📊 [${processingId}] Token analysis:`);
         console.log(`   📝 Tokens: ${tokenAnalysis.tokenCount}`);
         console.log(`   💰 Cost: ${tokenAnalysis.estimatedCost}`);
         console.log(`   🎯 Context limit: ${tokenAnalysis.contextLimit}`);
         console.log(`   ⚠️ Exceeds context: ${tokenAnalysis.exceedsContext}`);
 
         // Step 3: Chunk document if necessary
-        console.log(`✂️ Step 3: Chunking document...`);
+        console.log(`✂️ [${processingId}] Step 3: Chunking document...`);
         const chunks = documentChunker.chunkDocument(
             extractedContent.text, 
             parseInt(maxTokensPerChunk), 
@@ -118,22 +197,24 @@ router.post('/process', upload.single('file'), async (req, res) => {
         );
 
         if (optimalChunks.length === 0 && chunks.length > 0) {
-            console.warn(`⚠️ No chunks fit in ${model} context window (${tokenAnalysis.contextLimit} tokens)`);
+            console.warn(`⚠️ [${processingId}] No chunks fit in ${model} context window (${tokenAnalysis.contextLimit} tokens)`);
         }
 
         // Get chunking statistics
         const chunkingStats = documentChunker.getChunkingStats(chunks);
-        console.log(`📈 Chunking stats: ${chunkingStats.totalChunks} chunks, avg ${chunkingStats.averageTokens} tokens`);
+        console.log(`📈 [${processingId}] Chunking stats: ${chunkingStats.totalChunks} chunks, avg ${chunkingStats.averageTokens} tokens`);
 
         // Step 5: Prepare response
         const result = {
             success: true,
             originalFileName: file.originalname,
             fileSize: file.size,
-            mimeType: file.mimetype,
+            mimeType: correctMimeType, // Use the correct MIME type in response
+            detectedFormat: extractedContent.metadata?.format,
             fileHash: fileHash,
             extractedContent: {
                 text: extractedContent.text,
+                pageCount: extractedContent.pageCount,
                 metadata: extractedContent.metadata
             },
             tokenAnalysis: {
@@ -161,8 +242,9 @@ router.post('/process', upload.single('file'), async (req, res) => {
                 recommendedApproach: tokenAnalysis.exceedsContext ? 'chunked' : 'single',
                 chunkCount: chunks.length,
                 processingTimeMs: Date.now() - startTime,
-                extractionMethod: extractedContent.metadata.format,
-                chunkingStats: chunkingStats
+                extractionMethod: extractedContent.metadata?.format,
+                chunkingStats: chunkingStats,
+                processingId: processingId
             },
             cached: false
         };
@@ -172,9 +254,9 @@ router.post('/process', upload.single('file'), async (req, res) => {
             try {
                 const cacheKey = `file:${fileHash}:${model}:${maxTokensPerChunk}`;
                 await req.redis.setex(cacheKey, 3600, JSON.stringify(result)); // Cache for 1 hour
-                console.log(`💾 Result cached for 1 hour`);
+                console.log(`💾 [${processingId}] Result cached for 1 hour`);
             } catch (cacheError) {
-                console.warn('⚠️ Failed to cache result:', cacheError.message);
+                console.warn(`⚠️ [${processingId}] Failed to cache result:`, cacheError.message);
             }
         }
 
@@ -194,7 +276,7 @@ router.post('/process', upload.single('file'), async (req, res) => {
             `, [
                 fileHash,
                 file.originalname,
-                file.mimetype,
+                correctMimeType, // Store correct MIME type
                 file.size,
                 tokenAnalysis.tokenCount,
                 chunks.length,
@@ -202,32 +284,33 @@ router.post('/process', upload.single('file'), async (req, res) => {
                 expiresAt
             ]);
             
-            console.log(`💾 Result stored in database`);
+            console.log(`💾 [${processingId}] Result stored in database`);
         } catch (dbError) {
-            console.warn('⚠️ Failed to store in database:', dbError.message);
+            console.warn(`⚠️ [${processingId}] Failed to store in database:`, dbError.message);
         }
 
-        console.log(`🎉 File processing completed successfully in ${Date.now() - startTime}ms`);
+        console.log(`🎉 [${processingId}] File processing completed successfully in ${Date.now() - startTime}ms`);
         
         res.json(result);
 
     } catch (error) {
-        console.error('❌ File processing error:', error);
+        console.error(`❌ [${processingId}] File processing error:`, error);
         
         res.status(500).json({ 
             error: 'File processing failed', 
             message: error.message,
             success: false,
-            processingTime: Date.now() - startTime
+            processingTime: Date.now() - startTime,
+            processingId: processingId
         });
     } finally {
         // Always clean up uploaded file
         if (req.file && fs.existsSync(req.file.path)) {
             try {
                 fs.unlinkSync(req.file.path);
-                console.log(`🗑️ Cleaned up temp file: ${req.file.filename}`);
+                console.log(`🗑️ [${processingId}] Cleaned up temp file: ${req.file.filename}`);
             } catch (cleanupError) {
-                console.warn('⚠️ Failed to clean up temp file:', cleanupError.message);
+                console.warn(`⚠️ [${processingId}] Failed to clean up temp file:`, cleanupError.message);
             }
         }
     }
@@ -315,6 +398,7 @@ router.get('/stats', async (req, res) => {
         `);
 
         const tokenCounterStats = tokenCounter.getUsageStats();
+        const extractorStats = fileExtractor.getStats();
 
         res.json({
             success: true,
@@ -331,7 +415,8 @@ router.get('/stats', async (req, res) => {
                     maximumInSingleFile: parseInt(stats.rows[0].max_tokens) || 0
                 },
                 processing: {
-                    ...tokenCounterStats,
+                    tokenCounter: tokenCounterStats,
+                    extractor: extractorStats,
                     supportedFileTypes: fileExtractor.getSupportedTypes()
                 }
             }
@@ -348,6 +433,8 @@ router.get('/stats', async (req, res) => {
 
 // Health check for file processing service
 router.get('/health', (req, res) => {
+    const extractorStats = fileExtractor.getStats();
+    
     const health = {
         status: 'OK',
         timestamp: new Date().toISOString(),
@@ -363,6 +450,7 @@ router.get('/health', (req, res) => {
             maxTokensPerChunk: 32000,
             cacheExpiry: '1 hour (Redis), 24 hours (Database)'
         },
+        extractorInfo: extractorStats,
         supportedFormats: fileExtractor.getSupportedTypes()
     };
 
