@@ -154,10 +154,6 @@ class FileExtractor {
 
         console.log(`📄 [${extractionId}] PDF signature validated, extracting text...`);
 
-        const data = await pdf(dataBuffer, {
-            max: this.MAX_PAGES_PDF,
-            version: 'v2.0.0'
-        });
 
         if (!data.text || data.text.trim().length < this.MIN_TEXT_LENGTH) {
             console.warn(`⚠️ [${extractionId}] PDF extraction returned minimal text: ${data.text?.length || 0} chars`);
