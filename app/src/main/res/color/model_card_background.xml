@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Selected state - light green background -->
+    <item android:state_selected="true"
+        android:color="#E8F5E8" />
+    
+    <!-- Default state -->
+    <item android:color="?attr/colorSurfaceVariant" />
+</selector>

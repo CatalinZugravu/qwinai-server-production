@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/menu_private_chat"
+        android:icon="@drawable/ic_ghost"
+        android:title="Private Chat"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/menu_new_conversation"
+        android:icon="@drawable/new_chat_icon"
+        android:title="New Chat"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/menu_font_size"
+        android:icon="@drawable/ic_tune"
+        android:title="Font Size"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/menu_chat_settings"
+        android:icon="@drawable/ic_tune"
+        android:title="Chat Settings"
+        app:showAsAction="never" />
+
+</menu>

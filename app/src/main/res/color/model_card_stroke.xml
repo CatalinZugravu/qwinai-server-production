@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Selected state - green stroke -->
+    <item android:state_selected="true"
+        android:color="#4CAF50" />
+    
+    <!-- Default state - no stroke -->
+    <item android:color="@android:color/transparent" />
+</selector>
