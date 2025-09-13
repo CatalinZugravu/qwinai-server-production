@@ -1,0 +1,291 @@
+-- QwinAI Production Database Schema
+-- Based on the existing GitHub userState.js system
+-- This creates the sophisticated fraud detection and user management system
+
+-- Enable UUID extension for user UUIDs
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- ==================== USERS TABLE ====================
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    user_uuid UUID DEFAULT gen_random_uuid() UNIQUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ==================== DEVICE FINGERPRINTS TABLE ====================
+CREATE TABLE IF NOT EXISTS device_fingerprints (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    fingerprint_hash VARCHAR(64) UNIQUE NOT NULL,
+    android_id VARCHAR(64),
+    google_ad_id VARCHAR(64),
+    huawei_oaid VARCHAR(64),
+    device_model VARCHAR(128),
+    device_brand VARCHAR(64),
+    android_version VARCHAR(32),
+    app_version VARCHAR(16),
+    screen_resolution VARCHAR(32),
+    timezone VARCHAR(64),
+    language VARCHAR(16),
+    country VARCHAR(8),
+    carrier VARCHAR(64),
+    total_ram BIGINT,
+    cpu_cores INTEGER,
+    first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    trust_score DECIMAL(3,2) DEFAULT 1.00,
+    is_suspicious BOOLEAN DEFAULT FALSE
+);
+
+-- ==================== USER STATES TABLE ====================
+CREATE TABLE IF NOT EXISTS user_states (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) NOT NULL,
+    credits_chat_daily INTEGER DEFAULT 0,
+    credits_image_daily INTEGER DEFAULT 0,
+    credits_chat_bonus INTEGER DEFAULT 0,
+    credits_image_bonus INTEGER DEFAULT 0,
+    model_usage JSONB DEFAULT '{}',
+    daily_reset_date DATE DEFAULT CURRENT_DATE,
+    subscription_type VARCHAR(32),
+    subscription_end_time BIGINT DEFAULT 0,
+    subscription_platform VARCHAR(32),
+    weekly_ad_credits INTEGER DEFAULT 0,
+    total_ads_watched INTEGER DEFAULT 0,
+    last_ad_timestamp BIGINT DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ==================== USAGE HISTORY TABLE ====================
+CREATE TABLE IF NOT EXISTS usage_history (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    action_type VARCHAR(32),
+    credits_used INTEGER,
+    model_name VARCHAR(64),
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    device_fingerprint_id INTEGER REFERENCES device_fingerprints(id),
+    ip_address INET,
+    session_id VARCHAR(64),
+    details JSONB DEFAULT '{}'
+);
+
+-- ==================== FRAUD EVENTS TABLE ====================
+CREATE TABLE IF NOT EXISTS fraud_events (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    event_type VARCHAR(64),
+    severity VARCHAR(16),
+    details JSONB,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ip_address INET,
+    resolved BOOLEAN DEFAULT FALSE
+);
+
+-- ==================== INDEXES FOR PERFORMANCE ====================
+-- Device fingerprint indexes (critical for reinstall prevention)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_fingerprint_hash ON device_fingerprints(fingerprint_hash);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_device_fingerprints_user_id ON device_fingerprints(user_id);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_device_fingerprints_ad_ids ON device_fingerprints(google_ad_id, huawei_oaid) WHERE google_ad_id IS NOT NULL OR huawei_oaid IS NOT NULL;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_device_fingerprints_last_seen ON device_fingerprints(last_seen);
+
+-- User states indexes
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_user_states_user_id ON user_states(user_id);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_user_states_daily_reset ON user_states(daily_reset_date);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_user_states_subscription ON user_states(subscription_type, subscription_end_time);
+
+-- Usage history indexes
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_usage_history_user_timestamp ON usage_history(user_id, timestamp);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_usage_history_action_type ON usage_history(action_type);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_usage_history_device_fp ON usage_history(device_fingerprint_id);
+
+-- Fraud events indexes
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_fraud_events_user_id ON fraud_events(user_id);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_fraud_events_type_severity ON fraud_events(event_type, severity);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_fraud_events_timestamp ON fraud_events(timestamp);
+
+-- ==================== FUNCTIONS AND TRIGGERS ====================
+
+-- Function to automatically update the updated_at timestamp
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Triggers to update the updated_at column
+DROP TRIGGER IF EXISTS update_users_updated_at ON users;
+CREATE TRIGGER update_users_updated_at
+    BEFORE UPDATE ON users
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_user_states_updated_at ON user_states;
+CREATE TRIGGER update_user_states_updated_at
+    BEFORE UPDATE ON user_states
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- ==================== VIEWS FOR ANALYTICS ====================
+
+-- User overview with security info
+CREATE OR REPLACE VIEW user_overview AS
+SELECT 
+    u.id,
+    u.user_uuid,
+    u.created_at as user_created,
+    us.credits_chat_daily,
+    us.credits_image_daily,
+    us.credits_chat_bonus,
+    us.credits_image_bonus,
+    us.subscription_type,
+    us.subscription_end_time,
+    us.daily_reset_date,
+    df.trust_score,
+    df.is_suspicious,
+    COUNT(df_all.id) as total_devices,
+    MAX(df_all.last_seen) as last_activity
+FROM users u
+LEFT JOIN user_states us ON u.id = us.user_id
+LEFT JOIN device_fingerprints df ON u.id = df.user_id
+LEFT JOIN device_fingerprints df_all ON u.id = df_all.user_id
+GROUP BY u.id, u.user_uuid, u.created_at, us.credits_chat_daily, us.credits_image_daily, 
+         us.credits_chat_bonus, us.credits_image_bonus, us.subscription_type, 
+         us.subscription_end_time, us.daily_reset_date, df.trust_score, df.is_suspicious;
+
+-- Device activity summary
+CREATE OR REPLACE VIEW device_activity AS
+SELECT 
+    df.id,
+    df.fingerprint_hash,
+    df.user_id,
+    u.user_uuid,
+    df.device_model,
+    df.device_brand,
+    df.android_version,
+    df.app_version,
+    df.first_seen,
+    df.last_seen,
+    df.trust_score,
+    df.is_suspicious,
+    COUNT(uh.id) as total_actions,
+    COALESCE(SUM(uh.credits_used), 0) as total_credits_used
+FROM device_fingerprints df
+JOIN users u ON df.user_id = u.id
+LEFT JOIN usage_history uh ON df.id = uh.device_fingerprint_id
+GROUP BY df.id, df.fingerprint_hash, df.user_id, u.user_uuid, df.device_model, 
+         df.device_brand, df.android_version, df.app_version, df.first_seen, 
+         df.last_seen, df.trust_score, df.is_suspicious;
+
+-- ==================== STORED PROCEDURES ====================
+
+-- Reset daily credits for all users (can be called by cron job)
+CREATE OR REPLACE FUNCTION reset_all_daily_credits()
+RETURNS INTEGER AS $$
+DECLARE
+    reset_count INTEGER;
+    today_date DATE := CURRENT_DATE;
+BEGIN
+    UPDATE user_states 
+    SET 
+        credits_chat_daily = 0,
+        credits_image_daily = 0,
+        weekly_ad_credits = CASE 
+            WHEN EXTRACT(DOW FROM today_date) = 1 THEN 0  -- Reset weekly on Monday
+            ELSE weekly_ad_credits 
+        END,
+        daily_reset_date = today_date,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE daily_reset_date < today_date;
+    
+    GET DIAGNOSTICS reset_count = ROW_COUNT;
+    
+    -- Log the reset event
+    INSERT INTO usage_history (user_id, action_type, credits_used, model_name, timestamp, details)
+    SELECT us.user_id, 'DAILY_RESET', 0, 'system', CURRENT_TIMESTAMP, 
+           jsonb_build_object('reset_count', reset_count, 'date', today_date)
+    FROM user_states us 
+    WHERE us.daily_reset_date = today_date
+    LIMIT 1; -- Only log once per day
+    
+    RETURN reset_count;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Clean old fraud events (keep last 90 days)
+CREATE OR REPLACE FUNCTION cleanup_old_fraud_events()
+RETURNS INTEGER AS $$
+DECLARE
+    deleted_count INTEGER;
+BEGIN
+    DELETE FROM fraud_events 
+    WHERE timestamp < CURRENT_TIMESTAMP - INTERVAL '90 days'
+        AND resolved = true;
+    
+    GET DIAGNOSTICS deleted_count = ROW_COUNT;
+    RETURN deleted_count;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Get user trust score with recent activity
+CREATE OR REPLACE FUNCTION get_user_trust_info(target_user_id INTEGER)
+RETURNS TABLE (
+    user_id INTEGER,
+    overall_trust_score DECIMAL,
+    device_count INTEGER,
+    suspicious_devices INTEGER,
+    recent_fraud_events INTEGER,
+    recommendation VARCHAR
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        target_user_id as user_id,
+        AVG(df.trust_score)::DECIMAL(3,2) as overall_trust_score,
+        COUNT(df.id)::INTEGER as device_count,
+        SUM(CASE WHEN df.is_suspicious THEN 1 ELSE 0 END)::INTEGER as suspicious_devices,
+        COUNT(fe.id)::INTEGER as recent_fraud_events,
+        CASE 
+            WHEN AVG(df.trust_score) < 0.3 OR COUNT(fe.id) > 5 THEN 'BLOCK'
+            WHEN AVG(df.trust_score) < 0.7 OR COUNT(fe.id) > 2 THEN 'RESTRICT'
+            ELSE 'ALLOW'
+        END as recommendation
+    FROM device_fingerprints df
+    LEFT JOIN fraud_events fe ON df.user_id = fe.user_id 
+        AND fe.timestamp > CURRENT_TIMESTAMP - INTERVAL '7 days'
+    WHERE df.user_id = target_user_id
+    GROUP BY target_user_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ==================== SAMPLE DATA (for development) ====================
+-- Uncomment the following lines to insert sample data for testing
+
+/*
+-- Sample user
+INSERT INTO users DEFAULT VALUES;
+
+-- Sample device fingerprint for testing
+INSERT INTO device_fingerprints (
+    user_id, fingerprint_hash, android_id, device_model, device_brand, 
+    android_version, app_version
+) VALUES (
+    1, 'test_hash_123456789abcdef', 'android_test_123', 'Test Model', 'Test Brand',
+    '12', '18'
+) ON CONFLICT (fingerprint_hash) DO NOTHING;
+
+-- Sample user state
+INSERT INTO user_states (user_id) VALUES (1) ON CONFLICT DO NOTHING;
+*/
+
+-- ==================== PERMISSIONS ====================
+-- Grant permissions for application user (adjust username as needed)
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO qwinai_app_user;
+-- GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO qwinai_app_user;
+-- GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO qwinai_app_user;
+
+-- ==================== COMPLETION ====================
+SELECT 'QwinAI database schema created successfully!' as status;
