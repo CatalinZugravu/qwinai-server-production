@@ -1,0 +1,339 @@
+const express = require('express');
+const crypto = require('crypto');
+const router = express.Router();
+
+// ==================== ANDROID APP COMPATIBILITY LAYER ====================
+// This adds the exact endpoints the Android app expects while working with 
+// the existing sophisticated database schema from userState.js
+
+// Import classes from the existing userState system
+class DeviceFingerprinter {
+    static generateFingerprint(deviceData) {
+        // Create a stable fingerprint from device characteristics
+        const components = [
+            deviceData.androidId || '',
+            deviceData.googleAdId || deviceData.huaweiOaid || '',
+            deviceData.deviceModel || '',
+            deviceData.deviceManufacturer || deviceData.deviceBrand || '',
+            deviceData.deviceProduct || '',
+            deviceData.androidVersion || '',
+            deviceData.appVersion || ''
+        ];
+        
+        const fingerprintString = components.join('|');
+        return crypto.createHash('sha256').update(fingerprintString).digest('hex');
+    }
+}
+
+class UserManager {
+    static async findOrCreateUser(db, deviceData) {
+        const fingerprint = DeviceFingerprinter.generateFingerprint(deviceData);
+        
+        // Try to find existing user by fingerprint
+        let userResult = await db.query(`
+            SELECT u.*, df.trust_score, df.is_suspicious
+            FROM device_fingerprints df
+            JOIN users u ON df.user_id = u.id
+            WHERE df.fingerprint_hash = $1
+            ORDER BY df.last_seen DESC
+            LIMIT 1
+        `, [fingerprint]);
+        
+        if (userResult.rows.length > 0) {
+            // Update last seen
+            await db.query(`
+                UPDATE device_fingerprints
+                SET last_seen = CURRENT_TIMESTAMP,
+                    app_version = $2
+                WHERE fingerprint_hash = $1
+            `, [fingerprint, deviceData.appVersion]);
+            
+            return userResult.rows[0];
+        }
+        
+        // Try to find by advertising ID (cross-device matching)
+        if (deviceData.googleAdId || deviceData.huaweiOaid) {
+            const adId = deviceData.googleAdId || deviceData.huaweiOaid;
+            userResult = await db.query(`
+                SELECT DISTINCT u.*, df.trust_score
+                FROM device_fingerprints df
+                JOIN users u ON df.user_id = u.id
+                WHERE df.google_ad_id = $1 OR df.huawei_oaid = $1
+                ORDER BY df.last_seen DESC
+                LIMIT 1
+            `, [adId]);
+            
+            if (userResult.rows.length > 0) {
+                // Add new fingerprint to existing user (REINSTALL DETECTED)
+                await this.addDeviceFingerprint(db, userResult.rows[0].id, deviceData, fingerprint);
+                return { ...userResult.rows[0], isReinstall: true };
+            }
+        }
+        
+        // Create new user
+        const newUser = await db.query(`
+            INSERT INTO users DEFAULT VALUES
+            RETURNING *
+        `);
+        
+        await this.addDeviceFingerprint(db, newUser.rows[0].id, deviceData, fingerprint);
+        
+        // Initialize user state
+        await db.query(`
+            INSERT INTO user_states (user_id) VALUES ($1)
+        `, [newUser.rows[0].id]);
+        
+        return { ...newUser.rows[0], isNewUser: true };
+    }
+    
+    static async addDeviceFingerprint(db, userId, deviceData, fingerprint) {
+        await db.query(`
+            INSERT INTO device_fingerprints (
+                user_id, fingerprint_hash, android_id, google_ad_id, huawei_oaid,
+                device_model, device_brand, android_version, app_version
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ON CONFLICT (fingerprint_hash) DO UPDATE
+            SET last_seen = CURRENT_TIMESTAMP,
+                app_version = EXCLUDED.app_version
+        `, [
+            userId, fingerprint, deviceData.androidId, deviceData.googleAdId, deviceData.huaweiOaid,
+            deviceData.deviceModel, deviceData.deviceManufacturer || deviceData.deviceBrand, 
+            deviceData.androidVersion, deviceData.appVersion
+        ]);
+    }
+}
+
+/**
+ * POST /api/user-state/get
+ * EXACT ENDPOINT THE ANDROID APP CALLS
+ * Translates to the existing sophisticated user state system
+ */
+router.post('/get', async (req, res) => {
+    try {
+        const deviceData = req.body;
+        const clientIp = req.ip || req.connection.remoteAddress;
+        
+        console.log(`🔍 [${clientIp}] ANDROID GET USER STATE REQUEST`);
+        console.log(`   Device: ${deviceData.deviceManufacturer} ${deviceData.deviceModel}`);
+        console.log(`   Android ID: ${deviceData.androidId?.substring(0, 8)}...`);
+        console.log(`   App Version: ${deviceData.appVersion}`);
+
+        // Validate device data
+        if (!deviceData.deviceModel && !deviceData.deviceManufacturer) {
+            return res.status(400).json({ 
+                success: false,
+                error: 'Incomplete device information' 
+            });
+        }
+
+        // Find or create user using existing sophisticated system
+        const user = await UserManager.findOrCreateUser(req.db, deviceData);
+        
+        // Get current state
+        const stateResult = await req.db.query(`
+            SELECT * FROM user_states WHERE user_id = $1
+        `, [user.id]);
+        
+        let state = stateResult.rows[0];
+        
+        // Reset daily credits if needed
+        const today = new Date().toISOString().split('T')[0];
+        if (!state || state.daily_reset_date !== today) {
+            await req.db.query(`
+                UPDATE user_states
+                SET credits_chat_daily = 0,
+                    credits_image_daily = 0,
+                    model_usage = '{}',
+                    daily_reset_date = $2,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = $1
+            `, [user.id, today]);
+            
+            state = await req.db.query('SELECT * FROM user_states WHERE user_id = $1', [user.id]).then(r => r.rows[0]);
+        }
+
+        // Determine user tier and limits
+        const isSubscribed = !!state.subscription_type && state.subscription_end_time > Date.now();
+        const isWeekly = state.subscription_type === 'weekly';
+        const isMonthly = state.subscription_type === 'monthly';
+        
+        // Calculate available credits based on subscription
+        let chatLimit = 10;  // Free tier
+        let imageLimit = 3;  // Free tier
+        
+        if (isSubscribed) {
+            if (isMonthly) {
+                chatLimit = 500;
+                imageLimit = 150;
+            } else if (isWeekly) {
+                chatLimit = 100;
+                imageLimit = 30;
+            }
+        }
+        
+        const availableChatCredits = Math.max(0, chatLimit - state.credits_chat_daily + (state.credits_chat_bonus || 0));
+        const availableImageCredits = Math.max(0, imageLimit - state.credits_image_daily + (state.credits_image_bonus || 0));
+
+        // Log the match type for debugging
+        if (user.isReinstall) {
+            console.log(`🔒 REINSTALL DETECTED for user ${user.id}`);
+            console.log(`   Previous Credits: chat=${state.credits_chat_daily}, image=${state.credits_image_daily}`);
+            console.log(`   Subscription: ${isSubscribed} (${state.subscription_type || 'none'})`);
+        } else if (user.isNewUser) {
+            console.log(`👤 NEW USER CREATED: ${user.id}`);
+        }
+
+        // Return response in format Android app expects
+        const response = {
+            success: true,
+            userId: user.user_uuid || user.id.toString(),
+            deviceId: DeviceFingerprinter.generateFingerprint(deviceData).substring(0, 16),
+            creditsRestored: user.isReinstall || false,
+            subscriptionRestored: user.isReinstall && isSubscribed,
+            availableChatCredits: availableChatCredits,
+            availableImageCredits: availableImageCredits,
+            creditsConsumedTodayChat: state.credits_chat_daily,
+            creditsConsumedTodayImage: state.credits_image_daily,
+            hasActiveSubscription: isSubscribed,
+            subscriptionType: state.subscription_type,
+            subscriptionEndTime: state.subscription_end_time || 0,
+            isNewUser: user.isNewUser || false,
+            totalReinstalls: 0, // TODO: Count from device_fingerprints
+            message: user.isReinstall ? "Account restored from reinstall" : 
+                     user.isNewUser ? "New user account created" : "Account loaded successfully"
+        };
+
+        console.log(`✅ ANDROID RESPONSE: Available credits: chat=${response.availableChatCredits}, image=${response.availableImageCredits}, subscription=${response.hasActiveSubscription}`);
+        
+        res.json(response);
+
+    } catch (error) {
+        console.error('❌ Android get user state error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to retrieve user state',
+            message: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+        });
+    }
+});
+
+/**
+ * POST /api/user-state/update
+ * EXACT ENDPOINT THE ANDROID APP CALLS  
+ * Translates to the existing credit consumption system
+ */
+router.post('/update', async (req, res) => {
+    const client = await req.db.connect();
+    
+    try {
+        await client.query('BEGIN');
+        
+        const updateData = req.body;
+        const clientIp = req.ip || req.connection.remoteAddress;
+        
+        console.log(`💾 [${clientIp}] ANDROID UPDATE USER STATE REQUEST`);
+        console.log(`   Credits Consumed: chat=${updateData.creditsConsumedTodayChat}, image=${updateData.creditsConsumedTodayImage}`);
+        console.log(`   Subscription: ${updateData.hasActiveSubscription} (${updateData.subscriptionType || 'none'})`);
+
+        // Find user using device data
+        const user = await UserManager.findOrCreateUser(client, updateData);
+        
+        if (!user) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({
+                success: false,
+                error: 'User not found',
+                message: 'User must be registered before updating state'
+            });
+        }
+
+        // Get current state
+        const currentState = await client.query(
+            'SELECT * FROM user_states WHERE user_id = $1 FOR UPDATE', 
+            [user.id]
+        ).then(r => r.rows[0]);
+
+        // Calculate credit differences (what was consumed since last update)
+        const chatDiff = Math.max(0, updateData.creditsConsumedTodayChat - currentState.credits_chat_daily);
+        const imageDiff = Math.max(0, updateData.creditsConsumedTodayImage - currentState.credits_image_daily);
+
+        console.log(`📊 Credit changes: chat +${chatDiff}, image +${imageDiff}`);
+
+        // Update user state (using GREATEST to prevent rollback attacks)
+        const updateResult = await client.query(`
+            UPDATE user_states SET
+                credits_chat_daily = GREATEST(credits_chat_daily, $2),
+                credits_image_daily = GREATEST(credits_image_daily, $3),
+                subscription_type = CASE WHEN $4 = true THEN COALESCE($5, subscription_type) ELSE NULL END,
+                subscription_end_time = CASE WHEN $4 = true THEN COALESCE($6, subscription_end_time) ELSE 0 END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = $1
+            RETURNING *
+        `, [
+            user.id,
+            updateData.creditsConsumedTodayChat,
+            updateData.creditsConsumedTodayImage,
+            updateData.hasActiveSubscription,
+            updateData.subscriptionType,
+            updateData.subscriptionEndTime
+        ]);
+
+        // Log usage history for new credit consumption
+        const fingerprint = DeviceFingerprinter.generateFingerprint(updateData);
+        const fpResult = await client.query(
+            'SELECT id FROM device_fingerprints WHERE fingerprint_hash = $1',
+            [fingerprint]
+        );
+
+        if (chatDiff > 0) {
+            await client.query(`
+                INSERT INTO usage_history (user_id, action_type, credits_used, device_fingerprint_id, ip_address)
+                VALUES ($1, 'chat', $2, $3, $4)
+            `, [user.id, chatDiff, fpResult.rows[0]?.id, clientIp]);
+        }
+
+        if (imageDiff > 0) {
+            await client.query(`
+                INSERT INTO usage_history (user_id, action_type, credits_used, device_fingerprint_id, ip_address)
+                VALUES ($1, 'image', $2, $3, $4)
+            `, [user.id, imageDiff, fpResult.rows[0]?.id, clientIp]);
+        }
+
+        await client.query('COMMIT');
+
+        const updatedUser = updateResult.rows[0];
+        
+        console.log(`✅ ANDROID USER STATE UPDATED: User ${user.id}`);
+        console.log(`   Final Credits: chat=${updatedUser.credits_chat_daily}, image=${updatedUser.credits_image_daily}`);
+        console.log(`   Subscription: ${updateData.hasActiveSubscription} (${updateData.subscriptionType || 'none'})`);
+
+        res.json({
+            success: true,
+            message: 'User state updated successfully',
+            data: {
+                userId: user.user_uuid || user.id.toString(),
+                deviceId: fingerprint.substring(0, 16),
+                creditsConsumedTodayChat: updatedUser.credits_chat_daily,
+                creditsConsumedTodayImage: updatedUser.credits_image_daily,
+                hasActiveSubscription: updateData.hasActiveSubscription,
+                subscriptionType: updateData.subscriptionType,
+                updated: true,
+                timestamp: Date.now(),
+                serverVersion: "2.0.0"
+            }
+        });
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('❌ Android update user state error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to update user state',
+            message: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+        });
+    } finally {
+        client.release();
+    }
+});
+
+module.exports = router;
