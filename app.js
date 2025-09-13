@@ -18,7 +18,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // Trust Railway's proxy for accurate IP addresses (MUST be set before any middleware)
-app.set('trust proxy', true);
+app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
 
 // Ensure uploads directory exists
 if (!fs.existsSync('uploads')) {
@@ -34,13 +34,13 @@ function initializeDatabase() {
         return pool;
     }
     
-    // Database configuration from environment variables
+    // Database configuration from environment variables  
     const dbConfig = {
-        user: process.env.DB_USER || 'postgres',
-        host: process.env.DB_HOST || 'localhost',
-        database: process.env.DB_NAME || 'qwinai',
-        password: process.env.DB_PASSWORD || 'password',
-        port: process.env.DB_PORT || 5432,
+        user: process.env.PGUSER || process.env.DB_USER || 'postgres',
+        host: process.env.PGHOST || process.env.DB_HOST || 'localhost',
+        database: process.env.PGDATABASE || process.env.DB_NAME || 'railway',
+        password: process.env.PGPASSWORD || process.env.DB_PASSWORD,
+        port: process.env.PGPORT || process.env.DB_PORT || 5432,
         ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
         max: 20, // Maximum number of clients in pool
         idleTimeoutMillis: 30000,
@@ -91,14 +91,17 @@ app.use(cors({
     credentials: true
 }));
 
-// Rate limiting with proper proxy configuration
+// Rate limiting with Railway proxy configuration
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 100, // limit each IP to 100 requests per windowMs
     message: 'Too many requests from this IP',
     standardHeaders: true,
     legacyHeaders: false,
-    trustProxy: true
+    trustProxy: ['loopback', 'linklocal', 'uniquelocal'],
+    keyGenerator: (req) => {
+        return req.ip || req.connection.remoteAddress || 'unknown';
+    }
 });
 app.use(limiter);
 
@@ -109,7 +112,10 @@ const fileProcessingLimiter = rateLimit({
     message: 'Too many file uploads, please try again later.',
     standardHeaders: true,
     legacyHeaders: false,
-    trustProxy: true
+    trustProxy: ['loopback', 'linklocal', 'uniquelocal'],
+    keyGenerator: (req) => {
+        return req.ip || req.connection.remoteAddress || 'unknown';
+    }
 });
 
 // ==================== BODY PARSING ====================
@@ -157,6 +163,17 @@ app.use('/api/userstate', userStateRoutes);
 // File processing routes
 console.log('🔗 Mounting file processor routes at /api/file/*');
 app.use('/api/file', fileProcessingLimiter, fileProcessorRoutes);
+
+// Backward compatibility for legacy endpoints
+console.log('🔗 Adding backward compatibility endpoints');
+app.post('/api/consume', (req, res) => {
+    console.log('⚠️ Legacy endpoint /api/consume called - redirecting to new system');
+    res.status(200).json({
+        success: true,
+        message: 'Please update to new endpoints: /api/user-state/get and /api/user-state/update',
+        redirectTo: '/api/user-state/update'
+    });
+});
 
 // ==================== ERROR HANDLING ====================
 app.use((err, req, res, next) => {
