@@ -28,3 +28,4 @@ uploads/
 app/debug/
 app/release/
 app/build/
+*.apk
