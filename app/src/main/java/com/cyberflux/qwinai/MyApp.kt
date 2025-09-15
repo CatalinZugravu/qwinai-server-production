@@ -130,39 +130,39 @@ class MyApp : Application() {
     }
 
     private fun initializeNonCriticalComponentsAsync() {
-        // PERFORMANCE: Use lower priority background dispatcher to not block UI
-        applicationScope.launch(Dispatchers.Default) {
+        // ULTRAFAST: Use IO dispatcher for maximum performance
+        applicationScope.launch(Dispatchers.IO) {
             try {
                 SecureLogger.d("MyApp", "Starting background initialization")
 
-                // PERFORMANCE: Initialize most critical services first
+                // ULTRAFAST: Initialize critical services immediately
                 initializeGlobalServices()
                 
-                // PERFORMANCE: Initialize device detection with lower priority
+                // ULTRAFAST: Initialize device detection without callback delay
                 launch(Dispatchers.IO) {
                     deviceDetectionManager.initializeDetection { isHuawei ->
                         SecureLogger.logDeviceDetection(isHuawei, "async-initialization")
-                        preInitializeBillingManager()
+                        preInitializeBillingManagerInstant()
                     }
                 }
                 
-                // PERFORMANCE: Initialize Google Play Services with lowest priority
+                // ULTRAFAST: Initialize Google Play Services immediately
                 launch(Dispatchers.IO) {
                     initializeGooglePlayServices()
                 }
 
-                // PERFORMANCE: Initialize remaining services with increased delays to spread load
+                // ULTRAFAST: Initialize remaining services without delays
                 launch {
                     initializeCoreManagers()
-                    kotlinx.coroutines.delay(500) // Increased delay to prevent blocking
+                    // No delay - initialize immediately
                     initializeHuaweiServices()
-                    kotlinx.coroutines.delay(300)
+                    // No delay - initialize immediately
                     initializeUpdateManager()
                 }
 
-                // PERFORMANCE: Schedule workers last with lowest priority
+                // ULTRAFAST: Schedule workers with minimal delay
                 launch(Dispatchers.IO) {
-                    kotlinx.coroutines.delay(2000) // Increased delay for smoother startup
+                    kotlinx.coroutines.delay(1000) // Reduced from 2000ms to 1000ms
                     scheduleGlobalBackgroundWorkers()
                 }
 
@@ -358,6 +358,37 @@ class MyApp : Application() {
                 }
             } catch (e: Exception) {
                 SecureLogger.e("Billing", e, "Error pre-initializing BillingManager: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * ULTRAFAST: Instant billing manager pre-initialization without delays
+     */
+    private fun preInitializeBillingManagerInstant() {
+        applicationScope.launch {
+            try {
+                // ULTRAFAST: No delay - initialize immediately
+                
+                // Create the BillingManager instance early
+                if (billingManager == null) {
+                    SecureLogger.d("Billing", "ULTRAFAST: Pre-initializing BillingManager instantly")
+                    billingManager = BillingManager.getInstance(applicationContext)
+
+                    // Connect to billing service with reduced timeout for speed
+                    kotlinx.coroutines.withTimeoutOrNull(2000) { // Reduced from 5s to 2s
+                        billingManager?.connectToPlayBilling { success ->
+                            SecureLogger.logBilling("instant-pre-connection", success, "BillingManager connected instantly")
+
+                            // If connected successfully, query products
+                            if (success) {
+                                billingManager?.queryProducts()
+                            }
+                        }
+                    } ?: SecureLogger.w("Billing", "BillingManager instant connection timed out - will retry later")
+                }
+            } catch (e: Exception) {
+                SecureLogger.e("Billing", e, "Error in instant BillingManager initialization: ${e.message}")
             }
         }
     }

@@ -39,4 +39,15 @@
     <dimen name="attachment_file_width">80dp</dimen>
     
     <!-- New dimensions for file items -->
+    
+    <!-- Spinner dimensions -->
+    <dimen name="spinner_horizontal_padding_8dp">12dp</dimen>
+    <dimen name="spinner_arrow_space_20dp">26dp</dimen>
+    <dimen name="spinner_min_width_60dp">100dp</dimen>
+    <dimen name="spinner_max_width_150dp">280dp</dimen>
+
+    <!-- Subscription dimensions -->
+    <dimen name="subscription_plan_spacing">16dp</dimen>
+    <dimen name="card_corner_radius">16dp</dimen>
+
 </resources>

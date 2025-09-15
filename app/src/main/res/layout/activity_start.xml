@@ -96,16 +96,16 @@
         android:alpha="0.3"
         android:layout_marginTop="@dimen/header_height" />
 
-    <!-- ViewPager2 for Home and History fragments -->
+    <!-- ViewPager2 for Home, History, Chat, and Image fragments -->
     <androidx.viewpager2.widget.ViewPager2
         android:id="@+id/viewPager"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout_marginTop="@dimen/header_height"
-        android:layout_marginBottom="140dp"
+        android:layout_marginBottom="56dp"
         app:layout_behavior="@string/appbar_scrolling_view_behavior" />
 
-    <!-- Enhanced Bottom Container with Input and Tabs -->
+    <!-- Bottom Container with Tabs -->
     <LinearLayout
         android:id="@+id/bottomContainer"
         android:layout_width="match_parent"
@@ -115,76 +115,6 @@
         android:background="@drawable/bottom_tab_enhanced_background"
         android:elevation="8dp">
 
-        <!-- Enhanced Input Area with Voice Button -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/inputCardLayout"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginHorizontal="12dp"
-            android:layout_marginTop="12dp"
-            android:layout_marginBottom="8dp"
-            app:cardCornerRadius="24dp"
-            app:cardElevation="0dp"
-            app:cardBackgroundColor="@color/card_background"
-            app:strokeWidth="1.5dp"
-            app:strokeColor="@color/colorAccent"
-            android:foreground="?attr/selectableItemBackground"
-            app:cardPreventCornerOverlap="true">
-
-            <!-- Input Card Gradient Background -->
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="34dp"
-                android:background="@drawable/input_card_gradient" />
-
-            <LinearLayout
-                android:id="@+id/inputLayout"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:padding="8dp">
-
-                <!-- Voice Input Button -->
-                <ImageButton
-                    android:id="@+id/btnVoiceInput"
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:layout_gravity="center_vertical"
-                    android:layout_marginStart="4dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Voice input"
-                    android:padding="8dp"
-                    app:srcCompat="@drawable/ic_mic"
-                    app:tint="@color/colorPrimary" />
-
-                <!-- Text Input Field -->
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/etInputText"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:background="@null"
-                    android:hint=""
-                    android:inputType="textMultiLine"
-                    android:maxLines="3"
-                    android:minHeight="48dp"
-                    android:paddingHorizontal="12dp"
-                    android:paddingVertical="8dp"
-                    android:textSize="16sp" />
-
-                <!-- Submit Button -->
-                <ImageButton
-                    android:id="@+id/btnSubmitText"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:layout_gravity="center_vertical"
-                    android:background="@drawable/circular_button_background"
-                    android:contentDescription="Send message"
-                    android:padding="12dp"
-                    app:srcCompat="@drawable/send_icon"
-                    app:tint="@android:color/white" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
 
         <!-- Enhanced Tab Layout -->
         <com.google.android.material.tabs.TabLayout

@@ -74,15 +74,17 @@ class StartActivity : BaseThemedActivity() {
     // Dialog reference to prevent window leaks
     private var rateAppDialog: AlertDialog? = null
     
-    // Typewriter animation properties
-    private var typewriterHandler: Handler? = null
-    private var typewriterRunnable: Runnable? = null
-    private var cursorBlinkRunnable: Runnable? = null
-    private var isTypewriterRunning = false
-    private var isCursorVisible = true
+    // Flag to prevent recursive tab selection
+    private var isUpdatingTabSelection = false
+    
+    // Flag to track if this activity is actively managing tabs
+    private var isActivityActive = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Mark activity as active for initial setup
+        isActivityActive = true
 
         try {
             Timber.d("StartActivity onCreate started")
@@ -94,8 +96,8 @@ class StartActivity : BaseThemedActivity() {
             // Apply theme gradient immediately for visual feedback
             DirectThemeApplier.applyGradientToActivity(this)
 
-            // CRITICAL: Check for forced updates IMMEDIATELY before any UI initialization
-            checkForForcedUpdatesImmediate()
+            // PERFORMANCE: Defer update checks to avoid blocking startup
+            // checkForForcedUpdatesImmediate() - moved to background
 
             // Initialize critical UI components first
             initializeCriticalUIComponents()
@@ -135,11 +137,11 @@ class StartActivity : BaseThemedActivity() {
      */
     private fun setupBasicUI() {
         try {
+            // Check if coming from tab navigation to skip animations
+            val fromTabNavigation = intent.getBooleanExtra("FROM_TAB_NAVIGATION", false)
+            
             // Setup ViewPager immediately - users see content faster
-            setupViewPager()
-
-            // Setup input area - primary interaction point
-            setupInputArea()
+            setupViewPager(fromTabNavigation)
 
             // Setup buttons that are immediately visible
             setupProButton()
@@ -165,25 +167,23 @@ class StartActivity : BaseThemedActivity() {
                     initializeStartupServices()
                 }
 
-                // Background animation removed for cleaner design
-                delay(100)
-
-                // Apply entrance animation for the bottom input
-                delay(200)
+                // ULTRAFAST: Apply animation instantly without delays
+                val fromTabNavigation = intent.getBooleanExtra("FROM_TAB_NAVIGATION", false)
                 withContext(Dispatchers.Main) {
-                    applyInputCardAnimation()
+                    if (!fromTabNavigation) {
+                        applyInputCardAnimationInstant()
+                    } else {
+                        // Show immediately when coming from tab navigation
+                        binding.bottomContainer.alpha = 1f
+                        binding.bottomContainer.translationY = 0f
+                        binding.tabLayout.alpha = 1f
+                        binding.tabLayout.translationY = 0f
+                    }
                 }
-                
-                // Start typewriter animation after input card appears
-                delay(800)
-                withContext(Dispatchers.Main) {
-                    startTypewriterAnimation()
-                }
 
-                // Handle post-startup tasks with delay
-                delay(500)
-                withContext(Dispatchers.Main) {
-                    handlePostStartupTasks()
+                // ULTRAFAST: Handle post-startup tasks immediately in background
+                launch(Dispatchers.IO) {
+                    handlePostStartupTasksBackground()
                 }
 
                 Timber.d("Async components initialization completed")
@@ -227,6 +227,35 @@ class StartActivity : BaseThemedActivity() {
         Handler(Looper.getMainLooper()).postDelayed({
             showRateAppMessage()
         }, 60000L) // 60 seconds delay
+    }
+
+    /**
+     * ULTRAFAST: Handle background tasks without blocking UI
+     */
+    private fun handlePostStartupTasksBackground() {
+        try {
+            // Check for notifications immediately in background
+            lifecycleScope.launch(Dispatchers.Main) {
+                checkForNotifications()
+            }
+            
+            // Check for forced updates in background (moved from onCreate)
+            checkForForcedUpdatesBackground()
+            
+            // Delay non-critical tasks
+            Thread.sleep(2000)
+            lifecycleScope.launch(Dispatchers.Main) {
+                checkForAppUpdates()
+            }
+            
+            // Much longer delay for rate dialog
+            Thread.sleep(58000) // Additional 58s = 60s total
+            lifecycleScope.launch(Dispatchers.Main) {
+                showRateAppMessage()
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error in background post-startup tasks: ${e.message}")
+        }
     }
 
     private fun updateUIBasedOnSubscriptionStatus() {
@@ -309,10 +338,9 @@ class StartActivity : BaseThemedActivity() {
     }
 
     /**
-     * Check for forced updates immediately on app start
-     * This prevents users from using the app if a critical update is required
+     * ULTRAFAST: Check for forced updates in background to avoid blocking startup
      */
-    private fun checkForForcedUpdatesImmediate() {
+    private fun checkForForcedUpdatesBackground() {
         try {
             val updateManager = MyApp.getUpdateManager()
             if (updateManager != null) {
@@ -400,7 +428,7 @@ class StartActivity : BaseThemedActivity() {
                     // Launch SettingsActivity
                     val intent = Intent(this, SettingsActivity::class.java)
                     startActivity(intent)
-                    overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+                    overridePendingTransition(0, 0) // ULTRAFAST: No transition animation
                 }
                 .start()
 
@@ -416,7 +444,7 @@ class StartActivity : BaseThemedActivity() {
         window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
     }
 
-    private fun setupViewPager() {
+    private fun setupViewPager(fromTabNavigation: Boolean = false) {
         try {
             // Initialize ViewPager adapter
             viewPagerAdapter = ViewPagerAdapter(this)
@@ -424,32 +452,94 @@ class StartActivity : BaseThemedActivity() {
 
             // DISABLE SWIPING
             binding.viewPager.isUserInputEnabled = false
+            
+            // CRITICAL: Set ViewPager to correct position BEFORE registering callbacks
+            // This prevents the Home->History flash when navigating to History
+            val initialTab = intent.getIntExtra("INITIAL_TAB", 0)
+            if (initialTab == 3) {
+                // Set directly to History position without triggering callbacks
+                binding.viewPager.setCurrentItem(1, false)
+            } else {
+                // Set to Home position (default is already 0, but be explicit)
+                binding.viewPager.setCurrentItem(0, false)
+            }
 
-            // Initial state setup - input is now always visible as part of tab layout
-            binding.inputCardLayout.visibility = View.VISIBLE
-            binding.headerLayout.visibility = View.VISIBLE
+            // Initial state setup - set header visibility based on initial tab
+            if (initialTab == 3) {
+                // Starting on History - hide header immediately
+                binding.headerLayout.visibility = View.GONE
+                binding.headerLayout.alpha = 0f
+                
+                // Set proper ViewPager margins for History tab
+                val params = binding.viewPager.layoutParams as CoordinatorLayout.LayoutParams
+                params.topMargin = 0
+                params.bottomMargin = resources.getDimensionPixelSize(R.dimen.tab_height)
+                binding.viewPager.layoutParams = params
+            } else {
+                // Starting on Home - show header
+                binding.headerLayout.visibility = View.VISIBLE
+                binding.headerLayout.alpha = 1f
+                
+                // Set proper ViewPager margins for Home tab
+                val params = binding.viewPager.layoutParams as CoordinatorLayout.LayoutParams
+                params.topMargin = resources.getDimensionPixelSize(R.dimen.header_height)
+                params.bottomMargin = resources.getDimensionPixelSize(R.dimen.tab_height)
+                binding.viewPager.layoutParams = params
+            }
 
-            // Add page change callback with smooth animations
+            // Add page change callback with smooth animations and tab synchronization
             binding.viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
                 override fun onPageSelected(position: Int) {
                     super.onPageSelected(position)
+                    
+                    // Only sync tabs when this activity is active (prevent cross-activity interference)
+                    if (!isActivityActive) return
+                    
+                    // Sync tab selection with ViewPager position (prevent recursive updates)
+                    if (!isUpdatingTabSelection) {
+                        val tabPosition = viewPagerAdapter.getTabPositionForViewPager(position)
+                        val tabToSelect = binding.tabLayout.getTabAt(tabPosition)
+                        if (tabToSelect != null && !tabToSelect.isSelected) {
+                            isUpdatingTabSelection = true
+                            tabToSelect.select()
+                            isUpdatingTabSelection = false
+                            Timber.d("ViewPager synced tab to position $tabPosition")
+                        }
+                    }
 
-                    // Animate header and input visibility change with improved transitions
-                    if (position == 0) {
+                    if (fromTabNavigation) {
+                        // Instant UI updates when coming from tab navigation - no animations
+                        val tabPosition = viewPagerAdapter.getTabPositionForViewPager(position)
+                        if (tabPosition == 0) {
+                            // Show header instantly
+                            binding.headerLayout.visibility = View.VISIBLE
+                            binding.headerLayout.alpha = 1f
+                            binding.headerLayout.translationY = 0f
+                            
+                            // Set proper margins instantly
+                            val params = binding.viewPager.layoutParams as CoordinatorLayout.LayoutParams
+                            params.topMargin = resources.getDimensionPixelSize(R.dimen.header_height)
+                            params.bottomMargin = resources.getDimensionPixelSize(R.dimen.tab_height)
+                            binding.viewPager.layoutParams = params
+                        } else {
+                            // Hide header instantly
+                            binding.headerLayout.visibility = View.GONE
+                            binding.headerLayout.alpha = 0f
+                            
+                            // Set proper margins instantly  
+                            val params = binding.viewPager.layoutParams as CoordinatorLayout.LayoutParams
+                            params.topMargin = 0
+                            params.bottomMargin = resources.getDimensionPixelSize(R.dimen.tab_height)
+                            binding.viewPager.layoutParams = params
+                        }
+                    } else {
+                        // Animated transitions for app startup only
+                        val tabPosition = viewPagerAdapter.getTabPositionForViewPager(position)
+                        if (tabPosition == 0) {
                         // Show header when switching to Home tab
                         binding.headerLayout.alpha = 0f
                         binding.headerLayout.visibility = View.VISIBLE
                         binding.headerLayout.animate()
-                            .alpha(1f)
-                            .translationY(0f)
-                            .setDuration(300)
-                            .setInterpolator(AccelerateDecelerateInterpolator())
-                            .start()
-
-                        // Show input layout when switching to Home tab
-                        binding.inputCardLayout.alpha = 0f
-                        binding.inputCardLayout.visibility = View.VISIBLE
-                        binding.inputCardLayout.animate()
                             .alpha(1f)
                             .translationY(0f)
                             .setDuration(300)
@@ -467,7 +557,7 @@ class StartActivity : BaseThemedActivity() {
                         // Animate ViewPager margin change
                         val params = binding.viewPager.layoutParams as CoordinatorLayout.LayoutParams
                         val targetTopMargin = resources.getDimensionPixelSize(R.dimen.header_height)
-                        val targetBottomMargin = resources.getDimensionPixelSize(R.dimen.bottom_container_height) // Full height for input + tabs
+                        val targetBottomMargin = resources.getDimensionPixelSize(R.dimen.tab_height) // Only tab height
 
                         // Animate top margin
                         if (params.topMargin != targetTopMargin) {
@@ -482,7 +572,7 @@ class StartActivity : BaseThemedActivity() {
                             topAnimator.start()
                         }
                         
-                        // Animate bottom margin for input area
+                        // Animate bottom margin
                         if (params.bottomMargin != targetBottomMargin) {
                             val currentBottomMargin = params.bottomMargin
                             val bottomAnimator = ValueAnimator.ofInt(currentBottomMargin, targetBottomMargin)
@@ -495,7 +585,7 @@ class StartActivity : BaseThemedActivity() {
                             bottomAnimator.start()
                         }
                     } else {
-                        // Hide header when switching to History tab with slide up effect
+                        // Hide header when switching to other tabs with slide up effect
                         binding.headerLayout.animate()
                             .alpha(0f)
                             .translationY(-50f)
@@ -504,18 +594,6 @@ class StartActivity : BaseThemedActivity() {
                             .withEndAction {
                                 binding.headerLayout.visibility = View.GONE
                                 binding.headerLayout.translationY = 0f
-                            }
-                            .start()
-
-                        // Hide input layout when switching to History tab with slide down effect
-                        binding.inputCardLayout.animate()
-                            .alpha(0f)
-                            .translationY(50f)
-                            .setDuration(300)
-                            .setInterpolator(AccelerateDecelerateInterpolator())
-                            .withEndAction {
-                                binding.inputCardLayout.visibility = View.GONE
-                                binding.inputCardLayout.translationY = 0f
                             }
                             .start()
 
@@ -529,7 +607,7 @@ class StartActivity : BaseThemedActivity() {
 
                         // Animate ViewPager margin change
                         val params = binding.viewPager.layoutParams as CoordinatorLayout.LayoutParams
-                        val targetBottomMargin = resources.getDimensionPixelSize(R.dimen.tab_height) // Only tab height, no input
+                        val targetBottomMargin = resources.getDimensionPixelSize(R.dimen.tab_height) // Only tab height
                         
                         // Animate top margin to 0 (no header)
                         val currentTopMargin = params.topMargin
@@ -542,7 +620,7 @@ class StartActivity : BaseThemedActivity() {
                         topAnimator.interpolator = AccelerateDecelerateInterpolator()
                         topAnimator.start()
                         
-                        // Animate bottom margin to smaller size (no input area)
+                        // Animate bottom margin to smaller size (only tabs)
                         val currentBottomMargin = params.bottomMargin
                         val bottomAnimator = ValueAnimator.ofInt(currentBottomMargin, targetBottomMargin)
                         bottomAnimator.addUpdateListener { valueAnimator ->
@@ -552,39 +630,128 @@ class StartActivity : BaseThemedActivity() {
                         bottomAnimator.duration = 300
                         bottomAnimator.interpolator = AccelerateDecelerateInterpolator()
                         bottomAnimator.start()
+                        }
                     }
                 }
             })
 
-            // Connect TabLayout with ViewPager
-            TabLayoutMediator(binding.tabLayout, binding.viewPager) { tab, position ->
-                tab.text = when(position) {
-                    0 -> "Home"
-                    1 -> "History"
-                    else -> "Home"
-                }
+            // Don't use TabLayoutMediator - it conflicts with manual tab management
+            // We have 4 tabs but only 2 ViewPager pages, so we handle synchronization manually
+            
+            // Manually create all 4 tabs with proper configuration
+            binding.tabLayout.removeAllTabs()
+            
+            // Create Home tab (position 0)
+            val homeTab = binding.tabLayout.newTab()
+            homeTab.text = "Home"
+            homeTab.icon = getDrawable(R.drawable.ic_home)
+            binding.tabLayout.addTab(homeTab)
+            
+            // Create Chat tab (position 1) 
+            val chatTab = binding.tabLayout.newTab()
+            chatTab.text = "Chat"
+            chatTab.icon = getDrawable(R.drawable.ic_chat)
+            binding.tabLayout.addTab(chatTab)
+            
+            // Create Image tab (position 2)
+            val imageTab = binding.tabLayout.newTab()
+            imageTab.text = "Image"
+            imageTab.icon = getDrawable(R.drawable.ic_image_generation)
+            binding.tabLayout.addTab(imageTab)
+            
+            // Create History tab (position 3)
+            val historyTab = binding.tabLayout.newTab()
+            historyTab.text = "History"
+            historyTab.icon = getDrawable(R.drawable.history_menu)
+            binding.tabLayout.addTab(historyTab)
 
-                // Add icons to tabs
-                tab.icon = when(position) {
-                    0 -> getDrawable(R.drawable.ic_home)
-                    1 -> getDrawable(R.drawable.history_menu)
-                    else -> null
-                }
-            }.attach()
+            // Handle initial tab selection from intent (initialTab already declared above)
+            val fromTabNavigation = intent.getBooleanExtra("FROM_TAB_NAVIGATION", false)
+            
+            if (initialTab in 0..3) {
+                // ViewPager position was already set earlier to prevent flash
+                // Just select the correct tab without changing ViewPager again
+                isUpdatingTabSelection = true
+                val tabToSelect = binding.tabLayout.getTabAt(initialTab)
+                tabToSelect?.select()
+                isUpdatingTabSelection = false
+                
+                Timber.d("Initial tab $initialTab selected, ViewPager already positioned correctly")
+            }
 
             // Set up tab selection listener to handle navigation
             binding.tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
                 override fun onTabSelected(tab: TabLayout.Tab) {
-                    binding.viewPager.currentItem = tab.position
-                    animateTabSelection(tab)
-                    provideHapticFeedback()
+                    // Skip processing if this is a programmatic update or activity is not active
+                    if (isUpdatingTabSelection || !isActivityActive) return
+                    
+                    when (tab.position) {
+                        0 -> {
+                            // Home tab - use ViewPager, no animations
+                            isUpdatingTabSelection = true
+                            binding.viewPager.currentItem = viewPagerAdapter.getViewPagerPositionForTab(0)
+                            isUpdatingTabSelection = false
+                            provideHapticFeedback()
+                        }
+                        1 -> {
+                            // Chat tab - open MainActivity instantly
+                            provideHapticFeedback()
+                            val intent = Intent(this@StartActivity, MainActivity::class.java)
+                            intent.putExtra("FROM_TAB_NAVIGATION", true)
+                            intent.putExtra("SELECTED_TAB", 1)
+                            intent.flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                            startActivity(intent)
+                            overridePendingTransition(0, 0) // No transition animation
+                        }
+                        2 -> {
+                            // Image tab - open ImageGenerationActivity instantly
+                            provideHapticFeedback()
+                            val intent = Intent(this@StartActivity, ImageGenerationActivity::class.java)
+                            intent.putExtra("FROM_TAB_NAVIGATION", true)
+                            intent.putExtra("SELECTED_TAB", 2)
+                            intent.flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                            startActivity(intent)
+                            overridePendingTransition(0, 0) // No transition animation
+                        }
+                        3 -> {
+                            // History tab - use ViewPager, no animations
+                            isUpdatingTabSelection = true
+                            binding.viewPager.currentItem = viewPagerAdapter.getViewPagerPositionForTab(3)
+                            isUpdatingTabSelection = false
+                            provideHapticFeedback()
+                        }
+                    }
                 }
 
                 override fun onTabUnselected(tab: TabLayout.Tab) {}
 
                 override fun onTabReselected(tab: TabLayout.Tab) {
-                    animateTabSelection(tab)
-                    provideHapticFeedback()
+                    when (tab.position) {
+                        0, 3 -> {
+                            // Home or History - just provide feedback, no animations
+                            provideHapticFeedback()
+                        }
+                        1 -> {
+                            // Chat tab - open MainActivity instantly
+                            provideHapticFeedback()
+                            val intent = Intent(this@StartActivity, MainActivity::class.java)
+                            intent.putExtra("FROM_TAB_NAVIGATION", true)
+                            intent.putExtra("SELECTED_TAB", 1)
+                            intent.flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                            startActivity(intent)
+                            overridePendingTransition(0, 0) // No transition animation
+                        }
+                        2 -> {
+                            // Image tab - open ImageGenerationActivity instantly
+                            provideHapticFeedback()
+                            val intent = Intent(this@StartActivity, ImageGenerationActivity::class.java)
+                            intent.putExtra("FROM_TAB_NAVIGATION", true)
+                            intent.putExtra("SELECTED_TAB", 2)
+                            intent.flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                            startActivity(intent)
+                            overridePendingTransition(0, 0) // No transition animation
+                        }
+                    }
                 }
             })
 
@@ -642,6 +809,54 @@ class StartActivity : BaseThemedActivity() {
         provideHapticFeedback()
     }
 
+    /**
+     * Show loading feedback during tab switching to activities
+     */
+    private fun showTabSwitchLoading(tab: TabLayout.Tab, message: String) {
+        try {
+            val tabView = tab.view
+            val textView = tabView.findViewById<android.widget.TextView>(com.google.android.material.R.id.text)
+            val iconView = tabView.findViewById<android.widget.ImageView>(com.google.android.material.R.id.icon)
+            
+            // Store original text and icon
+            val originalText = textView?.text
+            val originalAlpha = iconView?.alpha ?: 1f
+            
+            // Show loading state
+            textView?.text = "Loading..."
+            iconView?.animate()
+                ?.alpha(0.5f)
+                ?.rotationY(360f)
+                ?.setDuration(150)
+                ?.start()
+                
+            // Add subtle pulse animation to the entire tab
+            tabView.animate()
+                .alpha(0.8f)
+                .setDuration(100)
+                .withEndAction {
+                    tabView.animate()
+                        .alpha(1f)
+                        .setDuration(100)
+                        .start()
+                }
+                .start()
+                
+            // Reset after delay
+            Handler(Looper.getMainLooper()).postDelayed({
+                textView?.text = originalText
+                iconView?.animate()
+                    ?.alpha(originalAlpha)
+                    ?.rotationY(0f)
+                    ?.setDuration(100)
+                    ?.start()
+            }, 300)
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Error showing tab switch loading: ${e.message}")
+        }
+    }
+
     private fun setupProButton() {
         binding.btnPro.apply {
             setOnClickListener {
@@ -672,71 +887,6 @@ class StartActivity : BaseThemedActivity() {
         updateUIBasedOnSubscriptionStatus()
     }
 
-    private fun setupInputArea() {
-        // Apply beautiful shadow and elevation to the card
-        binding.inputCardLayout.cardElevation = 10f
-
-        // Make the entire input card clickable
-        binding.inputCardLayout.setOnClickListener {
-            // Stop typewriter animation and enable input
-            stopTypewriterAnimation()
-            
-            // Haptic feedback for better interaction
-            provideHapticFeedback()
-
-            // Scale effect on click
-            binding.inputCardLayout.animate()
-                .scaleX(0.95f)
-                .scaleY(0.95f)
-                .setDuration(100)
-                .withEndAction {
-                    binding.inputCardLayout.animate()
-                        .scaleX(1f)
-                        .scaleY(1f)
-                        .setDuration(100)
-                        .start()
-                }
-                .start()
-
-            // Get text from input field (if any)
-            val text = binding.etInputText.text.toString().trim().replace("_", "")
-
-            // Open MainActivity with or without text
-            val intent = Intent(this, MainActivity::class.java)
-            if (text.isNotEmpty() && text != "Ask your question") {
-                intent.putExtra("INITIAL_PROMPT", text)
-                binding.etInputText.text?.clear()
-            }
-            startActivity(intent)
-        }
-        
-        // Stop animation when user taps on EditText
-        binding.etInputText.setOnFocusChangeListener { _, hasFocus ->
-            if (hasFocus) {
-                stopTypewriterAnimation()
-            }
-        }
-        
-        // Stop animation when user starts typing
-        binding.etInputText.setOnClickListener {
-            stopTypewriterAnimation()
-        }
-
-        // Keep existing submit button functionality
-        binding.btnSubmitText.setOnClickListener {
-            val text = binding.etInputText.text.toString().trim()
-            if (text.isNotEmpty()) {
-                startChatWithPrompt(text)
-                binding.etInputText.text?.clear()
-            }
-        }
-
-        // Add voice input button
-        binding.btnVoiceInput.setOnClickListener {
-            // Show voice input dialog or start voice recognition
-            showVoiceInputDialog()
-        }
-    }
 
     // Background animation removed for cleaner design
     // private fun setupAnimatedBackground() {
@@ -757,21 +907,6 @@ class StartActivity : BaseThemedActivity() {
             .setStartDelay(400)
             .start()
 
-        // Staggered animation for input card
-        binding.inputCardLayout.alpha = 0f
-        binding.inputCardLayout.scaleX = 0.8f
-        binding.inputCardLayout.scaleY = 0.8f
-        binding.inputCardLayout.translationY = 50f
-        binding.inputCardLayout.animate()
-            .alpha(1f)
-            .scaleX(1f)
-            .scaleY(1f)
-            .translationY(0f)
-            .setDuration(500)
-            .setInterpolator(AccelerateDecelerateInterpolator())
-            .setStartDelay(700)
-            .start()
-
         // Animate tabs with slide and fade effect
         binding.tabLayout.alpha = 0f
         binding.tabLayout.translationY = 30f
@@ -784,229 +919,33 @@ class StartActivity : BaseThemedActivity() {
             .start()
     }
 
-    private fun startTypewriterAnimation() {
-        if (isTypewriterRunning) return
-        
-        isTypewriterRunning = true
-        typewriterHandler = Handler(Looper.getMainLooper())
-        
-        // Clear existing text and disable user input temporarily
-        binding.etInputText.setText("")
-        binding.etInputText.isEnabled = false
-        
-        // Add initial fade-in effect for the input field
-        binding.etInputText.alpha = 0f
-        binding.etInputText.animate()
+    /**
+     * ULTRAFAST: Instant animation with ultra-short durations
+     */
+    private fun applyInputCardAnimationInstant() {
+        // Show bottom container instantly with ultra-fast animation
+        binding.bottomContainer.alpha = 0f
+        binding.bottomContainer.translationY = 50f  // Reduced distance
+        binding.bottomContainer.animate()
             .alpha(1f)
-            .setDuration(300)
-            .withEndAction {
-                startTypewriterCycle()
-            }
+            .translationY(0f)
+            .setDuration(150)  // Ultra-fast
+            .setInterpolator(AccelerateDecelerateInterpolator())
+            .setStartDelay(0)  // No delay
+            .start()
+
+        // Show tabs instantly with ultra-fast animation
+        binding.tabLayout.alpha = 0f
+        binding.tabLayout.translationY = 20f  // Reduced distance
+        binding.tabLayout.animate()
+            .alpha(1f)
+            .translationY(0f)
+            .setDuration(100)  // Ultra-fast
+            .setInterpolator(AccelerateDecelerateInterpolator())
+            .setStartDelay(50)  // Minimal delay for sequencing
             .start()
     }
-    
-    private fun startTypewriterCycle() {
-        if (!isTypewriterRunning) return
-        
-        // Start with initial cursor blinking
-        startInitialCursorBlink {
-            // Then start typing
-            startTypingAnimation {
-                // Then final cursor blinking
-                startFinalCursorBlink {
-                    // Wait and restart the cycle
-                    typewriterHandler?.postDelayed({
-                        if (isTypewriterRunning) {
-                            startTypewriterCycle()
-                        }
-                    }, 1500) // Pause between cycles
-                }
-            }
-        }
-    }
-    
-    private fun startInitialCursorBlink(onComplete: () -> Unit) {
-        var blinkCount = 0
-        val totalBlinks = 3
-        isCursorVisible = false
-        
-        cursorBlinkRunnable = object : Runnable {
-            override fun run() {
-                if (!isTypewriterRunning) return
-                
-                if (blinkCount < totalBlinks) {
-                    isCursorVisible = !isCursorVisible
-                    
-                    if (isCursorVisible) {
-                        binding.etInputText.setText("_")
-                        // Add subtle pulse effect for cursor
-                        binding.etInputText.animate()
-                            .scaleX(1.05f)
-                            .scaleY(1.05f)
-                            .setDuration(100)
-                            .withEndAction {
-                                binding.etInputText.animate()
-                                    .scaleX(1f)
-                                    .scaleY(1f)
-                                    .setDuration(100)
-                                    .start()
-                            }
-                            .start()
-                    } else {
-                        binding.etInputText.setText("")
-                        blinkCount++
-                    }
-                    
-                    typewriterHandler?.postDelayed(this, 500) // Smooth blink timing
-                } else {
-                    // Ensure cursor is visible before starting typing
-                    binding.etInputText.setText("")
-                    onComplete()
-                }
-            }
-        }
-        
-        typewriterHandler?.post(cursorBlinkRunnable!!)
-    }
-    
-    private fun startTypingAnimation(onComplete: () -> Unit) {
-        val text = "Ask your question"
-        var currentIndex = 0
-        
-        typewriterRunnable = object : Runnable {
-            override fun run() {
-                if (!isTypewriterRunning) return
-                
-                if (currentIndex <= text.length) {
-                    val currentText = text.substring(0, currentIndex)
-                    
-                    // Add cursor with smooth animation
-                    binding.etInputText.setText(currentText + "_")
-                    
-                    // Add subtle character appearance effect
-                    if (currentIndex > 0) {
-                        binding.etInputText.animate()
-                            .scaleX(1.02f)
-                            .scaleY(1.02f)
-                            .setDuration(50)
-                            .withEndAction {
-                                binding.etInputText.animate()
-                                    .scaleX(1f)
-                                    .scaleY(1f)
-                                    .setDuration(50)
-                                    .start()
-                            }
-                            .start()
-                    }
-                    
-                    currentIndex++
-                    
-                    if (currentIndex <= text.length) {
-                        // Variable typing speed for more natural feel
-                        val delay = when {
-                            currentText.endsWith(" ") -> 200L // Longer pause after spaces
-                            currentText.length < 3 -> 150L // Slower start
-                            else -> (80..120).random().toLong() // Natural variation
-                        }
-                        
-                        typewriterHandler?.postDelayed(this, delay)
-                    } else {
-                        onComplete()
-                    }
-                }
-            }
-        }
-        
-        typewriterHandler?.post(typewriterRunnable!!)
-    }
-    
-    private fun startFinalCursorBlink(onComplete: () -> Unit) {
-        var blinkCount = 0
-        val totalBlinks = 3
-        val currentText = "Ask your question"
-        
-        cursorBlinkRunnable = object : Runnable {
-            override fun run() {
-                if (!isTypewriterRunning) return
-                
-                if (blinkCount < totalBlinks) {
-                    isCursorVisible = !isCursorVisible
-                    
-                    if (isCursorVisible) {
-                        binding.etInputText.setText(currentText + "_")
-                        // Add gentle glow effect for final cursor blinks
-                        binding.etInputText.animate()
-                            .alpha(0.8f)
-                            .setDuration(150)
-                            .withEndAction {
-                                binding.etInputText.animate()
-                                    .alpha(1f)
-                                    .setDuration(150)
-                                    .start()
-                            }
-                            .start()
-                    } else {
-                        binding.etInputText.setText(currentText)
-                        blinkCount++
-                    }
-                    
-                    typewriterHandler?.postDelayed(this, 400) // Slightly faster final blinks
-                } else {
-                    // Smooth fade out before clearing text
-                    binding.etInputText.animate()
-                        .alpha(0.3f)
-                        .setDuration(300)
-                        .withEndAction {
-                            binding.etInputText.setText("")
-                            binding.etInputText.animate()
-                                .alpha(1f)
-                                .setDuration(200)
-                                .withEndAction {
-                                    onComplete()
-                                }
-                                .start()
-                        }
-                        .start()
-                }
-            }
-        }
-        
-        typewriterHandler?.post(cursorBlinkRunnable!!)
-    }
-    
-    private fun stopTypewriterAnimation() {
-        isTypewriterRunning = false
-        
-        // Remove all callbacks
-        typewriterHandler?.let { handler ->
-            typewriterRunnable?.let { handler.removeCallbacks(it) }
-            cursorBlinkRunnable?.let { handler.removeCallbacks(it) }
-        }
-        
-        typewriterHandler = null
-        typewriterRunnable = null
-        cursorBlinkRunnable = null
-        
-        // Restore original state with smooth transition
-        binding.etInputText.animate()
-            .alpha(0.3f)
-            .scaleX(0.98f)
-            .scaleY(0.98f)
-            .setDuration(150)
-            .withEndAction {
-                binding.etInputText.setText("")
-                binding.etInputText.animate()
-                    .alpha(1f)
-                    .scaleX(1f)
-                    .scaleY(1f)
-                    .setDuration(200)
-                    .withEndAction {
-                        binding.etInputText.isEnabled = true
-                    }
-                    .start()
-            }
-            .start()
-    }
+
 
     private fun checkForNotifications() {
         // Check for draft conversations
@@ -1044,7 +983,7 @@ class StartActivity : BaseThemedActivity() {
                     flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
                 }
                 startActivity(intent)
-                overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+                overridePendingTransition(0, 0) // ULTRAFAST: No transition animation
             }
 
             "image_upload" -> {
@@ -1055,7 +994,7 @@ class StartActivity : BaseThemedActivity() {
                     flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
                 }
                 startActivity(intent)
-                overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+                overridePendingTransition(0, 0) // ULTRAFAST: No transition animation
             }
 
             "ask_by_link" -> {
@@ -1065,7 +1004,7 @@ class StartActivity : BaseThemedActivity() {
                     flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
                 }
                 startActivity(intent)
-                overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+                overridePendingTransition(0, 0) // ULTRAFAST: No transition animation
             }
 
             "prompt_of_day" -> {
@@ -1090,7 +1029,7 @@ class StartActivity : BaseThemedActivity() {
                     flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
                 }
                 startActivity(intent)
-                overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+                overridePendingTransition(0, 0) // ULTRAFAST: No transition animation
             }
 
             "file_upload" -> {
@@ -1102,7 +1041,7 @@ class StartActivity : BaseThemedActivity() {
                     flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
                 }
                 startActivity(intent)
-                overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+                overridePendingTransition(0, 0) // ULTRAFAST: No transition animation
             }
 
             "private_chat" -> {
@@ -1112,14 +1051,14 @@ class StartActivity : BaseThemedActivity() {
                     flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
                 }
                 startActivity(intent)
-                overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+                overridePendingTransition(0, 0) // ULTRAFAST: No transition animation
             }
 
             "voice_chat" -> {
                 try {
                     val intent = Intent(this, AudioAiActivity::class.java)
                     startActivity(intent)
-                    overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+                    overridePendingTransition(0, 0) // ULTRAFAST: No transition animation
                     Timber.d("Opened AudioAiActivity for voice chat")
                 } catch (e: Exception) {
                     Timber.e(e, "Error opening AudioAiActivity: ${e.message}")
@@ -1131,13 +1070,36 @@ class StartActivity : BaseThemedActivity() {
                 try {
                     val intent = Intent(this, ImageGalleryActivity::class.java)
                     startActivity(intent)
-                    overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+                    overridePendingTransition(0, 0) // ULTRAFAST: No transition animation
                     Timber.d("Opened ImageGalleryActivity")
                 } catch (e: Exception) {
                     Timber.e(e, "Error opening ImageGalleryActivity: ${e.message}")
                     Toast.makeText(this, "Error opening image gallery: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
+            "video_generation" -> {
+                try {
+                    val intent = Intent(this, VideoGenerationActivity::class.java)
+                    startActivity(intent)
+                    overridePendingTransition(0, 0) // ULTRAFAST: No transition animation
+                    Timber.d("Opened VideoGenerationActivity")
+                } catch (e: Exception) {
+                    Timber.e(e, "Error opening VideoGenerationActivity: ${e.message}")
+                    Toast.makeText(this, "Error opening video generation: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+            "music_generation" -> {
+                try {
+                    val intent = Intent(this, VoiceGenerationActivity::class.java)
+                    startActivity(intent)
+                    overridePendingTransition(0, 0) // ULTRAFAST: No transition animation
+                    Timber.d("Opened VoiceGenerationActivity")
+                } catch (e: Exception) {
+                    Timber.e(e, "Error opening VoiceGenerationActivity: ${e.message}")
+                    Toast.makeText(this, "Error opening voice generation: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+
         }
     }
 
@@ -1164,24 +1126,10 @@ class StartActivity : BaseThemedActivity() {
     }
 
     fun startChatWithPrompt(prompt: String) {
-        // Animate the input card before navigating
-        binding.inputCardLayout.animate()
-            .scaleX(0.95f)
-            .scaleY(0.95f)
-            .setDuration(100)
-            .withEndAction {
-                binding.inputCardLayout.animate()
-                    .scaleX(1f)
-                    .scaleY(1f)
-                    .setDuration(100)
-                    .start()
-
-                val intent = Intent(this, MainActivity::class.java).apply {
-                    putExtra("INITIAL_PROMPT", prompt)
-                }
-                startActivity(intent)
-            }
-            .start()
+        val intent = Intent(this, MainActivity::class.java).apply {
+            putExtra("INITIAL_PROMPT", prompt)
+        }
+        startActivity(intent)
     }
 
     fun startChatWithModel(modelId: String) {
@@ -1216,7 +1164,7 @@ class StartActivity : BaseThemedActivity() {
             Toast.makeText(this, "Starting chat with $modelName", Toast.LENGTH_SHORT).show()
 
             // Optional animation
-            overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+            overridePendingTransition(0, 0) // ULTRAFAST: No transition animation
         } catch (e: Exception) {
             Timber.e(e, "Error starting chat with model: ${e.message}")
             Toast.makeText(this, "Error starting chat: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -1230,7 +1178,7 @@ class StartActivity : BaseThemedActivity() {
             startActivity(intent)
 
             // Add transition animation
-            overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+            overridePendingTransition(0, 0) // ULTRAFAST: No transition animation
 
             // Provide haptic feedback
             provideHapticFeedback()
@@ -1307,13 +1255,13 @@ class StartActivity : BaseThemedActivity() {
                 putExtra("INITIAL_PROMPT", "Please extract all text from this image and provide a summary.")
             }
             startActivity(intent)
-            overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+            overridePendingTransition(0, 0) // ULTRAFAST: No transition animation
         }
     }
 
     fun navigateToWelcomeActivity() {
-        SubscriptionActivity.start(this)
-        overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+        WelcomeActivity.start(this)
+        overridePendingTransition(0, 0) // ULTRAFAST: No transition animation
     }
 
     private fun showVoiceInputDialog() {
@@ -1336,13 +1284,9 @@ class StartActivity : BaseThemedActivity() {
         Handler(Looper.getMainLooper()).postDelayed({
             dialog.dismiss()
 
-            // Show "captured" text
-            binding.etInputText.setText("Tell me about the latest advancements in AI")
-
-            // Auto-send after slight delay
+            // Auto-send captured text
             Handler(Looper.getMainLooper()).postDelayed({
-                startChatWithPrompt(binding.etInputText.text.toString())
-                binding.etInputText.text?.clear()
+                startChatWithPrompt("Tell me about the latest advancements in AI")
             }, 500)
         }, 3000)
     }
@@ -1370,7 +1314,7 @@ class StartActivity : BaseThemedActivity() {
             startActivity(intent)
 
             // Add transition animation
-            overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+            overridePendingTransition(0, 0) // ULTRAFAST: No transition animation
         }
         dialog.show()
     }
@@ -1381,6 +1325,44 @@ class StartActivity : BaseThemedActivity() {
             startChatWithPrompt(prompt)
         }
         dialog.show()
+    }
+
+    /**
+     * Ensure the correct tab is selected for this activity
+     */
+    private fun ensureCorrectTabSelected() {
+        try {
+            // Only manage tabs when this activity is active to prevent cross-activity interference
+            if (!isActivityActive) {
+                Timber.d("StartActivity not active, skipping tab selection")
+                return
+            }
+            
+            if (::binding.isInitialized) {
+                val tabLayout = binding.tabLayout
+                val initialTab = intent.getIntExtra("INITIAL_TAB", 0)
+                val selectedTab = intent.getIntExtra("SELECTED_TAB", initialTab)
+                
+                // Only manage Home (0) and History (3) tabs - let other activities manage their tabs
+                if (selectedTab != 0 && selectedTab != 3) {
+                    Timber.d("Tab $selectedTab not managed by StartActivity, skipping")
+                    return
+                }
+                
+                val currentTab = tabLayout.getTabAt(selectedTab)
+                if (currentTab != null && !currentTab.isSelected) {
+                    isUpdatingTabSelection = true
+                    currentTab.select()
+                    // Update ViewPager for Home and History tabs
+                    val viewPagerPosition = viewPagerAdapter.getViewPagerPositionForTab(selectedTab)
+                    binding.viewPager.currentItem = viewPagerPosition
+                    isUpdatingTabSelection = false
+                    Timber.d("StartActivity corrected tab selection to tab $selectedTab with ViewPager item $viewPagerPosition")
+                }
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error ensuring correct tab selected: ${e.message}")
+        }
     }
 
     fun provideHapticFeedback() {
@@ -1413,25 +1395,18 @@ class StartActivity : BaseThemedActivity() {
 
     override fun onPause() {
         super.onPause()
-        // Pause typewriter animation to save resources
-        stopTypewriterAnimation()
+        isActivityActive = false
     }
     
     override fun onResume() {
         super.onResume()
-        // Restart typewriter animation if input field is empty
-        if (binding.etInputText.text.toString().isEmpty() && !isTypewriterRunning) {
-            Handler(Looper.getMainLooper()).postDelayed({
-                startTypewriterAnimation()
-            }, 500)
-        }
+        isActivityActive = true
+        // Ensure the correct tab is selected based on current activity
+        ensureCorrectTabSelected()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        
-        // Clean up typewriter animation
-        stopTypewriterAnimation()
         
         // Clean up dialog to prevent window leaks
         try {

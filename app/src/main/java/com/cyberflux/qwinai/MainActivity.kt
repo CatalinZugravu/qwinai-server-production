@@ -1,8 +1,6 @@
 package com.cyberflux.qwinai
 
 import android.Manifest
-import dagger.hilt.android.AndroidEntryPoint
-import javax.inject.Inject
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.app.Activity
@@ -67,6 +65,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.content.edit
+import androidx.core.content.res.ResourcesCompat
 import androidx.core.graphics.toColorInt
 import androidx.core.view.isGone
 import androidx.lifecycle.ViewModelProvider
@@ -76,6 +75,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.cyberflux.qwinai.adapter.ChatAdapter
 import com.cyberflux.qwinai.adapter.ConversationAdapter
 import com.cyberflux.qwinai.adapter.CustomSpinnerDialog
+import com.cyberflux.qwinai.adapter.ModelGridAdapter
 import com.cyberflux.qwinai.adapter.ModelSpinnerAdapter
 import com.cyberflux.qwinai.ui.FileUploadBottomSheet
 import com.cyberflux.qwinai.ui.DebugTokenDisplayHelper
@@ -108,6 +108,7 @@ import com.cyberflux.qwinai.utils.AIParametersDialog
 import com.cyberflux.qwinai.utils.AIParametersManager
 import com.cyberflux.qwinai.utils.AppSettings
 import com.cyberflux.qwinai.utils.BaseThemedActivity
+import com.cyberflux.qwinai.utils.DynamicColorManager
 import com.cyberflux.qwinai.utils.ThemeManager
 import com.cyberflux.qwinai.utils.UltraAudioIntegration
 import com.cyberflux.qwinai.utils.ConversationSummarizer
@@ -166,8 +167,7 @@ object NotificationConstants {
     const val NOTIFICATION_ID = 1001
 }
 
-@AndroidEntryPoint
-class MainActivity : BaseThemedActivity() {
+class MainActivity : BaseThemedActivity(), ModelGridAdapter.TranslationModeFetcher {
 
     // -------------------------------------------------------------------------
     // PROPERTIES AND FIELDS
@@ -258,7 +258,7 @@ class MainActivity : BaseThemedActivity() {
 
     // File Handling
     private var currentPhotoPath: String = ""
-    val selectedFiles = mutableListOf<FileUtil.FileUtil.SelectedFile>()
+    val selectedFiles = mutableListOf<FileUtil.SelectedFile>()
     // At the top with other properties
     private var consentHandled = false
     // Device Services
@@ -739,7 +739,7 @@ class MainActivity : BaseThemedActivity() {
             
             if (isOcrModel) {
                 // For OCR models: add file and show options, don't auto-process
-                val selectedFile = FileUtil.FileUtil.SelectedFile(
+                val selectedFile = FileUtil.SelectedFile(
                     uri = photoUri,
                     name = fileName,
                     size = fileSize,
@@ -777,24 +777,29 @@ class MainActivity : BaseThemedActivity() {
             
             // For non-OCR models: continue with existing auto-processing
             lifecycleScope.launch {
-                // 1. Create a temporary SelectedFile object for displaying
-                val temporaryFile = FileUtil.FileUtil.SelectedFile(
+                // 1. Create a temporary SelectedFile object for displaying - start in processing state
+                val temporaryFile = FileUtil.SelectedFile(
                     uri = photoUri,
                     name = fileName,
                     size = fileSize,
-                    isDocument = false
+                    isDocument = false,
+                    isExtracting = true,  // Start in processing state
+                    isExtracted = false   // Not yet processed
                 )
 
                 // 2. Add to selected files IMMEDIATELY with TEMP status
                 selectedFiles.add(temporaryFile)
 
-                // 3. Update UI to show the file with progress
+                // 3. Create single progress tracker that will be used throughout the entire process
+                val progressTracker = FileProgressTracker()
+
+                // 4. Update UI to show the file with progress
                 withContext(Dispatchers.Main) {
                     if (::fileHandler.isInitialized) {
                         fileHandler.updateSelectedFilesView()
                     }
 
-                    // 4. Get the view we just created and set up the progress tracker
+                    // 5. Get the view we just created and set up the progress tracker
                     val fileView = FileUtil.findFileViewForUri(photoUri, this@MainActivity)
                     if (fileView == null) {
                         Timber.e("Could not find view for camera photo: $photoUri")
@@ -806,26 +811,14 @@ class MainActivity : BaseThemedActivity() {
                         return@withContext
                     }
 
-                    // 5. Create a progress tracker and initialize it with the view
-                    val progressTracker = FileProgressTracker()
+                    // 6. Initialize the SAME progress tracker with the view and start showing progress
                     progressTracker.initWithImageFileItem(fileView)
-
-                    // 6. Start showing progress
                     progressTracker.showProgress()
                     progressTracker.observeProgress(this@MainActivity)
                 }
 
-                // 7. Create a progress tracker for handling the file processing
-                val progressTracker = FileProgressTracker()
-
                 try {
-                    progressTracker.updateProgress(
-                        0,
-                        "Analyzing photo",
-                        FileProgressTracker.ProcessingStage.INITIALIZING
-                    )
-
-                    // 8. Process the file using the com.cyberflux.qwinai.utils.UnifiedFileHandler - updated for Grok 3 Beta
+                    // Process the file - let UnifiedFileHandler handle ALL progress updates
                     val fileResult = unifiedFileHandler.processFileForModel(
                         photoUri,
                         ModelManager.selectedModel.id,
@@ -833,22 +826,27 @@ class MainActivity : BaseThemedActivity() {
                     )
 
                     if (fileResult.isSuccess) {
-                        progressTracker.updateProgress(
-                            80,
-                            "Photo processed successfully",
-                            FileProgressTracker.ProcessingStage.COMPLETE
-                        )
-
                         withContext(Dispatchers.Main) {
                             // Hide progress
-                            val fileView = FileUtil.findFileViewForUri(photoUri, this@MainActivity)
-                            if (fileView != null) {
-                                val finalProgressTracker = FileProgressTracker()
-                                finalProgressTracker.initWithImageFileItem(fileView)
-                                finalProgressTracker.hideProgress()
+                            progressTracker.hideProgress()
+                            
+                            // CRITICAL FIX: Update file state to show it's ready to send
+                            val index = selectedFiles.indexOfFirst { it.uri == temporaryFile.uri }
+                            if (index != -1) {
+                                selectedFiles[index] = temporaryFile.copy(
+                                    isExtracting = false,  // No longer processing
+                                    isExtracted = true,    // Successfully processed
+                                    processingInfo = "✅ Photo ready"
+                                )
+                                Timber.d("✅ Updated file state: photo ready to send")
                             }
-
-                            // Provide feedback
+                            
+                            // Update UI to reflect new file state
+                            if (::fileHandler.isInitialized) {
+                                fileHandler.updateSelectedFilesView()
+                            }
+                            updateButtonVisibilityAndState()  // Enable send button
+                            
                             Toast.makeText(
                                 this@MainActivity,
                                 "Photo added successfully",
@@ -859,22 +857,11 @@ class MainActivity : BaseThemedActivity() {
                             getSystemService(VIBRATOR_SERVICE) as Vibrator
                             provideHapticFeedback(50)
                         }
-
-                        progressTracker.updateProgress(
-                            100,
-                            "Photo processing complete",
-                            FileProgressTracker.ProcessingStage.COMPLETE
-                        )
-                        delay(500) // Show completion briefly
                     } else {
                         val error = fileResult.exceptionOrNull()
-                        progressTracker.updateProgress(
-                            100,
-                            "Error: ${error?.message}",
-                            FileProgressTracker.ProcessingStage.ERROR
-                        )
-
+                        
                         withContext(Dispatchers.Main) {
+                            progressTracker.hideProgress()
                             Toast.makeText(
                                 this@MainActivity,
                                 "Error processing photo: ${error?.message}",
@@ -970,7 +957,6 @@ class MainActivity : BaseThemedActivity() {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -999,8 +985,14 @@ class MainActivity : BaseThemedActivity() {
                 binding.chatRecyclerView.itemAnimator = null
                 setContentView(binding.root)
                 
+                // Apply accent status bar theming first
+                ThemeManager.applyAccentStatusBarTheming(this)
+                
                 // Apply Material Design 3 system UI appearance
                 ThemeManager.applySystemUIAppearance(this)
+                
+                // Apply dynamic accent colors to the main UI
+                applyDynamicAccentColor()
             } catch (e: Exception) {
                 Timber.e(e, "Failed to inflate binding: ${e.message}")
                 finish()
@@ -1186,7 +1178,6 @@ class MainActivity : BaseThemedActivity() {
     
     private fun setupChatAdapterCallbacks() {
         chatAdapter.setMessageCompletionCallback(object : ChatAdapter.MessageCompletionCallback {
-            @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
             override fun onMessageCompleted(message: ChatMessage) {
                 // Always use Handler for thread safety
                 Handler(Looper.getMainLooper()).post {
@@ -1319,7 +1310,7 @@ class MainActivity : BaseThemedActivity() {
                                         val modelIndex = ModelManager.models.indexOfFirst { it.id == currentModelBackup }
                                         if (modelIndex != -1) {
                                             ModelManager.selectedModel = ModelManager.models[modelIndex]
-                                            binding.spinnerModels.setSelection(modelIndex)
+                                            updateSelectedModelDisplay()
                                             updateControlsVisibility(currentModelBackup)
                                             applyModelColorToUI(currentModelBackup)
                                         }
@@ -1352,7 +1343,6 @@ class MainActivity : BaseThemedActivity() {
                 )
             }
 
-            @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
             override fun onMessageCompleted(messageId: String, content: String) {
                 Handler(Looper.getMainLooper()).post {
                     try {
@@ -1887,7 +1877,7 @@ class MainActivity : BaseThemedActivity() {
     private fun ensureFilesPersistent() {
         try {
             val persistentStorage = PersistentFileStorage(this)
-            val updatedFiles = mutableListOf<FileUtil.FileUtil.SelectedFile>()
+            val updatedFiles = mutableListOf<FileUtil.SelectedFile>()
             
             for (file in selectedFiles) {
                 if (!file.isPersistent) {
@@ -2302,6 +2292,31 @@ class MainActivity : BaseThemedActivity() {
         }
     }
 
+    // 🧪 DEBUG: Key event handler to test subscription activity
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+        return when (keyCode) {
+            android.view.KeyEvent.KEYCODE_VOLUME_UP -> {
+                Timber.d("🧪 DEBUG: Volume UP pressed - launching SubscriptionActivity for testing")
+                try {
+                    WelcomeActivity.start(this)
+                    true
+                } catch (e: Exception) {
+                    Timber.e("🧪 DEBUG: Failed to launch SubscriptionActivity: ${e.message}")
+                    false
+                }
+            }
+            android.view.KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                Timber.d("🧪 DEBUG: Volume DOWN pressed - showing debug info")
+                val isSubscribed = PrefsManager.isSubscribed(this)
+                val subscriptionType = PrefsManager.getSubscriptionType(this)
+                val endTime = PrefsManager.getSubscriptionEndTime(this)
+                android.widget.Toast.makeText(this, "🧪 DEBUG: Subscribed=$isSubscribed, Type=$subscriptionType, EndTime=$endTime", android.widget.Toast.LENGTH_LONG).show()
+                true
+            }
+            else -> super.onKeyDown(keyCode, event)
+        }
+    }
+
     override fun onPause() {
         super.onPause()
         if (::audioResponseHandler.isInitialized) {
@@ -2424,9 +2439,314 @@ class MainActivity : BaseThemedActivity() {
             // Setup basic listeners
             setupListeners()
             
+            // Setup bottom navigation tabs
+            setupBottomTabs()
+            
+            // Setup keyboard visibility detection
+            setupKeyboardVisibilityListener()
+            
             Timber.d("Basic UI setup completed")
         } catch (e: Exception) {
             Timber.e(e, "Error setting up basic UI: ${e.message}")
+        }
+    }
+
+    /**
+     * Setup bottom navigation tabs
+     */
+    private fun setupBottomTabs() {
+        try {
+            // Setup tab layout with icons and text
+            val tabLayout = binding.tabLayout
+            
+            // Create tabs
+            val homeTab = tabLayout.newTab()
+                .setText("Home")
+                .setIcon(getDrawable(R.drawable.ic_home))
+            
+            val chatTab = tabLayout.newTab()
+                .setText("Chat")
+                .setIcon(getDrawable(R.drawable.ic_chat))
+            
+            val imageTab = tabLayout.newTab()
+                .setText("Image")
+                .setIcon(getDrawable(R.drawable.ic_image_generation))
+            
+            val historyTab = tabLayout.newTab()
+                .setText("History")
+                .setIcon(getDrawable(R.drawable.history_menu))
+            
+            // Add tabs to layout
+            tabLayout.addTab(homeTab)
+            tabLayout.addTab(chatTab, true) // Select Chat tab since we're in MainActivity
+            tabLayout.addTab(imageTab)
+            tabLayout.addTab(historyTab)
+            
+            // Set up tab selection listener
+            tabLayout.addOnTabSelectedListener(object : com.google.android.material.tabs.TabLayout.OnTabSelectedListener {
+                override fun onTabSelected(tab: com.google.android.material.tabs.TabLayout.Tab) {
+                    when (tab.position) {
+                        0 -> {
+                            // Home tab - go to StartActivity with no animations
+                            provideHapticFeedback()
+                            val intent = Intent(this@MainActivity, StartActivity::class.java)
+                            intent.putExtra("FROM_TAB_NAVIGATION", true)
+                            intent.putExtra("SELECTED_TAB", 0)
+                            intent.flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                            startActivity(intent)
+                            overridePendingTransition(0, 0) // No transition animation
+                        }
+                        1 -> {
+                            // Chat tab - we're already here, just provide feedback
+                            provideHapticFeedback()
+                        }
+                        2 -> {
+                            // Image tab - go to ImageGenerationActivity with no animations
+                            provideHapticFeedback()
+                            val intent = Intent(this@MainActivity, ImageGenerationActivity::class.java)
+                            intent.putExtra("FROM_TAB_NAVIGATION", true)
+                            intent.putExtra("SELECTED_TAB", 2)
+                            intent.flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                            startActivity(intent)
+                            overridePendingTransition(0, 0) // No transition animation
+                        }
+                        3 -> {
+                            // History tab - go to StartActivity with History tab selected, no animations
+                            provideHapticFeedback()
+                            val intent = Intent(this@MainActivity, StartActivity::class.java)
+                            intent.putExtra("INITIAL_TAB", 3)
+                            intent.putExtra("FROM_TAB_NAVIGATION", true)
+                            intent.putExtra("SELECTED_TAB", 3)
+                            intent.flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                            startActivity(intent)
+                            overridePendingTransition(0, 0) // No transition animation
+                        }
+                    }
+                }
+
+                override fun onTabUnselected(tab: com.google.android.material.tabs.TabLayout.Tab) {}
+                override fun onTabReselected(tab: com.google.android.material.tabs.TabLayout.Tab) {
+                    // Just provide feedback for reselection
+                    provideHapticFeedback()
+                }
+            })
+            
+            Timber.d("Bottom tabs setup completed")
+        } catch (e: Exception) {
+            Timber.e(e, "Error setting up bottom tabs: ${e.message}")
+        }
+    }
+
+    /**
+     * Ensure the correct tab is selected for this activity
+     */
+    private fun ensureCorrectTabSelected() {
+        try {
+            // Only manage Chat tab (position 1) - don't interfere with other activities
+            if (::binding.isInitialized) {
+                val fromTabNavigation = intent.getBooleanExtra("FROM_TAB_NAVIGATION", false)
+                val selectedTab = intent.getIntExtra("SELECTED_TAB", 1)
+                
+                // Only select Chat tab if explicitly intended for this activity
+                if (selectedTab == 1 || fromTabNavigation) {
+                    val tabLayout = binding.tabLayout
+                    val chatTab = tabLayout.getTabAt(1) // Chat tab is at position 1
+                    if (chatTab != null && !chatTab.isSelected) {
+                        chatTab.select()
+                        Timber.d("MainActivity corrected tab selection to Chat tab")
+                    }
+                } else {
+                    Timber.d("MainActivity skipping tab selection - not intended for Chat tab")
+                }
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error ensuring correct tab selected: ${e.message}")
+        }
+    }
+
+    /**
+     * Animate tab selection with consistent effects
+     */
+    private fun animateTabSelection(tab: com.google.android.material.tabs.TabLayout.Tab) {
+        try {
+            val view = tab.view
+            
+            // Create a bounce effect with rotation - same as StartActivity
+            view.animate()
+                .scaleX(0.85f)
+                .scaleY(0.85f)
+                .rotation(5f)
+                .setDuration(100)
+                .setInterpolator(AccelerateDecelerateInterpolator())
+                .withEndAction {
+                    view.animate()
+                        .scaleX(1.1f)
+                        .scaleY(1.1f)
+                        .rotation(-2f)
+                        .setDuration(150)
+                        .setInterpolator(AccelerateDecelerateInterpolator())
+                        .withEndAction {
+                            view.animate()
+                                .scaleX(1f)
+                                .scaleY(1f)
+                                .rotation(0f)
+                                .setDuration(100)
+                                .setInterpolator(AccelerateDecelerateInterpolator())
+                                .start()
+                        }
+                        .start()
+                }
+                .start()
+
+            // Add a subtle color pulse effect to the icon
+            tab.icon?.let { icon ->
+                val iconView = view.findViewById<android.widget.ImageView>(com.google.android.material.R.id.icon)
+                iconView?.animate()
+                    ?.alpha(0.6f)
+                    ?.setDuration(75)
+                    ?.withEndAction {
+                        iconView.animate()
+                            .alpha(1f)
+                            .setDuration(75)
+                            .start()
+                    }
+                    ?.start()
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error animating tab selection: ${e.message}")
+        }
+    }
+
+    /**
+     * Setup keyboard visibility detection to hide tabs when keyboard is open
+     */
+    private fun setupKeyboardVisibilityListener() {
+        // Also set up focus listener on input field for immediate response
+        setupInputFieldFocusListener()
+        try {
+            val rootView = binding.root
+            val tabLayout = binding.bottomContainer
+            
+            // Store initial values
+            var rootViewHeight = 0
+            var isKeyboardCurrentlyVisible = false
+            
+            val globalLayoutListener = object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+                override fun onGlobalLayout() {
+                    val rect = android.graphics.Rect()
+                    rootView.getWindowVisibleDisplayFrame(rect)
+                    
+                    val currentRootViewHeight = rootView.height
+                    
+                    // Initialize on first call
+                    if (rootViewHeight == 0) {
+                        rootViewHeight = currentRootViewHeight
+                        return
+                    }
+                    
+                    val heightDifference = rootViewHeight - (rect.bottom - rect.top)
+                    val keyboardHeight = heightDifference
+                    
+                    // More reliable keyboard detection - threshold based on dp value
+                    val keyboardThreshold = (200 * resources.displayMetrics.density).toInt()
+                    val isKeyboardVisible = keyboardHeight > keyboardThreshold
+                    
+                    // Debug logging
+                    Timber.d("Keyboard detection: height=$keyboardHeight, threshold=$keyboardThreshold, visible=$isKeyboardVisible")
+                    
+                    // Only animate if state changed
+                    if (isKeyboardVisible != isKeyboardCurrentlyVisible) {
+                        isKeyboardCurrentlyVisible = isKeyboardVisible
+                        
+                        if (isKeyboardVisible && tabLayout.visibility == View.VISIBLE) {
+                            // Hide tabs with smooth slide down animation
+                            Timber.d("Hiding TabLayout - keyboard opened")
+                            tabLayout.animate()
+                                .translationY(tabLayout.height.toFloat())
+                                .alpha(0f)
+                                .setDuration(250)
+                                .setInterpolator(AccelerateDecelerateInterpolator())
+                                .withEndAction {
+                                    tabLayout.visibility = View.GONE
+                                }
+                                .start()
+                        } else if (!isKeyboardVisible && tabLayout.visibility != View.VISIBLE) {
+                            // Show tabs with smooth slide up animation  
+                            Timber.d("Showing TabLayout - keyboard closed")
+                            tabLayout.visibility = View.VISIBLE
+                            tabLayout.translationY = tabLayout.height.toFloat()
+                            tabLayout.alpha = 0f
+                            tabLayout.animate()
+                                .translationY(0f)
+                                .alpha(1f)
+                                .setDuration(250)
+                                .setInterpolator(AccelerateDecelerateInterpolator())
+                                .start()
+                        }
+                    }
+                }
+            }
+            
+            rootView.viewTreeObserver.addOnGlobalLayoutListener(globalLayoutListener)
+            
+            Timber.d("Enhanced keyboard visibility listener setup completed")
+        } catch (e: Exception) {
+            Timber.e(e, "Error setting up keyboard visibility listener: ${e.message}")
+        }
+    }
+
+    /**
+     * Setup focus listener on input field for immediate keyboard response
+     */
+    private fun setupInputFieldFocusListener() {
+        try {
+            val tabLayout = binding.bottomContainer
+            
+            binding.etInputText.setOnFocusChangeListener { _, hasFocus ->
+                if (hasFocus) {
+                    // Input field gained focus - keyboard likely to appear
+                    Timber.d("Input field focused - preparing to hide TabLayout")
+                    
+                    // Hide TabLayout with slight delay to allow for keyboard animation
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        if (tabLayout.visibility == View.VISIBLE) {
+                            Timber.d("Hiding TabLayout due to input focus")
+                            tabLayout.animate()
+                                .translationY(tabLayout.height.toFloat())
+                                .alpha(0f)
+                                .setDuration(200)
+                                .setInterpolator(AccelerateDecelerateInterpolator())
+                                .withEndAction {
+                                    tabLayout.visibility = View.GONE
+                                }
+                                .start()
+                        }
+                    }, 100)
+                } else {
+                    // Input field lost focus - keyboard likely to disappear
+                    Timber.d("Input field unfocused - preparing to show TabLayout")
+                    
+                    // Show TabLayout with slight delay to allow for keyboard animation
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        if (tabLayout.visibility != View.VISIBLE) {
+                            Timber.d("Showing TabLayout due to input unfocus")
+                            tabLayout.visibility = View.VISIBLE
+                            tabLayout.translationY = tabLayout.height.toFloat()
+                            tabLayout.alpha = 0f
+                            tabLayout.animate()
+                                .translationY(0f)
+                                .alpha(1f)
+                                .setDuration(200)
+                                .setInterpolator(AccelerateDecelerateInterpolator())
+                                .start()
+                        }
+                    }, 300) // Longer delay for showing to ensure keyboard is fully hidden
+                }
+            }
+            
+            Timber.d("Input field focus listener setup completed")
+        } catch (e: Exception) {
+            Timber.e(e, "Error setting up input field focus listener: ${e.message}")
         }
     }
 
@@ -2440,14 +2760,12 @@ class MainActivity : BaseThemedActivity() {
                 setupUIComponents()
                 setupScrollArrows()
                 
-                // Initialize remaining services
-                initializeButtons()
+                // Initialize remaining services (buttons/listeners already setup in setupBasicUI)
                 initializeEnhancedButtonHandling()
                 initializeTextExpansion()
                 initializeAudio()
                 
-                // Setup listeners and input handling
-                setupListeners()
+                // Setup additional input handling
                 setupDraftTextChangeListener()
                 
                 // Load conversation data
@@ -2759,11 +3077,34 @@ class MainActivity : BaseThemedActivity() {
             putLong("last_session_time", System.currentTimeMillis())
         }
         
+        // Ensure the Chat tab is selected when MainActivity is active
+        ensureCorrectTabSelected()
+        
         } catch (e: Exception) {
             Timber.e(e, "Error in MainActivity onResume: ${e.message}")
             // Don't crash - just log and continue
         }
     }
+
+    /**
+     * Override from BaseThemedActivity to apply dynamic accent colors
+     */
+    override fun applyDynamicAccentColor() {
+        try {
+            if (::binding.isInitialized) {
+                // Apply accent colors to the main UI components
+                DynamicColorManager.applyAccentColorToViewGroup(this, binding.root)
+                
+                // Apply to specific common elements
+                DynamicColorManager.applyAccentColorToCommonElements(this, binding.root)
+                
+                Timber.d("Applied dynamic accent colors to MainActivity")
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error applying dynamic accent colors: ${e.message}")
+        }
+    }
+
     override fun onDestroy() {
         try {
             Timber.d("MainActivity onDestroy called")
@@ -2969,8 +3310,8 @@ class MainActivity : BaseThemedActivity() {
                 // Reset spinner to default model using ModelManager
                 val modelIndex = ModelManager.models.indexOfFirst { it.id == defaultModelId }
                 if (modelIndex != -1) {
-                    binding.spinnerModels.setSelection(modelIndex)
                     ModelManager.selectedModel = ModelManager.models[modelIndex]
+                    updateSelectedModelDisplay()
                 }
 
                 Timber.d("Reset AI model spinner to default model")
@@ -3293,7 +3634,6 @@ class MainActivity : BaseThemedActivity() {
         updateReasoningButtonState(isReasoningEnabled)
         updateDeepSearchButtonState(isDeepSearchEnabled)
     }
-    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun setupListeners() {
         // Existing reasoning and deep search listeners
         btnReasoning.setOnClickListener {
@@ -3322,15 +3662,11 @@ class MainActivity : BaseThemedActivity() {
         }
 
         // CHANGED: Update btnConversationsList to be a back button to StartActivity
-        binding.btnConversationsList.setOnClickListener {
-            provideHapticFeedback(50)
-            // Navigate back to StartActivity
-            finish()
-        }
 
 
-        binding.btnNewConversation.setOnClickListener {
-            startNewConversation()
+        binding.btnMainMenu.setOnClickListener { view ->
+            Timber.d("🔘 btnMainMenu clicked - triggering showMainMenu")
+            showMainMenu(view)
         }
 
         binding.btnAttach.setOnClickListener {
@@ -3347,6 +3683,21 @@ class MainActivity : BaseThemedActivity() {
 
         binding.creditsButton.setOnClickListener {
             showGetCreditsMenu()
+        }
+
+        // Conversations list button
+        binding.btnConversationsList.setOnClickListener {
+            provideHapticFeedback(50)
+            navigateToConversationsActivity()
+        }
+
+        // Microphone button handler
+        binding.btnMicrophone.setOnClickListener {
+            if (::ultraAudioIntegration.isInitialized) {
+                ultraAudioIntegration.startUltraVoiceRecording()
+            } else {
+                Toast.makeText(this, "Voice recording not initialized", Toast.LENGTH_SHORT).show()
+            }
         }
     }
     /**
@@ -3383,7 +3734,6 @@ class MainActivity : BaseThemedActivity() {
         window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
     }
 
-    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun setupChatAdapter() {
         chatAdapter = ChatAdapter(
             onCopy = { text -> copyToClipboard(text) },
@@ -3406,6 +3756,11 @@ class MainActivity : BaseThemedActivity() {
             onAudioPlay = { message -> handleAudioPlayRequest(message) }, // Add this line
             currentModelId = ModelManager.selectedModel.id
         )
+        
+        // Initialize font size from preferences
+        val savedFontSize = getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+            .getFloat("chat_font_size", 16f)
+        chatAdapter.updateFontSize(savedFontSize)
 
         conversationAdapter = ConversationAdapter(
             onConversationClick = { conversation ->
@@ -3441,7 +3796,6 @@ class MainActivity : BaseThemedActivity() {
             }
             
             addOnScrollListener(object : RecyclerView.OnScrollListener() {
-                @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
                 override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                     super.onScrollStateChanged(recyclerView, newState)
                     if (!recyclerView.canScrollVertically(1) && newState == RecyclerView.SCROLL_STATE_IDLE) {
@@ -3461,34 +3815,12 @@ class MainActivity : BaseThemedActivity() {
         ModelValidator.clearCache()
         ModelValidator.init() // Initialize validators explicitly
 
-        // Apply clean transparent styling for the spinner
-        binding.spinnerModels.apply {
-            // Remove any background to get the clean look
-            background = null
-
-            // Set dimensions to wrap content for clean appearance
-            layoutParams = layoutParams.apply {
-                width = ViewGroup.LayoutParams.WRAP_CONTENT
-            }
-
-            // Configure dropdown behavior
-            dropDownWidth = ViewGroup.LayoutParams.MATCH_PARENT
-            val offsetInDp = 2
-            val offsetInPixels = (offsetInDp * resources.displayMetrics.density).toInt()
-            dropDownVerticalOffset = offsetInPixels
-            setPopupBackgroundResource(R.drawable.spinner_dropdown_background)
+        // Set up click handler to show custom dialog instead of spinner dropdown
+        binding.spinnerModels.setOnClickListener {
+            showCustomModelSelectionDialog()
         }
 
-        // Use simple adapter instead of complicated one
-        val adapter = ModelSpinnerAdapter(
-            context = this,
-            models = ModelManager.models,
-            isTranslationMode = { isTranslationModeActive }
-        )
-
-        binding.spinnerModels.adapter = adapter
-
-        // Load default model as before
+        // Load default model
         val sharedPrefs = getSharedPreferences("app_settings", MODE_PRIVATE)
         val defaultModelId = sharedPrefs.getString("default_ai_model_id", ModelManager.DEFAULT_MODEL_ID)
             ?: ModelManager.DEFAULT_MODEL_ID
@@ -3499,187 +3831,26 @@ class MainActivity : BaseThemedActivity() {
             // Update ModelManager selection first
             ModelManager.selectedModel = ModelManager.models[currentModelIndex]
             
-            // Update token manager with new model ID
-            // Model changes are handled automatically by the new token system
-
-            // Update adapter selection
-            adapter.setSelectedPosition(currentModelIndex)
-
-            // Set spinner selection
-            binding.spinnerModels.setSelection(currentModelIndex)
+            // Update selected model display
+            updateSelectedModelDisplay()
 
             // Update the model position in response preferences
             responsePreferences.modelPosition = currentModelIndex
 
             // Record usage for the default model on app start
             ModelUsageTracker.recordModelUsage(this, defaultModelId)
+            
+            // Update UI
+            applyModelColorToUI(defaultModelId)
+            updateControlsVisibility(defaultModelId)
         }
-
-        // Variable to track current selection
-        var currentSelection = currentModelIndex
-
-        // Disable the default spinner dropdown behavior and implement custom dialog
-        binding.spinnerModels.setOnTouchListener { view, event ->
-            if (event.action == android.view.MotionEvent.ACTION_UP) {
-                // Get the current selection before showing dialog
-                val currentPosition = binding.spinnerModels.selectedItemPosition
-
-                // Load the latest preferences to ensure they're current
-                responsePreferences = loadResponsePreferences()
-
-                // Always update the model position to match the spinner
-                responsePreferences.modelPosition = currentPosition
-
-                // Show custom dialog with loaded preferences and translation mode support
-                val customDialog = CustomSpinnerDialog(
-                    this,
-                    ModelManager.models,
-                    currentPosition,
-                    isTranslationModeFunc = { isTranslationModeActive } // Updated parameter name
-                ) { preferences ->
-                    val selectedModel = ModelManager.models[preferences.modelPosition]
-
-                    // Check if model is disabled in translation mode
-                    if (isTranslationModeActive && !TranslationUtils.supportsTranslation(selectedModel.id)) {
-                        // Simply ignore the selection - model is already visually disabled
-                        return@CustomSpinnerDialog
-                    }
-
-                    // Update our tracked preferences with the returned ones
-                    responsePreferences = preferences
-
-                    // Save the preferences to SharedPreferences
-                    saveResponsePreferences(preferences)
-
-                    Timber.d("Model selected: ${selectedModel.displayName} (${selectedModel.id})")
-                    Timber.d("Response preferences: length=${preferences.length.displayName}, tone=${preferences.tone.displayName}")
-
-                    // Update our tracked selection for the spinner
-                    currentSelection = preferences.modelPosition
-
-                    // Update the adapter's selected position
-                    adapter.setSelectedPosition(preferences.modelPosition)
-
-                    // Force the spinner to update its display
-                    binding.spinnerModels.setSelection(preferences.modelPosition)
-
-                    // Record this model usage for tracking recent models
-                    ModelUsageTracker.recordModelUsage(this, selectedModel.id)
-
-                    // Check if this is a dedicated image generator model
-                    if (ModelValidator.isImageGenerator(selectedModel.id) &&
-                        !ModelValidator.supportsImageUpload(selectedModel.id)) {
-                        // This is an image-only model like DALL-E 2
-                        ModelManager.selectedModel = selectedModel
-                        
-                        // Model changes handled automatically by new token system
-
-                        // Apply color for visual feedback before launching
-                        applyModelColorToUI(selectedModel.id)
-
-                        // Only launch if this isn't the first selection during app initialization
-                        if (!isFirstModelSelection) {
-                            // Set flag to reset model selection when returning
-                            val appSettings = getSharedPreferences("app_settings", MODE_PRIVATE)
-                            appSettings.edit {
-                                putBoolean("reset_to_default_model", true)
-                                apply()
-                            }
-
-                            // Launch the image generation activity
-                            val intent = Intent(this@MainActivity, ImageGenerationActivity::class.java)
-                            startActivity(intent)
-                        } else {
-                            isFirstModelSelection = false
-                        }
-                        return@CustomSpinnerDialog
-                    }
-
-                    if (isFirstModelSelection) {
-                        isFirstModelSelection = false
-                        // Apply the initial color even on first selection
-                        applyModelColorToUI(selectedModel.id)
-
-                        // Update the ChatAdapter with the new model for welcome message
-                        chatAdapter.updateCurrentModel(selectedModel.id)
-
-                        // IMPORTANT: Update controls synchronously during initialization
-                        updateControlsVisibility(selectedModel.id)
-                        return@CustomSpinnerDialog
-                    }
-
-                    // CRITICAL FIX: Only cancel generation if model is actually changing AND we're not restoring a conversation
-                    val isActualModelChange = ModelManager.selectedModel.id != selectedModel.id
-                    val hasGeneratingMessages = chatAdapter.currentList.any { !it.isUser && it.isGenerating }
-                    
-                    if (isActualModelChange && !hasGeneratingMessages) {
-                        // Only cancel if it's a real model change and no ongoing generation
-                        isGenerating = false
-                        chatAdapter.setGenerating(false)
-                        currentApiJob?.cancel()
-                        currentApiJob = null
-                        Timber.d("🔄 Canceled generation due to model change: ${ModelManager.selectedModel.id} -> ${selectedModel.id}")
-                    } else if (hasGeneratingMessages) {
-                        Timber.d("🔄 Keeping ongoing generation alive during conversation restore")
-                    }
-
-                    // Reset UI state
-                    binding.typingIndicator.visibility = View.GONE
-                    stopPulsingAnimation()
-
-                    // Model change - no dialog about exiting translation mode
-                    proceedWithModelChange(selectedModel, preferences)
-                }
-
-                customDialog.show(binding.spinnerModels)
-                return@setOnTouchListener true
-            }
-            false
-        }
-
-        // Standard item selection listener as backup for programmatic selection
-        binding.spinnerModels.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
-                val selectedModel = ModelManager.models[position]
-
-                // Only process if this is a programmatic selection (not from touch)
-                if (position != currentSelection) {
-                    // Check translation mode compatibility for programmatic selections too
-                    if (isTranslationModeActive && !TranslationUtils.supportsTranslation(selectedModel.id)) {
-                        // Reset to previous selection
-                        binding.spinnerModels.setSelection(currentSelection)
-                        return
-                    }
-
-                    // Track selection
-                    currentSelection = position
-
-                    // Update ModelManager
-                    ModelManager.selectedModel = selectedModel
-                    
-                    // Load AI parameters for the new model
-                    loadAiParametersForCurrentModel()
-                    
-                    // Model changes handled automatically by new token system
-
-                    // Record model usage for tracking
-                    ModelUsageTracker.recordModelUsage(this@MainActivity, selectedModel.id)
-
-                    // Update UI
-                    applyModelColorToUI(selectedModel.id)
-                    updateControlsVisibility(selectedModel.id)
-
-                    Timber.d("Model programmatically selected: ${selectedModel.displayName}")
-                }
-            }
-
-            override fun onNothingSelected(parent: AdapterView<*>) {
-                // Do nothing
-            }
-        }
-
+        
         // Apply color for the initial model on startup
         applyModelColorToUI(ModelManager.selectedModel.id)
+    }
+    
+    private fun updateSelectedModelDisplay() {
+        binding.tvSelectedModel.text = ModelManager.selectedModel.displayName
         
         // Load AI parameters for the initial model
         loadAiParametersForCurrentModel()
@@ -4158,7 +4329,7 @@ class MainActivity : BaseThemedActivity() {
                         // Convert MessageDraftManager.DraftFile to SelectedFile format
                         draftFiles = messageDraftFiles.mapNotNull { draftFile ->
                             try {
-                                FileUtil.FileUtil.SelectedFile(
+                                FileUtil.SelectedFile(
                                     uri = android.net.Uri.parse(draftFile.uri),
                                     name = draftFile.name,
                                     size = draftFile.size,
@@ -4204,7 +4375,7 @@ class MainActivity : BaseThemedActivity() {
                     // First check if this is already a persistent file
                     if (file.isPersistent && file.persistentFileName.isNotEmpty()) {
                         // Try to restore from persistent storage
-                        val restoredFile = FileUtil.FileUtil.SelectedFile.fromPersistentFileName(
+                        val restoredFile = FileUtil.SelectedFile.fromPersistentFileName(
                             fileName = file.persistentFileName,
                             persistentStorage = persistentStorage,
                             size = file.size,
@@ -4315,7 +4486,7 @@ class MainActivity : BaseThemedActivity() {
      * Clean up invalid draft file references in the database
      * Updates the conversation's draft files to only include valid files
      */
-    private fun cleanupInvalidDraftFiles(conversationId: String, validFiles: List<FileUtil.FileUtil.SelectedFile>) {
+    private fun cleanupInvalidDraftFiles(conversationId: String, validFiles: List<FileUtil.SelectedFile>) {
         lifecycleScope.launch {
             try {
                 withContext(Dispatchers.IO) {
@@ -4562,7 +4733,7 @@ class MainActivity : BaseThemedActivity() {
                                 chatTitleView.text = convo.title
                                 isMessageSent = messages.isNotEmpty()
                                 updateNewConversationButtonState()
-                                binding.btnNewConversation.isEnabled = true
+                                binding.btnMainMenu.isEnabled = true
                             }
 
                             // Scroll chat to bottom
@@ -5104,6 +5275,512 @@ class MainActivity : BaseThemedActivity() {
         }
     }
 
+    private fun showMainMenu(view: View) {
+        Timber.d("🔘 Main menu button clicked - showing beautiful menu dialog")
+        try {
+            val dialogView = layoutInflater.inflate(R.layout.dialog_main_menu, null)
+            
+            val dialog = MaterialAlertDialogBuilder(this)
+                .setView(dialogView)
+                .create()
+            
+            // Configure dialog window positioning
+            dialog.window?.apply {
+                setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                setGravity(Gravity.TOP or Gravity.END)
+                
+                val params = attributes
+                val location = IntArray(2)
+                view.getLocationOnScreen(location)
+                
+                // Position dialog just below the menu button with proper margins
+                params.x = 16 // Right margin from screen edge
+                params.y = location[1] + view.height + 8 // Small gap below button
+                attributes = params
+                
+                // Set dialog dimensions
+                setLayout(
+                    280.dpToPx(), // Fixed width matching layout
+                    WindowManager.LayoutParams.WRAP_CONTENT
+                )
+            }
+            
+            // Get current follow-up questions setting
+            val followUpEnabled = getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+                .getBoolean("follow_up_questions_enabled", true)
+            
+            val toggleSwitch = dialogView.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.toggle_follow_up)
+            toggleSwitch.isChecked = followUpEnabled
+            
+            // Set up click listeners
+            dialogView.findViewById<LinearLayout>(R.id.menu_new_chat).setOnClickListener {
+                Timber.d("🔘 New Chat clicked")
+                dialog.dismiss()
+                startNewConversation()
+            }
+            
+            dialogView.findViewById<LinearLayout>(R.id.menu_chat_settings).setOnClickListener {
+                Timber.d("🔘 Chat Settings clicked")
+                dialog.dismiss()
+                showChatSettingsDialog()
+            }
+            
+            dialogView.findViewById<LinearLayout>(R.id.menu_speech_settings).setOnClickListener {
+                Timber.d("🔘 Speech Settings clicked")
+                dialog.dismiss()
+                showSpeechSettingsDialog()
+            }
+            
+            dialogView.findViewById<LinearLayout>(R.id.menu_font_size).setOnClickListener {
+                Timber.d("🔘 Font Size clicked")
+                dialog.dismiss()
+                showFontSizeDialog()
+            }
+            
+            dialogView.findViewById<LinearLayout>(R.id.menu_share).setOnClickListener {
+                Timber.d("🔘 Share clicked")
+                dialog.dismiss()
+                shareCurrentConversation()
+            }
+            
+            dialogView.findViewById<LinearLayout>(R.id.menu_follow_up_questions).setOnClickListener {
+                Timber.d("🔘 Follow-up Questions clicked")
+                val newState = !toggleSwitch.isChecked
+                toggleSwitch.isChecked = newState
+                toggleFollowUpQuestions(newState)
+                dialog.dismiss()
+            }
+            
+            // Also handle direct toggle switch clicks
+            toggleSwitch.setOnCheckedChangeListener { _, isChecked ->
+                Timber.d("🔘 Follow-up Questions toggled to: $isChecked")
+                toggleFollowUpQuestions(isChecked)
+            }
+            
+            dialog.show()
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Error showing beautiful menu: ${e.message}")
+            Toast.makeText(this, "Error showing menu", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun showFontSizeDialog() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_font_size, null)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setView(dialogView)
+            .create()
+        
+        dialog.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            setGravity(Gravity.BOTTOM)
+            setLayout(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.WRAP_CONTENT
+            )
+            // Remove all dialog margins and padding for true edge-to-edge display
+            decorView.setPadding(0, 0, 0, 0)
+            attributes?.let { layoutParams ->
+                layoutParams.horizontalMargin = 0f
+                layoutParams.verticalMargin = 0f
+                layoutParams.width = WindowManager.LayoutParams.MATCH_PARENT
+                layoutParams.height = WindowManager.LayoutParams.WRAP_CONTENT
+                layoutParams.x = 0
+                layoutParams.y = 0
+                attributes = layoutParams
+            }
+            // Ensure no system window insets
+            decorView.systemUiVisibility = decorView.systemUiVisibility or 
+                android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        }
+        
+        val slider = dialogView.findViewById<com.google.android.material.slider.Slider>(R.id.fontSizeSlider)
+        val previewText = dialogView.findViewById<TextView>(R.id.tvPreviewText)
+        val btnApply = dialogView.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnApplyFontSize)
+        
+        // Load current font size from preferences
+        val currentFontSize = getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+            .getFloat("chat_font_size", 16f)
+        slider.value = currentFontSize
+        previewText.textSize = currentFontSize
+        
+        // Update preview as slider moves
+        slider.addOnChangeListener { _, value, _ ->
+            previewText.textSize = value
+        }
+        
+        // Apply button click
+        btnApply.setOnClickListener {
+            val selectedSize = slider.value
+            
+            // Save to preferences
+            getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+                .edit()
+                .putFloat("chat_font_size", selectedSize)
+                .apply()
+            
+            // Apply to chat adapter
+            chatAdapter.updateFontSize(selectedSize)
+            android.widget.Toast.makeText(this, "Font size updated to ${selectedSize.toInt()}sp", android.widget.Toast.LENGTH_SHORT).show()
+            
+            dialog.dismiss()
+        }
+        
+        // Set up drag handle functionality
+        val dragHandleContainer = dialogView.findViewById<android.widget.FrameLayout>(R.id.dragHandleContainer)
+        setupDragHandle(dialog, dragHandleContainer)
+        
+        dialog.show()
+    }
+
+    private fun showCustomModelSelectionDialog() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_tabbed_spinner, null)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setView(dialogView)
+            .create()
+        
+        dialog.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            setGravity(Gravity.BOTTOM)
+            setLayout(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.WRAP_CONTENT
+            )
+            attributes?.windowAnimations = R.style.DialogSlideAnimation
+            // Remove all dialog margins and padding for true edge-to-edge display
+            decorView.setPadding(0, 0, 0, 0)
+            attributes?.let { layoutParams ->
+                layoutParams.horizontalMargin = 0f
+                layoutParams.verticalMargin = 0f
+                layoutParams.width = WindowManager.LayoutParams.MATCH_PARENT
+                layoutParams.height = WindowManager.LayoutParams.WRAP_CONTENT
+                layoutParams.x = 0
+                layoutParams.y = 0
+                attributes = layoutParams
+            }
+            // Ensure no system window insets
+            decorView.systemUiVisibility = decorView.systemUiVisibility or 
+                android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        }
+        
+        val recyclerView = dialogView.findViewById<RecyclerView>(R.id.modelsRecyclerView)
+        val btnDone = dialogView.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnDone)
+        
+        // Set up grid layout manager (2 columns to match Image #2 design)
+        recyclerView.layoutManager = androidx.recyclerview.widget.GridLayoutManager(this, 2)
+        
+        // Get current selected model position
+        val currentSelection = ModelManager.models.indexOfFirst { it.id == ModelManager.selectedModel.id }
+        
+        // Create adapter with current selection
+        val gridAdapter = ModelGridAdapter(
+            context = this,
+            models = ModelManager.models,
+            selectedPosition = currentSelection,
+            onItemClick = { position: Int ->
+                val selectedModel = ModelManager.models[position]
+                
+                // Check translation mode compatibility
+                if (isTranslationModeActive && !TranslationUtils.supportsTranslation(selectedModel.id)) {
+                    Toast.makeText(this, "${selectedModel.displayName} doesn't support translation", Toast.LENGTH_SHORT).show()
+                    return@ModelGridAdapter
+                }
+                
+                // Update model selection
+                ModelManager.selectedModel = selectedModel
+                
+                // Update the displayed model name
+                updateSelectedModelDisplay()
+                
+                // Update UI to match model
+                ModelValidator.clearCache()
+                updateControlsVisibility(selectedModel.id)
+                applyModelColorToUI(selectedModel.id)
+                chatAdapter.updateCurrentModel(selectedModel.id)
+                
+                // Record model usage
+                ModelUsageTracker.recordModelUsage(this, selectedModel.id)
+                
+                // Dismiss dialog after short delay for visual feedback
+                Handler(Looper.getMainLooper()).postDelayed({
+                    dialog.dismiss()
+                }, 150)
+                
+                Timber.d("Model selected from grid: ${selectedModel.displayName}")
+            }
+        )
+        
+        recyclerView.adapter = gridAdapter
+        
+        // Done button click
+        btnDone.setOnClickListener {
+            dialog.dismiss()
+        }
+        
+        // Set up drag handle functionality
+        val dragHandleContainer = dialogView.findViewById<android.widget.FrameLayout>(R.id.dragHandleContainer)
+        setupDragHandle(dialog, dragHandleContainer)
+        
+        dialog.show()
+    }
+
+    private fun showSpeechSettingsDialog() {
+        // TODO: Implement speech settings dialog
+        Toast.makeText(this, "Speech Settings - Coming Soon", Toast.LENGTH_SHORT).show()
+    }
+    
+    @SuppressLint("ClickableViewAccessibility") 
+    private fun setupDragHandle(dialog: androidx.appcompat.app.AlertDialog, dragHandleContainer: android.widget.FrameLayout) {
+        var initialY = 0f
+        var initialTouchY = 0f
+        var isDragging = false
+        
+        dragHandleContainer.setOnTouchListener { _, event ->
+            when (event.action) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    initialY = dialog.window?.decorView?.y ?: 0f
+                    initialTouchY = event.rawY
+                    isDragging = false
+                    true
+                }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    if (!isDragging) {
+                        val deltaY = kotlin.math.abs(event.rawY - initialTouchY)
+                        if (deltaY > 20) { // Start dragging threshold
+                            isDragging = true
+                        }
+                    }
+                    
+                    if (isDragging) {
+                        val deltaY = event.rawY - initialTouchY
+                        val newY = initialY + deltaY
+                        
+                        // Constrain to screen bounds
+                        val maxY = resources.displayMetrics.heightPixels * 0.8f
+                        val constrainedY = newY.coerceIn(0f, maxY)
+                        
+                        dialog.window?.decorView?.y = constrainedY
+                    }
+                    true
+                }
+                android.view.MotionEvent.ACTION_UP -> {
+                    if (isDragging) {
+                        val deltaY = event.rawY - initialTouchY
+                        
+                        // If dragged down significantly, dismiss dialog
+                        if (deltaY > 200) {
+                            dialog.dismiss()
+                        } else {
+                            // Snap back to bottom
+                            val displayHeight = resources.displayMetrics.heightPixels
+                            val dialogHeight = dialog.window?.decorView?.height ?: 0
+                            val targetY = displayHeight - dialogHeight.toFloat()
+                            
+                            dialog.window?.decorView?.animate()
+                                ?.y(targetY)
+                                ?.setDuration(200)
+                                ?.start()
+                        }
+                    }
+                    isDragging = false
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+    
+    private fun shareCurrentConversation() {
+        // TODO: Implement conversation sharing
+        Toast.makeText(this, "Share Conversation - Coming Soon", Toast.LENGTH_SHORT).show()
+    }
+    
+    private fun toggleFollowUpQuestions(enabled: Boolean) {
+        Timber.d("🔘 Follow-up questions toggled: $enabled")
+        
+        // Save setting to SharedPreferences
+        getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("follow_up_questions_enabled", enabled)
+            .apply()
+        
+        // Show feedback to user
+        val message = if (enabled) {
+            "Follow-up questions enabled"
+        } else {
+            "Follow-up questions disabled" 
+        }
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+        
+        // You can add additional logic here to handle the follow-up questions functionality
+        // For example, showing/hiding UI elements or updating chat behavior
+    }
+
+    private fun showChatSettingsDialog() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_chat_settings, null)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setView(dialogView)
+            .create()
+        
+        dialog.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            setGravity(Gravity.BOTTOM)
+            setLayout(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.WRAP_CONTENT
+            )
+            // Remove all dialog margins and padding for true edge-to-edge display
+            decorView.setPadding(0, 0, 0, 0)
+            attributes?.let { layoutParams ->
+                layoutParams.horizontalMargin = 0f
+                layoutParams.verticalMargin = 0f
+                layoutParams.width = WindowManager.LayoutParams.MATCH_PARENT
+                layoutParams.height = WindowManager.LayoutParams.WRAP_CONTENT
+                layoutParams.x = 0
+                layoutParams.y = 0
+                attributes = layoutParams
+            }
+            // Ensure no system window insets
+            decorView.systemUiVisibility = decorView.systemUiVisibility or 
+                android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        }
+        
+        val lengthContainer = dialogView.findViewById<LinearLayout>(R.id.lengthOptionsContainer)
+        val toneContainer = dialogView.findViewById<LinearLayout>(R.id.toneOptionsContainer)
+        val btnApply = dialogView.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnApplyChatSettings)
+        
+        // Setup response options (simplified version)
+        setupResponseLengthOptions(lengthContainer)
+        setupResponseToneOptions(toneContainer)
+        
+        // Apply button click
+        btnApply.setOnClickListener {
+            // Save current selections to preferences
+            // TODO: Implement saving logic
+            android.widget.Toast.makeText(this, "Chat settings applied", android.widget.Toast.LENGTH_SHORT).show()
+            dialog.dismiss()
+        }
+        
+        // Set up drag handle functionality
+        val dragHandleContainer = dialogView.findViewById<android.widget.FrameLayout>(R.id.dragHandleContainer)
+        setupDragHandle(dialog, dragHandleContainer)
+        
+        dialog.show()
+    }
+    
+    private fun setupResponseLengthOptions(container: LinearLayout) {
+        container.removeAllViews()
+        
+        val lengths = listOf("Short", "Default", "Long")
+        val currentSelection = getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+            .getString("response_length", "Default")
+        
+        for (length in lengths) {
+            val chipView = com.google.android.material.chip.Chip(this)
+            chipView.text = length
+            chipView.isCheckable = true
+            chipView.isChecked = (length == currentSelection)
+            chipView.setOnCheckedChangeListener { _, isChecked ->
+                if (isChecked) {
+                    // Uncheck other chips
+                    for (i in 0 until container.childCount) {
+                        val otherChip = container.getChildAt(i) as com.google.android.material.chip.Chip
+                        if (otherChip != chipView) {
+                            otherChip.isChecked = false
+                        }
+                    }
+                    // Save selection
+                    getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+                        .edit()
+                        .putString("response_length", length)
+                        .apply()
+                }
+            }
+            
+            val layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            layoutParams.setMargins(8, 0, 8, 0)
+            chipView.layoutParams = layoutParams
+            
+            container.addView(chipView)
+        }
+    }
+    
+    private fun setupResponseToneOptions(container: LinearLayout) {
+        container.removeAllViews()
+        
+        // Get all available tones from ResponseTone enum
+        val allTones = ResponseTone.values()
+        val currentSelection = getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+            .getString("response_tone", "DEFAULT")
+        
+        // Create two-column layout for tones
+        var currentRowLayout: LinearLayout? = null
+        var columnCount = 0
+        
+        for ((index, tone) in allTones.withIndex()) {
+            // Create new row every 2 items
+            if (columnCount == 0) {
+                currentRowLayout = LinearLayout(this)
+                currentRowLayout.orientation = LinearLayout.HORIZONTAL
+                currentRowLayout.layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                container.addView(currentRowLayout)
+            }
+            
+            val chipView = com.google.android.material.chip.Chip(this)
+            chipView.text = tone.displayName
+            chipView.isCheckable = true
+            chipView.isChecked = (tone.name == currentSelection)
+            chipView.setOnCheckedChangeListener { _, isChecked ->
+                if (isChecked) {
+                    // Uncheck other chips in all rows
+                    uncheckAllToneChips(container)
+                    chipView.isChecked = true // Re-check this one
+                    
+                    // Save selection
+                    getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+                        .edit()
+                        .putString("response_tone", tone.name)
+                        .apply()
+                }
+            }
+            
+            // Set chip layout params for two-column layout
+            val layoutParams = LinearLayout.LayoutParams(
+                0, // Use weight for equal width
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1.0f // Equal weight for both columns
+            )
+            layoutParams.setMargins(4, 4, 4, 4)
+            chipView.layoutParams = layoutParams
+            
+            currentRowLayout?.addView(chipView)
+            
+            columnCount++
+            if (columnCount == 2) {
+                columnCount = 0 // Reset for next row
+            }
+        }
+    }
+    
+    private fun uncheckAllToneChips(container: LinearLayout) {
+        for (i in 0 until container.childCount) {
+            val rowLayout = container.getChildAt(i) as LinearLayout
+            for (j in 0 until rowLayout.childCount) {
+                val chip = rowLayout.getChildAt(j) as com.google.android.material.chip.Chip
+                chip.isChecked = false
+            }
+        }
+    }
+
     private fun showAttachmentMenu() {
         val currentModel = ModelManager.selectedModel
         ModelConfigManager.getConfig(currentModel.id)
@@ -5175,15 +5852,9 @@ class MainActivity : BaseThemedActivity() {
             if (modelIndex != -1) {
                 // Update ModelManager first
                 ModelManager.selectedModel = ModelManager.models[modelIndex]
-
-                // Set UI synchronously
-                binding.spinnerModels.setSelection(modelIndex)
-
-                // Update adapter if it's our custom adapter
-                val adapter = binding.spinnerModels.adapter
-                if (adapter is ModelSpinnerAdapter) {
-                    adapter.setSelectedPosition(modelIndex)
-                }
+                
+                // Update selected model display
+                updateSelectedModelDisplay()
 
                 // Update UI synchronously
                 ModelValidator.clearCache()
@@ -6164,7 +6835,7 @@ class MainActivity : BaseThemedActivity() {
             chatTitleView.text = "New Chat"
         }
 
-        binding.btnNewConversation.isEnabled = true
+        binding.btnMainMenu.isEnabled = true
 
         // Also reset generation state
         isGenerating = false
@@ -6179,7 +6850,7 @@ class MainActivity : BaseThemedActivity() {
         // Enable the button if:
         // 1. We have a current conversation (regardless of messages), or
         // 2. We're in a new chat but no conversation ID
-        binding.btnNewConversation.isEnabled = (currentConversationId != null) ||
+        binding.btnMainMenu.isEnabled = (currentConversationId != null) ||
                 (currentConversationId == null)
     }
     /**
@@ -6195,8 +6866,8 @@ class MainActivity : BaseThemedActivity() {
         }
 
         if (modelIndex != -1) {
-            binding.spinnerModels.setSelection(modelIndex)
             ModelManager.selectedModel = ModelManager.models[modelIndex]
+            updateSelectedModelDisplay()
             updateCreditsVisibility()
 
             // Update UI based on model
@@ -6315,7 +6986,6 @@ class MainActivity : BaseThemedActivity() {
 
             // Set translation mode active
             isTranslationModeActive = true
-            (binding.spinnerModels.adapter as? ModelSpinnerAdapter)?.notifyDataSetChanged()
 
             // Switch to optimal translation model
             setModelForTranslation()
@@ -6630,7 +7300,7 @@ class MainActivity : BaseThemedActivity() {
 
         // Update message sent state
         isMessageSent = true
-        binding.btnNewConversation.isEnabled = true
+        binding.btnMainMenu.isEnabled = true
     }
 
     private fun createTranslationContext(sourceLanguage: String, targetLanguage: String): String {
@@ -6830,7 +7500,7 @@ class MainActivity : BaseThemedActivity() {
         }
 
         // Reset UI state
-        binding.btnNewConversation.isEnabled = true
+        binding.btnMainMenu.isEnabled = true
         isGenerating = false
         chatAdapter.setGenerating(false)
         isMessageSent = false
@@ -6919,7 +7589,7 @@ class MainActivity : BaseThemedActivity() {
         }
 
         // Reset UI state completely (redundant but keeping for safety)
-        binding.btnNewConversation.isEnabled = true
+        binding.btnMainMenu.isEnabled = true
         isMessageSent = false
 
         // Reset button to proper state
@@ -7068,7 +7738,6 @@ class MainActivity : BaseThemedActivity() {
             binding.etInputText.addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
 
-                @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                     try {
                         // Always use current model ID, not cached one
@@ -7470,7 +8139,7 @@ class MainActivity : BaseThemedActivity() {
             .setMessage("This feature is available to subscribers only. Would you like to upgrade to Pro?")
             .setPositiveButton("Upgrade") { _, _ ->
                 // Navigate to subscription/upgrade flow
-                SubscriptionActivity.start(this)
+                WelcomeActivity.start(this)
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -7543,7 +8212,7 @@ class MainActivity : BaseThemedActivity() {
         }
         
         // Check credit availability first (for non-subscribers)
-        if (!isSubscribed && !creditManager.hasSufficientChatCredits()) {
+        if (!isSubscribed && ::creditManager.isInitialized && !creditManager.hasSufficientChatCredits()) {
             Timber.w("❌ Insufficient chat credits")
             showInsufficientCreditsDialog(CreditManager.CreditType.CHAT)
             return
@@ -7551,7 +8220,7 @@ class MainActivity : BaseThemedActivity() {
         
         // Consume credits immediately for non-subscribers (when button is pressed)
         var creditsConsumed = false
-        if (!isSubscribed) {
+        if (!isSubscribed && ::creditManager.isInitialized) {
             if (creditManager.consumeChatCredits()) {
                 creditsConsumed = true
                 updateFreeMessagesText()
@@ -7618,7 +8287,8 @@ class MainActivity : BaseThemedActivity() {
         lifecycleScope.launch {
             try {
                 // Use new optimized token validation system
-                fileHandler.validateTokensBeforeSend(
+                if (::fileHandler.isInitialized) {
+                    fileHandler.validateTokensBeforeSend(
                     conversationId = conversationId,
                     modelId = modelId,
                     userPrompt = message,
@@ -7641,7 +8311,7 @@ class MainActivity : BaseThemedActivity() {
                     },
                     onCancel = {
                         // ❌ User cancelled - refund credits
-                        if (creditsConsumed) {
+                        if (creditsConsumed && ::creditManager.isInitialized) {
                             creditManager.refundCredits(1, CreditManager.CreditType.CHAT)
                             updateFreeMessagesText()
                             Timber.d("🔄 Credits refunded due to cancellation")
@@ -7652,7 +8322,14 @@ class MainActivity : BaseThemedActivity() {
                         // 💰 Show upgrade dialog for non-subscribers
                         showUpgradeDialog()
                     }
-                )
+                    )
+                } else {
+                    // FileHandler not initialized - proceed anyway with fallback
+                    Timber.w("⚠️ FileHandler not initialized, proceeding without token validation")
+                    clearDraft()
+                    setGeneratingState(true)
+                    proceedWithSending(inputEditText, message, hasFiles)
+                }
                 
             } catch (e: Exception) {
                 Timber.e(e, "💥 Error during token validation: ${e.message}")
@@ -7668,7 +8345,7 @@ class MainActivity : BaseThemedActivity() {
                     },
                     negativeButton = "Cancel" to {
                         // Refund credits if consumed
-                        if (creditsConsumed) {
+                        if (creditsConsumed && ::creditManager.isInitialized) {
                             creditManager.refundCredits(1, CreditManager.CreditType.CHAT)
                             updateFreeMessagesText()
                             Timber.d("🔄 Credits refunded due to validation error")
@@ -7887,7 +8564,7 @@ class MainActivity : BaseThemedActivity() {
                 
                 // Update UI state
                 isMessageSent = true
-                binding.btnNewConversation.isEnabled = true
+                binding.btnMainMenu.isEnabled = true
                 
                 // UI feedback
                 scrollToBottom()
@@ -8251,7 +8928,6 @@ class MainActivity : BaseThemedActivity() {
             .show()
     }
 
-    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun clearInputAndProceed(inputEditText: EditText, message: String, hasFiles: Boolean) {
         // Clear the input field
         inputEditText.setText("")
@@ -8279,6 +8955,23 @@ class MainActivity : BaseThemedActivity() {
     }        // New helper method to handle both text-only and file messages
     private fun proceedWithSendingMessageAndFiles(message: String, hasFiles: Boolean) {
         if (hasFiles) {
+            // DEBUG: Log all selectedFiles before accessibility check
+            Timber.d("🔍 DEBUG: Checking ${selectedFiles.size} selected files before sending:")
+            selectedFiles.forEachIndexed { i, file ->
+                Timber.d("   [$i] ${file.name}")
+                Timber.d("       URI: ${file.uri}")
+                Timber.d("       Size: ${file.size} (${FileUtil.formatFileSize(file.size)})")
+                Timber.d("       isDocument: ${file.isDocument}")
+                Timber.d("       isExtracting: ${file.isExtracting}")
+                Timber.d("       isExtracted: ${file.isExtracted}")
+                Timber.d("       extractedContentId: '${file.extractedContentId}'")
+                Timber.d("       processingInfo length: ${file.processingInfo.length} chars")
+                if (file.processingInfo.isNotEmpty()) {
+                    val preview = file.processingInfo.take(100) + if (file.processingInfo.length > 100) "..." else ""
+                    Timber.d("       processingInfo preview: '$preview'")
+                }
+            }
+
             // Verify file accessibility before sending
             val accessibleFiles = selectedFiles.filter { file ->
                 try {
@@ -8287,6 +8980,12 @@ class MainActivity : BaseThemedActivity() {
                     Timber.e(e, "File not accessible: ${file.uri}")
                     false
                 }
+            }
+            
+            // DEBUG: Log accessible files
+            Timber.d("🔍 DEBUG: ${accessibleFiles.size} files are accessible:")
+            accessibleFiles.forEachIndexed { i, file ->
+                Timber.d("   [$i] ${file.name} - isExtracted: ${file.isExtracted}, contentLength: ${file.processingInfo.length}")
             }
 
             if (accessibleFiles.size < selectedFiles.size) {
@@ -8393,7 +9092,7 @@ class MainActivity : BaseThemedActivity() {
                 
                 // Update UI state
                 isMessageSent = true
-                binding.btnNewConversation.isEnabled = true
+                binding.btnMainMenu.isEnabled = true
             }
         } else {
             // CRITICAL FIX: Text-only message - single API call path
@@ -8670,7 +9369,7 @@ class MainActivity : BaseThemedActivity() {
         }
 
         isMessageSent = true
-        binding.btnNewConversation.isEnabled = true
+        binding.btnMainMenu.isEnabled = true
 
         // Update UI immediately (OPTIMIZED - removed delays)
         scrollToBottom()
@@ -9352,23 +10051,10 @@ class MainActivity : BaseThemedActivity() {
                         try {
                             // Try to set the spinner
                             if (::binding.isInitialized) {
-                                // Check current selection first
-                                val currentSelection = binding.spinnerModels.selectedItemPosition
-                                Timber.d("Current spinner selection: $currentSelection, Target: $modelIndex")
-                                
-                                // Only update if different
-                                if (currentSelection != modelIndex) {
-                                    // Set spinner selection
-                                    binding.spinnerModels.setSelection(modelIndex, true)
-                                    Timber.d("Updated spinner selection to position: $modelIndex")
-                                }
-
-                                // Get adapter and update its selected position if it's our custom adapter
-                                val adapter = binding.spinnerModels.adapter
-                                if (adapter is ModelSpinnerAdapter) {
-                                    adapter.setSelectedPosition(modelIndex)
-                                    adapter.notifyDataSetChanged()
-                                }
+                                // Update selected model display
+                                Timber.d("Updating model display to: $modelId")
+                                updateSelectedModelDisplay()
+                                Timber.d("Updated model display to position: $modelIndex")
 
                                 // Update UI
                                 ModelValidator.clearCache()
@@ -10220,7 +10906,7 @@ class MainActivity : BaseThemedActivity() {
     private fun setupPrivateChatFeature() {
         try {
             // Initialize views with defensive checks
-            val privateChatView = findViewById<ImageButton>(R.id.btnPrivateChat)
+            val privateChatView = null // Private chat button moved to menu
             val privateModeIndicatorView = findViewById<CardView>(R.id.privateModeIndicator)
             
             if (privateChatView == null) {
@@ -10278,8 +10964,8 @@ class MainActivity : BaseThemedActivity() {
         // Toggle the state
         isPrivateModeEnabled = !isPrivateModeEnabled
 
-        // Play animation
-        btnPrivateChat.startAnimation(ghostActivateAnimation)
+        // Play animation (button now in menu)
+        // btnPrivateChat.startAnimation(ghostActivateAnimation)
 
         // Haptic feedback
         provideHapticFeedback(50)
@@ -10435,6 +11121,49 @@ class MainActivity : BaseThemedActivity() {
             removeGhostIconFromInputField()
         }
     }
+
+    /**
+     * Dynamically resize the spinner card based on the selected model text
+     */
+    private fun resizeSpinnerCard(displayText: String) {
+        if (!::binding.isInitialized) return
+        
+        // Measure the text width to determine optimal card width
+        val textView = TextView(this).apply {
+            text = displayText
+            textSize = 14f // Same as spinner_item_custom.xml (updated to 14sp)
+            // Use safer font loading with fallback
+            try {
+                typeface = ResourcesCompat.getFont(this@MainActivity, R.font.ultrathink)
+            } catch (e: Exception) {
+                // Fallback to default font if ultrathink is not available
+                typeface = Typeface.DEFAULT
+                Timber.w("Failed to load ultrathink font, using default: ${e.message}")
+            }
+            setPadding(0, 0, 0, 0)
+        }
+        
+        // Measure the text
+        textView.measure(
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        )
+        
+        // Calculate optimal width: text width + padding + arrow space
+        val textWidth = textView.measuredWidth
+        val padding = resources.getDimensionPixelSize(R.dimen.spinner_horizontal_padding_8dp) * 2
+        val arrowSpace = resources.getDimensionPixelSize(R.dimen.spinner_arrow_space_20dp)
+        val optimalWidth = textWidth + padding + arrowSpace
+        
+        // Set minimum and maximum bounds
+        val minWidth = resources.getDimensionPixelSize(R.dimen.spinner_min_width_60dp)
+        val maxWidth = resources.getDimensionPixelSize(R.dimen.spinner_max_width_150dp)
+        val finalWidth = optimalWidth.coerceIn(minWidth, maxWidth)
+        
+        // Note: modelSelectorCard was removed - spinner now uses its own background
+    }
+
+
     private fun loadDefaultModel() {
         try {
             val sharedPrefs = getSharedPreferences("app_settings", MODE_PRIVATE)
@@ -10445,11 +11174,9 @@ class MainActivity : BaseThemedActivity() {
                 val modelIndex = ModelManager.models.indexOfFirst { it.id == defaultModelId }
 
                 if (modelIndex != -1) {
-                    // Set the spinner to this model
-                    binding.spinnerModels.setSelection(modelIndex)
-
-                    // Also update the ModelManager selection
+                    // Update the ModelManager selection
                     ModelManager.selectedModel = ModelManager.models[modelIndex]
+                    updateSelectedModelDisplay()
 
                     // CRITICAL FIX: Clear cache BEFORE updating UI
                     ModelValidator.clearCache()
@@ -10470,15 +11197,15 @@ class MainActivity : BaseThemedActivity() {
                 } else {
                     // If model ID not found, use the first model
                     Timber.w("Default model ID $defaultModelId not found, using first model")
-                    binding.spinnerModels.setSelection(0)
                     ModelManager.selectedModel = ModelManager.models[0]
+                    updateSelectedModelDisplay()
                     chatAdapter.updateCurrentModel(ModelManager.models[0].id)
                 }
             } else {
                 // No default model set, use the first one
                 Timber.d("No default model set, using first model")
-                binding.spinnerModels.setSelection(0)
                 ModelManager.selectedModel = ModelManager.models[0]
+                updateSelectedModelDisplay()
                 chatAdapter.updateCurrentModel(ModelManager.models[0].id)
             }
         } catch (e: Exception) {
@@ -10486,8 +11213,8 @@ class MainActivity : BaseThemedActivity() {
 
             // Fallback to first model on error
             try {
-                binding.spinnerModels.setSelection(0)
                 ModelManager.selectedModel = ModelManager.models[0]
+                updateSelectedModelDisplay()
                 chatAdapter.updateCurrentModel(ModelManager.models[0].id)
             } catch (e2: Exception) {
                 Timber.e(e2, "Critical error setting fallback model")
@@ -10810,32 +11537,7 @@ class MainActivity : BaseThemedActivity() {
             provideHapticFeedback(50)
         }
 
-        // Rest of button listeners
-        binding.btnConversationsList.setOnClickListener {
-            provideHapticFeedback(50)
-            navigateToConversationsActivity()
-        }
-
-
-        binding.btnNewConversation.setOnClickListener {
-            startNewConversation()
-        }
-
-        binding.btnAttach.setOnClickListener {
-            showAttachmentMenu()
-        }
-
-        binding.btnSubmitText.setOnClickListener {
-            if (isGenerating) {
-                stopGeneration()
-            } else {
-                sendMessage()
-            }
-        }
-
-        binding.creditsButton.setOnClickListener {
-            showGetCreditsMenu()
-        }
+        // Button listeners are now handled in setupListeners() - removed duplicates to prevent conflicts
 
         btnAudioConversation.setOnClickListener {
             openRealTimeAudioConversation()
@@ -10928,9 +11630,8 @@ class MainActivity : BaseThemedActivity() {
             if (isDeepSearchEnabled) "Web Search enabled" else "Web Search disabled",
             Toast.LENGTH_SHORT).show()
     }
-    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun setupEnhancedButtonHandlers() {
-        // Enhanced submit button click handler
+        // Enhanced submit button click handler with improved debouncing
         binding.btnSubmitText.setOnClickListener { view ->
             // Disable button temporarily to prevent double-clicks
             view.isEnabled = false
@@ -10947,12 +11648,116 @@ class MainActivity : BaseThemedActivity() {
             }
         }
 
-        // Microphone button handler - updated to use UltraAudioIntegration
+        // Enhanced microphone button handler
         binding.btnMicrophone.setOnClickListener {
             if (::ultraAudioIntegration.isInitialized) {
                 ultraAudioIntegration.startUltraVoiceRecording()
             } else {
                 Toast.makeText(this, "Voice recording not initialized", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // Enhanced main menu button
+        binding.btnMainMenu.setOnClickListener { view ->
+            Timber.d("🔘 btnMainMenu clicked - triggering showMainMenu")
+            showMainMenu(view)
+        }
+
+        // Enhanced attach button
+        binding.btnAttach.setOnClickListener {
+            showAttachmentMenu()
+        }
+
+        // Enhanced credits button
+        binding.creditsButton.setOnClickListener {
+            showGetCreditsMenu()
+        }
+
+        // Enhanced conversations list button
+        binding.btnConversationsList.setOnClickListener {
+            provideHapticFeedback(50)
+            navigateToConversationsActivity()
+        }
+
+        // Enhanced audio conversation button
+        if (::btnAudioConversation.isInitialized) {
+            btnAudioConversation.setOnClickListener {
+                openRealTimeAudioConversation()
+                provideHapticFeedback(50)
+            }
+        }
+
+        // Enhanced reasoning button
+        if (::btnReasoning.isInitialized) {
+            btnReasoning.setOnClickListener {
+                ModelManager.selectedModel.id
+
+                // Toggle state
+                isReasoningEnabled = !isReasoningEnabled
+
+                // Update button appearance
+                updateReasoningButtonState(isReasoningEnabled)
+
+                // Save state
+                val sharedPrefs = getSharedPreferences("app_settings", MODE_PRIVATE)
+                sharedPrefs.edit()
+                    .putBoolean("reasoning_enabled", isReasoningEnabled)
+                    .apply()
+
+                // Show feedback
+                Toast.makeText(this,
+                    if (isReasoningEnabled) "Reasoning enabled" else "Reasoning disabled",
+                    Toast.LENGTH_SHORT).show()
+
+                provideHapticFeedback(50)
+            }
+        }
+
+        // Enhanced deep search button
+        if (::btnDeepSearch.isInitialized) {
+            btnDeepSearch.setOnClickListener {
+                // Toggle state
+                isDeepSearchEnabled = !isDeepSearchEnabled
+
+                // Update button appearance
+                updateDeepSearchButtonState(isDeepSearchEnabled)
+
+                // Save state
+                val sharedPrefs = getSharedPreferences("app_settings", MODE_PRIVATE)
+                sharedPrefs.edit()
+                    .putBoolean("deep_search_enabled", isDeepSearchEnabled)
+                    .apply()
+
+                // Show feedback
+                Toast.makeText(this,
+                    if (isDeepSearchEnabled) "Web Search enabled" else "Web Search disabled",
+                    Toast.LENGTH_SHORT).show()
+
+                provideHapticFeedback(50)
+            }
+        }
+
+        // Enhanced AI parameters button
+        if (::btnAiParameters.isInitialized) {
+            btnAiParameters.setOnClickListener {
+                provideHapticFeedback(50)
+                showAiParametersDialog()
+            }
+        }
+
+        // Enhanced Perplexity search mode button
+        if (::btnPerplexitySearchMode.isInitialized) {
+            btnPerplexitySearchMode.setOnClickListener {
+                provideHapticFeedback(50)
+                togglePerplexitySearchMode()
+            }
+        }
+
+        // Enhanced Perplexity context size button
+        if (::btnPerplexityContextSize.isInitialized) {
+            btnPerplexityContextSize.setOnClickListener {
+                provideHapticFeedback(50)
+                showPerplexityContextSizeDialog()
             }
         }
     }
@@ -11125,7 +11930,7 @@ class MainActivity : BaseThemedActivity() {
             startActivity(intent)
 
             // Add a smooth transition with phone call feel
-            overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
+            overridePendingTransition(0, 0) // ULTRAFAST: No transition animation
 
             // Show toast about the feature
             Toast.makeText(
@@ -11314,6 +12119,15 @@ class MainActivity : BaseThemedActivity() {
         Timber.d("🔄 Button state update - hasText=$hasText, hasFiles=$hasFiles, isOcrModel=$isOcrModel")
         Timber.d("   📊 Files: ${selectedFiles.size} total, ${processingFiles.size} processing, ${failedFiles.size} failed, ${readyFiles.size} ready")
         
+        // Debug: Log detailed file states
+        selectedFiles.forEachIndexed { index, file ->
+            Timber.d("   📄 File[$index]: ${file.name}")
+            Timber.d("      🔄 isExtracting=${file.isExtracting}, isExtracted=${file.isExtracted}, isDocument=${file.isDocument}")
+            if (file.isExtracting && !file.isExtracted) {
+                Timber.w("      ⚠️ This file is causing 'Processing' state!")
+            }
+        }
+        
         // For OCR models, always ensure send button is visible
         if (isOcrModel) {
             binding.btnMicrophone.visibility = View.GONE
@@ -11323,7 +12137,7 @@ class MainActivity : BaseThemedActivity() {
             // Determine button state based on file processing
             val (shouldEnable, buttonDescription) = when {
                 isExtracting -> {
-                    false to "Processing ${processingFiles.size} file(s)..."
+                    false to "Please wait while files are processed"
                 }
                 hasFailedFiles -> {
                     false to "Some files failed to process"
@@ -11366,7 +12180,7 @@ class MainActivity : BaseThemedActivity() {
                     // Files are still processing - disable send button
                     binding.btnSubmitText.isEnabled = false
                     binding.btnSubmitText.alpha = 0.7f
-                    binding.btnSubmitText.contentDescription = "Processing ${processingFiles.size} file(s)..."
+                    binding.btnSubmitText.contentDescription = "Please wait while files are processed"
                     
                     // Keep send button visible if we have text or files, just disabled
                     if (hasText || hasFiles) {
@@ -11685,7 +12499,7 @@ class MainActivity : BaseThemedActivity() {
 
     fun navigateToWelcomeActivity() {
         // Updated to use new SubscriptionActivity
-        SubscriptionActivity.start(this)
+        WelcomeActivity.start(this)
     }
 
     /**
@@ -13860,8 +14674,8 @@ class MainActivity : BaseThemedActivity() {
                 if (modelIndex != -1) {
                     ModelManager.selectedModel = ModelManager.models[modelIndex]
                     
-                    // Update spinner to match restored model
-                    binding.spinnerModels.setSelection(modelIndex)
+                    // Update display to match restored model
+                    updateSelectedModelDisplay()
                     
                     // Update UI controls for the restored model
                     updateControlsVisibility(savedModelId)
@@ -13887,7 +14701,7 @@ class MainActivity : BaseThemedActivity() {
                         val fileName = FileUtil.getFileName(this, uri) ?: "Unknown file"
                         val fileSize = FileUtil.getFileSize(this, uri)
                         val mimeType = FileUtil.getMimeType(this, uri)
-                        selectedFiles.add(FileUtil.FileUtil.SelectedFile(
+                        selectedFiles.add(FileUtil.SelectedFile(
                             uri = uri,
                             name = fileName,
                             size = fileSize,
@@ -13913,6 +14727,16 @@ class MainActivity : BaseThemedActivity() {
         } catch (e: Exception) {
             Timber.e(e, "Error restoring instance state: ${e.message}")
         }
+    }
+
+    // Extension function for converting dp to pixels
+    private fun Int.dpToPx(): Int {
+        return (this * resources.displayMetrics.density).toInt()
+    }
+
+    // Implementation of TranslationModeFetcher interface
+    override fun isTranslationMode(): Boolean {
+        return isTranslationModeActive
     }
 
    companion object {

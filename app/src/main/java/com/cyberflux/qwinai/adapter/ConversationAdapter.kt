@@ -100,7 +100,7 @@ class ConversationAdapter(
                 // Add attachment count if any
                 if (conversation.draftFiles.isNotEmpty()) {
                     try {
-                        val files = JsonUtils.fromJsonList(conversation.draftFiles, FileUtil.FileUtil.SelectedFile::class.java)
+                        val files = JsonUtils.fromJsonList(conversation.draftFiles, FileUtil.SelectedFile::class.java)
                         val fileCount = files?.size ?: 0
                         if (fileCount > 0) {
                             append(" with $fileCount ")

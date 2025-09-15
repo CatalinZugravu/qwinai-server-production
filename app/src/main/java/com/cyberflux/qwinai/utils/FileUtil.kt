@@ -90,7 +90,9 @@ object FileUtil {
             Timber.e(e, "Error reading text from URI: ${e.message}")
             ""
         }
-    }    fun formatFileSize(size: Long): String {
+    }
+    
+    fun formatFileSize(size: Long): String {
         if (size <= 0) return "0B"
         val units = arrayOf("B", "KB", "MB", "GB", "TB")
         val digitGroups = (log10(size.toDouble()) / log10(1024.0)).toInt()
@@ -179,49 +181,62 @@ object FileUtil {
      */
     fun getMimeType(context: Context, uri: Uri): String {
         var mimeType: String? = null
+        val fileName = getFileName(context, uri)
+
+        Timber.d("🔍 FileUtil: getMimeType() for file: $fileName")
+        Timber.d("  URI: $uri")
 
         try {
             if (uri.scheme == "content") {
                 mimeType = context.contentResolver.getType(uri)
+                Timber.d("  ContentResolver MIME: $mimeType")
             }
 
             if (mimeType == null) {
                 // If content resolver couldn't determine type, try from file extension
                 val extension = MimeTypeMap.getFileExtensionFromUrl(uri.toString())
+                Timber.d("  URL Extension: $extension")
+                
                 if (extension != null) {
                     mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(
                         extension.lowercase(
                             Locale.ROOT
                         )
                     )
+                    Timber.d("  MimeTypeMap result: $mimeType")
                 }
 
                 // Special case for common file types that might not be properly detected
                 if (mimeType == null) {
-                    val fileName = getFileName(context, uri).lowercase(Locale.ROOT)
+                    val fileNameLower = fileName.lowercase(Locale.ROOT)
+                    Timber.d("  Fallback filename check: $fileNameLower")
+                    
                     when {
-                        fileName.endsWith(".pdf") -> mimeType = "application/pdf"
-                        fileName.endsWith(".doc") -> mimeType = "application/msword"
-                        fileName.endsWith(".docx") -> mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                        fileName.endsWith(".xls") -> mimeType = "application/vnd.ms-excel"
-                        fileName.endsWith(".xlsx") -> mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        fileName.endsWith(".ppt") -> mimeType = "application/vnd.ms-powerpoint"
-                        fileName.endsWith(".pptx") -> mimeType = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-                        fileName.endsWith(".txt") -> mimeType = "text/plain"
-                        fileName.endsWith(".csv") -> mimeType = "text/csv"
-                        fileName.endsWith(".jpg") || fileName.endsWith(".jpeg") -> mimeType = "image/jpeg"
-                        fileName.endsWith(".png") -> mimeType = "image/png"
-                        fileName.endsWith(".gif") -> mimeType = "image/gif"
-                        fileName.endsWith(".webp") -> mimeType = "image/webp"
+                        fileNameLower.endsWith(".pdf") -> mimeType = "application/pdf"
+                        fileNameLower.endsWith(".doc") -> mimeType = "application/msword"
+                        fileNameLower.endsWith(".docx") -> mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        fileNameLower.endsWith(".xls") -> mimeType = "application/vnd.ms-excel"
+                        fileNameLower.endsWith(".xlsx") -> mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        fileNameLower.endsWith(".ppt") -> mimeType = "application/vnd.ms-powerpoint"
+                        fileNameLower.endsWith(".pptx") -> mimeType = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                        fileNameLower.endsWith(".txt") -> mimeType = "text/plain"
+                        fileNameLower.endsWith(".csv") -> mimeType = "text/csv"
+                        fileNameLower.endsWith(".jpg") || fileNameLower.endsWith(".jpeg") -> mimeType = "image/jpeg"
+                        fileNameLower.endsWith(".png") -> mimeType = "image/png"
+                        fileNameLower.endsWith(".gif") -> mimeType = "image/gif"
+                        fileNameLower.endsWith(".webp") -> mimeType = "image/webp"
                     }
+                    Timber.d("  Fallback MIME result: $mimeType")
                 }
             }
         } catch (e: Exception) {
-            Timber.tag(TAG).e(e, "Error getting MIME type")
+            Timber.tag(TAG).e(e, "Error getting MIME type for $fileName")
         }
 
         // Default to octet-stream if we couldn't determine type
-        return mimeType ?: "application/octet-stream"
+        val finalMimeType = mimeType ?: "application/octet-stream"
+        Timber.d("🎯 FileUtil: Final MIME type for '$fileName': $finalMimeType")
+        return finalMimeType
     }
 
     fun formatTimestamp(timestamp: Long): String {
@@ -274,66 +289,68 @@ object FileUtil {
         }
     }
 
-    object FileUtil {
-        data class SelectedFile(
-            val uri: Uri,
-            val name: String,
-            val size: Long,
-            val isDocument: Boolean = false,
-            // Add new fields for persistent storage
-            val isPersistent: Boolean = false,
-            val persistentFileName: String = "",
-            val isExtracting: Boolean = false,
-            val isExtracted: Boolean = false,
-            val extractedContentId: String = "",  // Reference to cached extracted content
-            var hasError: Boolean = false,  // Error state for UI indication
-            val processingInfo: String = ""  // Store processing status and token info
-        ) {
-            /**
-             * Create a persistent copy of this file
-             */
-            fun toPersistent(persistentStorage: PersistentFileStorage): SelectedFile? {
-                // Only create persistent copy if not already persistent
-                if (isPersistent) return this
 
-                // Copy to persistent storage
-                val (persistentUri, fileName) = persistentStorage.copyToPrivateStorage(uri) ?: return null
+    /**
+     * Data class representing a selected file
+     */
+    data class SelectedFile(
+        val uri: Uri,
+        val name: String,
+        val size: Long,
+        val isDocument: Boolean = false,
+        // Add new fields for persistent storage
+        val isPersistent: Boolean = false,
+        val persistentFileName: String = "",
+        val isExtracting: Boolean = false,
+        val isExtracted: Boolean = false,
+        val extractedContentId: String = "",  // Reference to cached extracted content
+        var hasError: Boolean = false,  // Error state for UI indication
+        val processingInfo: String = ""  // Store processing status and token info
+    ) {
+        /**
+         * Create a persistent copy of this file
+         */
+        fun toPersistent(persistentStorage: PersistentFileStorage): SelectedFile? {
+            // Only create persistent copy if not already persistent
+            if (isPersistent) return this
 
-                // Return new file with persistent flag and filename, preserving all metadata
-                return copy(
-                    uri = persistentUri,
+            // Copy to persistent storage
+            val (persistentUri, fileName) = persistentStorage.copyToPrivateStorage(uri) ?: return null
+
+            // Return new file with persistent flag and filename, preserving all metadata
+            return copy(
+                uri = persistentUri,
+                isPersistent = true,
+                persistentFileName = fileName,
+                isExtracted = isExtracted,
+                extractedContentId = extractedContentId
+            )
+        }
+
+        /**
+         * Restore a persistent file from storage
+         */
+        companion object {
+            fun fromPersistentFileName(
+                fileName: String,
+                persistentStorage: PersistentFileStorage,
+                size: Long = 0,
+                isDocument: Boolean = false,
+                isExtracted: Boolean = false,
+                extractedContentId: String = ""
+            ): SelectedFile? {
+                val uri = persistentStorage.getUriForPrivateFile(fileName) ?: return null
+
+                return SelectedFile(
+                    uri = uri,
+                    name = fileName,
+                    size = size,
+                    isDocument = isDocument,
                     isPersistent = true,
                     persistentFileName = fileName,
                     isExtracted = isExtracted,
                     extractedContentId = extractedContentId
                 )
-            }
-
-            /**
-             * Restore a persistent file from storage
-             */
-            companion object {
-                fun fromPersistentFileName(
-                    fileName: String,
-                    persistentStorage: PersistentFileStorage,
-                    size: Long = 0,
-                    isDocument: Boolean = false,
-                    isExtracted: Boolean = false,
-                    extractedContentId: String = ""
-                ): SelectedFile? {
-                    val uri = persistentStorage.getUriForPrivateFile(fileName) ?: return null
-
-                    return SelectedFile(
-                        uri = uri,
-                        name = fileName,
-                        size = size,
-                        isDocument = isDocument,
-                        isPersistent = true,
-                        persistentFileName = fileName,
-                        isExtracted = isExtracted,
-                        extractedContentId = extractedContentId
-                    )
-                }
             }
         }
     }

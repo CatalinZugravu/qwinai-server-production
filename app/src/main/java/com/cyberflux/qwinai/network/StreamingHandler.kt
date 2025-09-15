@@ -148,7 +148,8 @@ object StreamingHandler {
         isWebSearchEnabled: Boolean = false,
         context: Context? = null,
         apiService: AimlApiService? = null,
-        modelId: String = ""
+        modelId: String = "",
+        messageId: String = ""
     ) {
         // PRODUCTION: Feature flag check
         if (!UnifiedStreamingManager.isStreamingContinuationEnabled) {
@@ -167,7 +168,7 @@ object StreamingHandler {
         
         // Create new streaming session with cancellation token
         val streamingSession = StreamingCancellationManager.createStreamingSession(
-            adapter.currentList.getOrNull(messagePosition)?.id ?: "unknown_${System.currentTimeMillis()}"
+            messageId.takeIf { it.isNotEmpty() } ?: adapter.currentList.getOrNull(messagePosition)?.id ?: "unknown_${System.currentTimeMillis()}"
         )
 
         // IMPORTANT: Always log the actual web search status
@@ -179,7 +180,8 @@ object StreamingHandler {
                 modelId = modelId,
                 isWebSearchEnabled = actualWebSearchEnabled,  // NEW: Store the flag in streaming state
                 webSearchExecutionLock = AtomicBoolean(false), // NEW: Add lock to prevent duplicate search executions
-                streamingSession = streamingSession // NEW: Store the streaming session for cancellation
+                streamingSession = streamingSession, // NEW: Store the streaming session for cancellation
+                messageId = messageId.takeIf { it.isNotEmpty() } ?: adapter.currentList.getOrNull(messagePosition)?.id ?: "unknown_${System.currentTimeMillis()}"
             )
             val isProcessing = AtomicBoolean(true)
             var uiUpdateJob: Job? = null
@@ -1424,9 +1426,33 @@ object StreamingHandler {
         context: Context?
     ) {
         try {
-            val message = adapter.currentList.getOrNull(messagePosition) ?: return
+            // CRITICAL FIX: Find message by ID instead of position to avoid wrong message updates
+            val message = adapter.currentList.find { it.id == streamingState.messageId }
+            if (message == null) {
+                Timber.e("🚨 CRITICAL: Cannot find message with ID ${streamingState.messageId} for finalization!")
+                Timber.e("🚨 Available messages: ${adapter.currentList.map { "${it.id} (isUser=${it.isUser})" }}")
+                return
+            }
+            
+            // SAFETY CHECK: Ensure we're updating an AI message, not a user message
+            if (message.isUser) {
+                Timber.e("🚨 CRITICAL BUG PREVENTED: Attempted to update USER message ${message.id} with AI response!")
+                Timber.e("🚨 This would corrupt the user's GroupedFileMessage JSON!")
+                Timber.e("🚨 streamingState.messageId: ${streamingState.messageId}")
+                Timber.e("🚨 message.isUser: ${message.isUser}")
+                Timber.e("🚨 message.isDocument: ${message.isDocument}")
+                Timber.e("🚨 message.isImage: ${message.isImage}")
+                return
+            }
 
             val finalContent = streamingState.mainContent.toString().trim()
+            
+            // DEBUG: Log the critical content saving operation
+            Timber.d("🏁 FINALIZING STREAMING: messageId=${streamingState.messageId}")
+            Timber.d("🏁 FINAL CONTENT: ${finalContent.length} characters accumulated")
+            if (finalContent.isEmpty()) {
+                Timber.w("⚠️ FINALIZE WARNING: No content accumulated during streaming")
+            }
 
             // Complete streaming session
             UnifiedStreamingManager.completeSession(streamingState.messageId, true)
@@ -1481,7 +1507,7 @@ object StreamingHandler {
             }
 
             val completedMessage = message.copy(
-                message = finalContent,
+                message = finalContent,  // CRITICAL FIX: This saves the accumulated content!
                 isGenerating = false,
                 isLoading = false,
                 showButtons = true,
@@ -1491,8 +1517,24 @@ object StreamingHandler {
                 // Update thinking-related fields
                 hasThinkingProcess = streamingState.thinkingContent.isNotEmpty(),
                 thinkingProcess = streamingState.thinkingContent.toString(),
-                isThinkingActive = false
+                isThinkingActive = false,
+                lastModified = System.currentTimeMillis(),
+                completionTime = System.currentTimeMillis()
             )
+            
+            // DEBUG: Confirm content was saved
+            Timber.d("✅ FINALIZED: Message ${streamingState.messageId} updated with ${finalContent.length} chars")
+            
+            // Also persist to database
+            context?.let { ctx ->
+                try {
+                    val database = AppDatabase.getDatabase(ctx)
+                    database.chatMessageDao().update(completedMessage)
+                    Timber.d("💾 FINALIZED: Saved to database")
+                } catch (e: Exception) {
+                    Timber.e(e, "❌ Database save error: ${e.message}")
+                }
+            }
 
             withContext(Dispatchers.Main) {
                 // Update the message first
@@ -1798,6 +1840,7 @@ object StreamingHandler {
         }
     }
     
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private suspend fun processSearchResults(
         searchResults: List<ChatAdapter.WebSearchSource>,
         streamingState: StreamingState,
@@ -2175,6 +2218,7 @@ object StreamingHandler {
             streamingState.mainContent.append(remaining)
         }
     }
+
 
     private fun isValidJson(data: String): Boolean {
         return try {

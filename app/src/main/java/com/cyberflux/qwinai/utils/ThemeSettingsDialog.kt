@@ -1,6 +1,7 @@
 package com.cyberflux.qwinai.utils
 
 import android.content.Context
+import android.app.Activity
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.Button
@@ -8,6 +9,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import com.cyberflux.qwinai.R
+import com.cyberflux.qwinai.utils.DynamicColorManager
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
@@ -16,16 +18,25 @@ import com.google.android.material.card.MaterialCardView
  * Theme Settings Bottom Sheet Dialog for Material Design 3
  */
 class ThemeSettingsDialog(private val context: Context) {
+    private var bottomSheetDialog: BottomSheetDialog? = null
 
     fun show() {
-        val bottomSheetDialog = BottomSheetDialog(context)
+        // Dismiss any existing dialog first
+        dismiss()
+        
+        bottomSheetDialog = BottomSheetDialog(context)
         val view = LayoutInflater.from(context).inflate(R.layout.dialog_theme_settings, null)
         
         setupThemeModeButtons(view)
         setupAccentColorButton(view)
         
-        bottomSheetDialog.setContentView(view)
-        bottomSheetDialog.show()
+        bottomSheetDialog?.setContentView(view)
+        bottomSheetDialog?.show()
+    }
+    
+    fun dismiss() {
+        bottomSheetDialog?.dismiss()
+        bottomSheetDialog = null
     }
 
     private fun setupThemeModeButtons(view: View) {
@@ -42,16 +53,19 @@ class ThemeSettingsDialog(private val context: Context) {
         
         // Set click listeners
         lightButton.setOnClickListener {
+            dismiss() // Close dialog before theme change
             ThemeManager.setTheme(context, ThemeManager.MODE_LIGHT)
             updateAllThemeButtons(lightButton, darkButton, systemButton, 0)
         }
         
         darkButton.setOnClickListener {
+            dismiss() // Close dialog before theme change
             ThemeManager.setTheme(context, ThemeManager.MODE_DARK)
             updateAllThemeButtons(lightButton, darkButton, systemButton, 1)
         }
         
         systemButton.setOnClickListener {
+            dismiss() // Close dialog before theme change
             ThemeManager.setTheme(context, ThemeManager.MODE_SYSTEM)
             updateAllThemeButtons(lightButton, darkButton, systemButton, 2)
         }
@@ -75,7 +89,13 @@ class ThemeSettingsDialog(private val context: Context) {
             val colorPicker = AccentColorPicker(context)
             colorPicker.show(currentAccentColor, object : AccentColorPicker.OnColorSelectedListener {
                 override fun onColorSelected(selectedColor: Int) {
-                    ThemeManager.setAccentColor(context, selectedColor)
+                    // Close both dialogs before theme change
+                    dismiss()
+                    
+                    // Delay the theme change slightly to allow dialogs to close
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        ThemeManager.setAccentColor(context, selectedColor)
+                    }, 100)
                     
                     // Update preview
                     val newColorRes = ThemeManager.getAccentColorResource(context)

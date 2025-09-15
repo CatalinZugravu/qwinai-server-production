@@ -60,7 +60,7 @@ class HistoryFragment : Fragment() {
                     // Launch SettingsActivity
                     val intent = Intent(requireContext(), SettingsActivity::class.java)
                     startActivity(intent)
-                    requireActivity().overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+                    requireActivity().overridePendingTransition(0, 0) // ULTRAFAST: No transition animation
                 }
                 .start()
 
@@ -93,7 +93,7 @@ class HistoryFragment : Fragment() {
                         showSavedOnly = showSavedOnly
                     )
                     startActivity(intent)
-                    requireActivity().overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+                    requireActivity().overridePendingTransition(0, 0) // ULTRAFAST: No transition animation
                 }
                 .start()
 

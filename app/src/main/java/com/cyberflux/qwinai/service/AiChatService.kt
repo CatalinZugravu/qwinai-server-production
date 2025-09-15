@@ -22,8 +22,6 @@ import com.cyberflux.qwinai.network.RetrofitInstance
 import com.cyberflux.qwinai.network.StreamingHandler
 import com.cyberflux.qwinai.tools.ToolServiceHelper
 import com.cyberflux.qwinai.utils.SimplifiedTokenManager
-import com.cyberflux.qwinai.utils.SimplifiedDocumentExtractor
-import com.cyberflux.qwinai.utils.SimpleSafeDocumentExtractor
 import com.cyberflux.qwinai.utils.FileUtil
 import com.cyberflux.qwinai.utils.JsonUtils
 import com.cyberflux.qwinai.utils.ModelConfigManager
@@ -31,6 +29,7 @@ import com.cyberflux.qwinai.utils.ModelManager
 import com.cyberflux.qwinai.utils.ModelValidator
 import com.cyberflux.qwinai.utils.PrefsManager
 import com.cyberflux.qwinai.utils.TokenValidator
+import com.cyberflux.qwinai.utils.UnifiedFileHandler
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
@@ -139,7 +138,7 @@ class AiChatService(
         createOrGetConversation: (String) -> String,
         isReasoningEnabled: Boolean = false,
         reasoningLevel: String = "low",
-        selectedFiles: List<FileUtil.FileUtil.SelectedFile>? = null
+        selectedFiles: List<FileUtil.SelectedFile>? = null
     ) {
         val currentModel = ModelManager.selectedModel
 
@@ -367,7 +366,7 @@ class AiChatService(
         forceWebSearch: Boolean = false,
         isReasoningEnabled: Boolean = false,
         reasoningLevel: String = "low",
-        selectedFiles: List<FileUtil.FileUtil.SelectedFile>? = null
+        selectedFiles: List<FileUtil.SelectedFile>? = null
     ) {
         try {
             withContext(Dispatchers.Main) {
@@ -384,6 +383,19 @@ class AiChatService(
             val processedFiles = mutableListOf<Uri>()
             val processedImages = mutableListOf<ProcessedImageInfo>()
             val extractedDocuments = mutableListOf<ExtractedDocumentInfo>()
+
+            // DEBUG: Log the selectedFiles parameter
+            Timber.d("🔍 AiChatService: Received selectedFiles parameter:")
+            selectedFiles?.forEachIndexed { i, file ->
+                Timber.d("   [$i] ${file.name}")
+                Timber.d("       isExtracted: ${file.isExtracted}")
+                Timber.d("       extractedContentId: '${file.extractedContentId}'")
+                Timber.d("       processingInfo length: ${file.processingInfo.length} chars")
+                if (file.processingInfo.isNotEmpty()) {
+                    val preview = file.processingInfo.take(50) + if (file.processingInfo.length > 50) "..." else ""
+                    Timber.d("       processingInfo preview: '$preview'")
+                }
+            } ?: Timber.w("⚠️ selectedFiles parameter is NULL!")
 
             // Process files using pre-extracted metadata when available
             Timber.d("Processing ${fileUris.size} files for AI model")
@@ -462,91 +474,78 @@ class AiChatService(
                         // For non-OCR models: extract content for AI to read
                         Timber.d("Extracting content for non-OCR model to ensure AI can read document text")
 
-                        val fileUriString = fileUri.toString()
-                        var extractedContent = SimpleSafeDocumentExtractor.getCachedContent(fileUriString)
-
-                        if (extractedContent == null && context is MainActivity) {
-                            Timber.d("Direct cache lookup failed, trying via selected files")
-                            val selectedFile = context.selectedFiles.find {
-                                it.uri.toString() == fileUriString
-                            }
-
+                        try {
+                            // First try to get extracted content from selectedFile if available
+                            var extractedContent = ""
+                            
+                            Timber.d("🔍 DEBUG: Checking extraction for $fileName (index $index):")
+                            Timber.d("   selectedFile != null: ${selectedFile != null}")
                             if (selectedFile != null) {
-                                Timber.d("Found file in selected files: ${selectedFile.name}, extracted=${selectedFile.isExtracted}")
-
-                                if (selectedFile.isExtracted && selectedFile.extractedContentId.isNotEmpty()) {
-                                    Timber.d("Looking up content with ID: ${selectedFile.extractedContentId}")
-                                    extractedContent = SimpleSafeDocumentExtractor.getCachedContent(selectedFile.extractedContentId)
-                                }
+                                Timber.d("   isExtracted: ${selectedFile.isExtracted}")
+                                Timber.d("   extractedContentId.isNotEmpty(): ${selectedFile.extractedContentId.isNotEmpty()}")
+                                Timber.d("   extractedContentId: '${selectedFile.extractedContentId}'")
+                                Timber.d("   processingInfo length: ${selectedFile.processingInfo.length}")
                             }
-                        }
-
-                        if (extractedContent == null) {
-                            Timber.d("Cache lookup failed, extracting content on the fly for file: $fileName")
-                            val tempExtractor = SimpleSafeDocumentExtractor(context)
-                            val result = withContext(Dispatchers.IO) {
-                                tempExtractor.extractContent(fileUri)
-                            }
-
-                            when (result) {
-                                is SimpleSafeDocumentExtractor.ExtractionResult.Success -> {
-                                    extractedContent = result.content
-                                    Timber.d("On-the-fly extraction successful: ${extractedContent.length} chars extracted from $fileName")
-                                    // Cache the content for potential reuse
-                                    SimpleSafeDocumentExtractor.cacheContent(fileUriString, extractedContent)
-                                }
-                                is SimpleSafeDocumentExtractor.ExtractionResult.Error -> {
-                                    Timber.e("On-the-fly extraction failed for $fileName: ${result.message}")
-                                    callbacks.showError("Failed to extract content from $fileName: ${result.message}")
-                                }
-                            }
-                        }
-
-                        if (extractedContent != null) {
-                            val contentLength = extractedContent.length
-                            val tokenCount = TokenValidator.estimateTokenCount(extractedContent)
-                            Timber.d("Adding document with extracted content: $fileName ($contentLength chars, $tokenCount tokens)")
                             
-                            // Use the extracted content directly (it's already formatted)
-                            extractedDocuments.add(
-                                ExtractedDocumentInfo(
-                                    name = fileName,
-                                    mimeType = mimeType,
-                                    size = fileSize,
-                                    extractedContent = extractedContent
-                                )
-                            )
-                        } else {
-                            Timber.w("No extracted content available for $fileName - this may cause AI model to report missing content")
-                            val failureMessage = """
-                                FILE INFORMATION:
-                                Filename: $fileName
-                                Type: $mimeType
-                                Size: ${FileUtil.formatFileSize(fileSize)}
-                                URI: $fileUri
-                                
-                                ⚠️ EXTRACTION FAILED: Unable to extract text content from this document.
-                                This could be due to:
-                                - Encrypted or password-protected file
-                                - Corrupted file format
-                                - Unsupported document structure
-                                - File access permissions
-                                
-                                Please try re-uploading the file or use a different format.
-                            """.trimIndent()
+                            if (selectedFile != null && selectedFile.isExtracted && selectedFile.extractedContentId.isNotEmpty()) {
+                                // Use pre-extracted content from professional server processing
+                                Timber.d("📋 ✅ Using pre-extracted content from server for: $fileName")
+                                extractedContent = selectedFile.processingInfo ?: ""
+                                Timber.d("📋 ✅ Extracted content length: ${extractedContent.length} characters")
+                                if (extractedContent.isEmpty()) {
+                                    Timber.w("⚠️ Selected file marked as extracted but content is empty")
+                                } else {
+                                    val preview = extractedContent.take(100) + if (extractedContent.length > 100) "..." else ""
+                                    Timber.d("📋 ✅ Content preview: '$preview'")
+                                }
+                            } else {
+                                // Use professional server-side extraction
+                                Timber.d("📋 Using server-side extraction for: $fileName")
+                                try {
+                                    val unifiedHandler = UnifiedFileHandler(context)
+                                    val processingResult = unifiedHandler.processFileForModel(
+                                        uri = fileUri,
+                                        modelId = currentModel.id
+                                    )
+                                    
+                                    if (processingResult.isSuccess) {
+                                        val result = processingResult.getOrNull()
+                                        extractedContent = result?.contentItem?.text ?: ""
+                                        Timber.d("✅ Successfully extracted content: ${extractedContent.length} characters")
+                                    } else {
+                                        val error = processingResult.exceptionOrNull()
+                                        Timber.w("⚠️ Content extraction failed: ${error?.message}")
+                                        extractedContent = "Error extracting content: ${error?.message}"
+                                    }
+                                } catch (e: Exception) {
+                                    Timber.e(e, "❌ Exception during content extraction: ${e.message}")
+                                    extractedContent = "Error extracting content: ${e.message}"
+                                }
+                            }
+
+                            // Add to extracted documents list
+                            extractedDocuments.add(ExtractedDocumentInfo(
+                                name = fileName,
+                                mimeType = mimeType,
+                                size = fileSize,
+                                extractedContent = extractedContent
+                            ))
                             
-                            extractedDocuments.add(
-                                ExtractedDocumentInfo(
-                                    name = fileName,
-                                    mimeType = mimeType,
-                                    size = fileSize,
-                                    extractedContent = failureMessage
-                                )
-                            )
+                            Timber.d("✅ Added extracted document: $fileName (${extractedContent.length} chars)")
+                            
+                        } catch (e: Exception) {
+                            Timber.e(e, "❌ Error during document processing: ${e.message}")
+                            // Add document with error message
+                            extractedDocuments.add(ExtractedDocumentInfo(
+                                name = fileName,
+                                mimeType = mimeType,
+                                size = fileSize,
+                                extractedContent = "Error processing document: ${e.message}"
+                            ))
                         }
                     }
-                } catch (e: Exception) {
-                    Timber.e(e, "Error processing file: $fileUri - ${e.message}")
+                }finally {
+                    
                 }
             }
 
@@ -570,11 +569,22 @@ class AiChatService(
             
             // Debug: Log a preview of the content being sent to AI
             if (extractedDocuments.isNotEmpty()) {
-                Timber.d("AI will receive ${extractedDocuments.size} extracted documents:")
+                Timber.d("🎯 AI will receive ${extractedDocuments.size} extracted documents:")
                 extractedDocuments.forEachIndexed { index, doc ->
                     val contentPreview = doc.extractedContent.take(100) + if (doc.extractedContent.length > 100) "..." else ""
-                    Timber.d("  Document ${index+1}: ${doc.name} - ${doc.extractedContent.length} chars")
-                    Timber.d("  Content preview: $contentPreview")
+                    Timber.d("  📄 Document ${index+1}: ${doc.name} - ${doc.extractedContent.length} chars")
+                    Timber.d("  🔍 Content preview: '$contentPreview'")
+                }
+                Timber.d("🚀 Full AI prompt being sent:")
+                Timber.d("   📝 User text: '${userText.take(100)}${if (userText.length > 100) "..." else ""}'")
+                Timber.d("   🤖 AI-only text length: ${aiOnlyText.length} chars")
+                Timber.d("   🤖 AI-only preview: '${aiOnlyText.take(200)}${if (aiOnlyText.length > 200) "..." else ""}'")
+            } else {
+                Timber.w("⚠️ NO EXTRACTED DOCUMENTS - AI will not receive file content!")
+                Timber.w("   📊 extractedDocuments.size = ${extractedDocuments.size}")
+                Timber.w("   📄 Documents in fileInfos: ${fileInfos.filter { !it.type.startsWith("image/") }.size}")
+                fileInfos.filter { !it.type.startsWith("image/") }.forEach { doc ->
+                    Timber.w("     - ${doc.name} (${doc.type}) - ${doc.size} bytes")
                 }
             }
 
@@ -641,13 +651,13 @@ class AiChatService(
 
             val userFileMessage = ChatMessage(
                 id = userMessageId,
-                message = userDisplayMessage,
+                message = messageJson, // Store GroupedFileMessage JSON for UI display
                 isUser = true,
                 timestamp = System.currentTimeMillis(),
                 conversationId = conversationId,
                 isImage = fileInfos.any { it.type.startsWith("image/") },
                 isDocument = fileInfos.any { !it.type.startsWith("image/") },
-                prompt = messageJson, // Store JSON in prompt field for AI processing
+                prompt = aiOnlyText, // Store extracted content for AI processing
                 isForceSearch = forceWebSearch,
                 attachments = attachmentsJson // Store file attachments for ConversationAttachmentsManager
             )
@@ -2055,6 +2065,7 @@ class AiChatService(
                     adapter = chatAdapter,
                     messagePosition = messagePosition,
                     isWebSearchEnabled = callbacks.getWebSearchEnabled(),
+                    messageId = messageId,
                     onComplete = {
                         coroutineScope.launch(Dispatchers.Main) {
                             val completedMessage = chatAdapter.currentList.find { it.id == messageId }

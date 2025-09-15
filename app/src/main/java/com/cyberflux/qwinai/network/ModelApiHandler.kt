@@ -277,8 +277,21 @@ object ModelApiHandler {
         // === STREAMING ===
         if (config.supportsStreaming) {
             requestMap["stream"] = apiRequest.stream
-            if (config.supportsStreamOptions) {
-                apiRequest.streamOptions?.let { requestMap["stream_options"] = it }
+            if (config.supportsStreamOptions && apiRequest.streamOptions != null) {
+                // Convert StreamOptions data class to Map for API compatibility
+                val streamOptionsMap = mutableMapOf<String, Boolean>()
+                apiRequest.streamOptions.includeUsage?.let { 
+                    if (it) streamOptionsMap["include_usage"] = it 
+                }
+                apiRequest.streamOptions.includeReasoning?.let { 
+                    if (it) streamOptionsMap["include_reasoning"] = it 
+                }
+                apiRequest.streamOptions.includeMetadata?.let { 
+                    if (it) streamOptionsMap["include_metadata"] = it 
+                }
+                if (streamOptionsMap.isNotEmpty()) {
+                    requestMap["stream_options"] = streamOptionsMap
+                }
             }
         }
 

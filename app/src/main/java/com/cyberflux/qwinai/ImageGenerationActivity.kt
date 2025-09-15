@@ -24,6 +24,7 @@ import android.text.InputFilter
 import android.text.TextWatcher
 import android.util.Base64
 import android.view.View
+import android.view.HapticFeedbackConstants
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.animation.Animation
 import android.view.animation.CycleInterpolator
@@ -263,6 +264,7 @@ class ImageGenerationActivity : BaseThemedActivity() {
         setupOptionSpinners()
         setupButtons()
         setupInfoButtons()
+        setupBottomTabs()
 
         updateCreditsInfo()
 
@@ -1735,10 +1737,6 @@ class ImageGenerationActivity : BaseThemedActivity() {
 
     private fun setupButtons() {
         try {
-            binding.btnBack.setOnClickListener {
-                provideHapticFeedback(50)
-                finish()
-            }
 
             binding.btnGalleryTop.setOnClickListener {
                 provideHapticFeedback(50)
@@ -2039,7 +2037,7 @@ class ImageGenerationActivity : BaseThemedActivity() {
             .setTitle("Insufficient Credits")
             .setMessage(message)
             .setPositiveButton("Upgrade to Pro") { _, _ ->
-                SubscriptionActivity.start(this)
+                WelcomeActivity.start(this)
             }
             .setNegativeButton("Cancel", null)
 
@@ -2050,6 +2048,161 @@ class ImageGenerationActivity : BaseThemedActivity() {
         }
 
         builder.show()
+    }
+
+    /**
+     * Setup bottom navigation tabs
+     */
+    private fun setupBottomTabs() {
+        try {
+            // Setup tab layout with icons and text
+            val tabLayout = binding.tabLayout
+            
+            // Create tabs
+            val homeTab = tabLayout.newTab()
+                .setText("Home")
+                .setIcon(getDrawable(R.drawable.ic_home))
+            
+            val chatTab = tabLayout.newTab()
+                .setText("Chat")
+                .setIcon(getDrawable(R.drawable.ic_chat))
+            
+            val imageTab = tabLayout.newTab()
+                .setText("Image")
+                .setIcon(getDrawable(R.drawable.ic_image_generation))
+            
+            val historyTab = tabLayout.newTab()
+                .setText("History")
+                .setIcon(getDrawable(R.drawable.history_menu))
+            
+            // Add tabs to layout
+            tabLayout.addTab(homeTab)
+            tabLayout.addTab(chatTab)
+            tabLayout.addTab(imageTab, true) // Select Image tab since we're in ImageGenerationActivity
+            tabLayout.addTab(historyTab)
+            
+            // Set up tab selection listener
+            tabLayout.addOnTabSelectedListener(object : com.google.android.material.tabs.TabLayout.OnTabSelectedListener {
+                override fun onTabSelected(tab: com.google.android.material.tabs.TabLayout.Tab) {
+                    when (tab.position) {
+                        0 -> {
+                            // Home tab - go to StartActivity with no animations
+                            provideHapticFeedback()
+                            val intent = Intent(this@ImageGenerationActivity, StartActivity::class.java)
+                            intent.putExtra("FROM_TAB_NAVIGATION", true)
+                            intent.putExtra("SELECTED_TAB", 0)
+                            intent.flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                            startActivity(intent)
+                            overridePendingTransition(0, 0) // No transition animation
+                        }
+                        1 -> {
+                            // Chat tab - go to MainActivity with no animations
+                            provideHapticFeedback()
+                            val intent = Intent(this@ImageGenerationActivity, MainActivity::class.java)
+                            intent.putExtra("FROM_TAB_NAVIGATION", true)
+                            intent.putExtra("SELECTED_TAB", 1)
+                            intent.flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                            startActivity(intent)
+                            overridePendingTransition(0, 0) // No transition animation
+                        }
+                        2 -> {
+                            // Image tab - we're already here, just provide feedback
+                            provideHapticFeedback()
+                        }
+                        3 -> {
+                            // History tab - go to StartActivity with History tab selected, no animations
+                            provideHapticFeedback()
+                            val intent = Intent(this@ImageGenerationActivity, StartActivity::class.java)
+                            intent.putExtra("INITIAL_TAB", 3)
+                            intent.putExtra("FROM_TAB_NAVIGATION", true)
+                            intent.putExtra("SELECTED_TAB", 3)
+                            intent.flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                            startActivity(intent)
+                            overridePendingTransition(0, 0) // No transition animation
+                        }
+                    }
+                }
+
+                override fun onTabUnselected(tab: com.google.android.material.tabs.TabLayout.Tab) {}
+                override fun onTabReselected(tab: com.google.android.material.tabs.TabLayout.Tab) {
+                    // Just provide feedback for reselection
+                    provideHapticFeedback()
+                }
+            })
+            
+            Timber.d("Bottom tabs setup completed in ImageGenerationActivity")
+        } catch (e: Exception) {
+            Timber.e(e, "Error setting up bottom tabs: ${e.message}")
+        }
+    }
+
+    /**
+     * Animate tab selection with consistent effects
+     */
+    private fun animateTabSelection(tab: com.google.android.material.tabs.TabLayout.Tab) {
+        try {
+            val view = tab.view
+            
+            // Create a bounce effect with rotation - same as StartActivity and MainActivity
+            view.animate()
+                .scaleX(0.85f)
+                .scaleY(0.85f)
+                .rotation(5f)
+                .setDuration(100)
+                .setInterpolator(AccelerateDecelerateInterpolator())
+                .withEndAction {
+                    view.animate()
+                        .scaleX(1.1f)
+                        .scaleY(1.1f)
+                        .rotation(-2f)
+                        .setDuration(150)
+                        .setInterpolator(AccelerateDecelerateInterpolator())
+                        .withEndAction {
+                            view.animate()
+                                .scaleX(1f)
+                                .scaleY(1f)
+                                .rotation(0f)
+                                .setDuration(100)
+                                .setInterpolator(AccelerateDecelerateInterpolator())
+                                .start()
+                        }
+                        .start()
+                }
+                .start()
+
+            // Add a subtle color pulse effect to the icon
+            tab.icon?.let { icon ->
+                val iconView = view.findViewById<android.widget.ImageView>(com.google.android.material.R.id.icon)
+                iconView?.animate()
+                    ?.alpha(0.6f)
+                    ?.setDuration(75)
+                    ?.withEndAction {
+                        iconView.animate()
+                            .alpha(1f)
+                            .setDuration(75)
+                            .start()
+                    }
+                    ?.start()
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error animating tab selection: ${e.message}")
+        }
+    }
+
+    /**
+     * Provide haptic feedback for better UX
+     */
+    private fun provideHapticFeedback() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                window.decorView.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+            } else {
+                @Suppress("DEPRECATION")
+                window.decorView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error providing haptic feedback: ${e.message}")
+        }
     }
 
     private fun deductCredits(amount: Int) {
@@ -3524,4 +3677,37 @@ class ImageGenerationActivity : BaseThemedActivity() {
         val baseUrl: String,
         val apiKey: String
     )
+
+    override fun onResume() {
+        super.onResume()
+        // Ensure the correct tab is selected for this activity
+        ensureCorrectTabSelected()
+    }
+
+    /**
+     * Ensure the correct tab is selected for this activity (Image tab)
+     */
+    private fun ensureCorrectTabSelected() {
+        try {
+            // Only manage Image tab (position 2) - don't interfere with other activities
+            if (::binding.isInitialized) {
+                val fromTabNavigation = intent.getBooleanExtra("FROM_TAB_NAVIGATION", false)
+                val selectedTab = intent.getIntExtra("SELECTED_TAB", 2)
+                
+                // Only select Image tab if explicitly intended for this activity
+                if (selectedTab == 2 || fromTabNavigation) {
+                    val tabLayout = binding.tabLayout
+                    val imageTab = tabLayout.getTabAt(2) // Image tab is at position 2
+                    if (imageTab != null && !imageTab.isSelected) {
+                        imageTab.select()
+                        Timber.d("ImageGenerationActivity corrected tab selection to Image tab")
+                    }
+                } else {
+                    Timber.d("ImageGenerationActivity skipping tab selection - not intended for Image tab")
+                }
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error ensuring correct tab selected: ${e.message}")
+        }
+    }
 }

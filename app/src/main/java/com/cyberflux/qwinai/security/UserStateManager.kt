@@ -45,7 +45,7 @@ class UserStateManager private constructor(private val context: Context) {
         private const val SYNC_FAILED_COUNT_KEY = "sync_failed_count"
         
         // Server configuration
-        internal const val SERVER_BASE_URL = "https://qwinai-server-production.up.railway.app/api/" // Replace with your actual server URL
+        internal const val SERVER_BASE_URL = "https://qwinai-server-production-production.up.railway.app/api/"
         private const val SYNC_INTERVAL_MS = 60 * 60 * 1000L // Sync every hour
         private const val MAX_RETRY_ATTEMPTS = 3
         

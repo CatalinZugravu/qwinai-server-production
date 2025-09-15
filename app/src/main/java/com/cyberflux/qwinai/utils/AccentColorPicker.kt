@@ -17,6 +17,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
  * Accent Color Picker Dialog for Material Design 3 theming
  */
 class AccentColorPicker(private val context: Context) {
+    private var dialog: androidx.appcompat.app.AlertDialog? = null
 
     interface OnColorSelectedListener {
         fun onColorSelected(accentColor: Int)
@@ -26,18 +27,25 @@ class AccentColorPicker(private val context: Context) {
         val colorOptions = ThemeManager.getAvailableAccentColors()
         
         val recyclerView = RecyclerView(context).apply {
-            layoutManager = GridLayoutManager(context, 3)
+            layoutManager = GridLayoutManager(context, 5) // 5 columns for 40 colors
             adapter = ColorAdapter(colorOptions, currentAccentColor) { selectedColor ->
                 listener.onColorSelected(selectedColor)
+                dismiss() // Close dialog after selection
             }
             setPadding(32, 24, 32, 24)
         }
 
-        MaterialAlertDialogBuilder(context)
+        dialog = MaterialAlertDialogBuilder(context)
             .setTitle("Choose accent color")
             .setView(recyclerView)
             .setNegativeButton("Cancel", null)
-            .show()
+            .create()
+        dialog?.show()
+    }
+    
+    fun dismiss() {
+        dialog?.dismiss()
+        dialog = null
     }
 
     private class ColorAdapter(
@@ -100,6 +108,39 @@ class AccentColorPicker(private val context: Context) {
                     ThemeManager.ACCENT_RED -> R.color.accent_red
                     ThemeManager.ACCENT_TEAL -> R.color.accent_teal
                     ThemeManager.ACCENT_CYAN -> R.color.accent_cyan
+                    // Extended accent colors
+                    ThemeManager.ACCENT_LIME -> R.color.accent_lime
+                    ThemeManager.ACCENT_AMBER -> R.color.accent_amber
+                    ThemeManager.ACCENT_ROSE -> R.color.accent_rose
+                    ThemeManager.ACCENT_VIOLET -> R.color.accent_violet
+                    ThemeManager.ACCENT_EMERALD -> R.color.accent_emerald
+                    ThemeManager.ACCENT_SKY -> R.color.accent_sky
+                    ThemeManager.ACCENT_FUCHSIA -> R.color.accent_fuchsia
+                    ThemeManager.ACCENT_SLATE -> R.color.accent_slate
+                    ThemeManager.ACCENT_CORAL -> R.color.accent_coral
+                    ThemeManager.ACCENT_MINT -> R.color.accent_mint
+                    ThemeManager.ACCENT_LAVENDER -> R.color.accent_lavender
+                    ThemeManager.ACCENT_PEACH -> R.color.accent_peach
+                    ThemeManager.ACCENT_FOREST -> R.color.accent_forest
+                    ThemeManager.ACCENT_CRIMSON -> R.color.accent_crimson
+                    ThemeManager.ACCENT_OCEAN -> R.color.accent_ocean
+                    // Premium accent colors
+                    ThemeManager.ACCENT_TURQUOISE -> R.color.accent_turquoise
+                    ThemeManager.ACCENT_MAGENTA -> R.color.accent_magenta
+                    ThemeManager.ACCENT_GOLD -> R.color.accent_gold
+                    ThemeManager.ACCENT_SAPPHIRE -> R.color.accent_sapphire
+                    ThemeManager.ACCENT_RUBY -> R.color.accent_ruby
+                    ThemeManager.ACCENT_JADE -> R.color.accent_jade
+                    ThemeManager.ACCENT_BRONZE -> R.color.accent_bronze
+                    ThemeManager.ACCENT_SILVER -> R.color.accent_silver
+                    ThemeManager.ACCENT_COPPER -> R.color.accent_copper
+                    ThemeManager.ACCENT_PEARL -> R.color.accent_pearl
+                    ThemeManager.ACCENT_ONYX -> R.color.accent_onyx
+                    ThemeManager.ACCENT_IVORY -> R.color.accent_ivory
+                    ThemeManager.ACCENT_CHAMPAGNE -> R.color.accent_champagne
+                    ThemeManager.ACCENT_PLUM -> R.color.accent_plum
+                    ThemeManager.ACCENT_ORCHID -> R.color.accent_orchid
+                    ThemeManager.ACCENT_STORM -> R.color.accent_storm
                     else -> R.color.md_theme_primary_seed // Default indigo
                 }
             }

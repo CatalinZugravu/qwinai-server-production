@@ -353,7 +353,7 @@ class AllConversationsActivity : BaseThemedActivity() {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         startActivity(intent)
-        overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+        overridePendingTransition(0, 0) // ULTRAFAST: No transition animation
     }
     
     private fun showConversationOptions(view: View, conversation: Conversation) {

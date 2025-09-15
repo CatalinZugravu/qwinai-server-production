@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import android.text.Spanned
 import android.text.method.LinkMovementMethod
 import android.util.LruCache
 import android.util.Patterns
@@ -26,6 +27,8 @@ import com.cyberflux.qwinai.model.MarkdownConfig
 import com.cyberflux.qwinai.model.MessageContentBlock
 import com.cyberflux.qwinai.model.ParseResult
 import com.cyberflux.qwinai.model.SecurityMode
+import com.cyberflux.qwinai.model.TableAlignment
+import com.cyberflux.qwinai.model.ListItem as ModelListItem
 import io.noties.markwon.AbstractMarkwonPlugin
 import io.noties.markwon.Markwon
 import io.noties.markwon.MarkwonConfiguration
@@ -98,6 +101,22 @@ class UnifiedMarkdownProcessor(
             Pattern.CASE_INSENSITIVE
         )
         private val SAFE_PROTOCOLS = setOf("http", "https", "mailto", "ftp")
+        
+        // TABLE DETECTION PATTERNS
+        private val PIPE_TABLE_ROW = Pattern.compile("^\\s*\\|.*\\|\\s*$")
+        private val PIPE_TABLE_SEPARATOR = Pattern.compile("^\\s*\\|\\s*[-:]+\\s*(\\|\\s*[-:]+\\s*)*\\|\\s*$")
+        private val SIMPLE_TABLE_ROW = Pattern.compile("^\\s*[^|]*\\|[^|]*\\|.*$")
+        
+        // FOOTNOTE PATTERN
+        private val FOOTNOTE_DEF_PATTERN = Pattern.compile("^\\s*\\[\\^([^\\]]+)\\]\\s*:\\s*(.+)$", Pattern.MULTILINE)
+        private val FOOTNOTE_REF_PATTERN = Pattern.compile("\\[\\^([^\\]]+)\\]")
+        
+        // EMOJI PATTERN (Unicode and shortcode)
+        private val EMOJI_SHORTCODE_PATTERN = Pattern.compile(":([a-zA-Z0-9_+-]+):")
+        private val EMOJI_UNICODE_PATTERN = Pattern.compile("[\\x{1F600}-\\x{1F64F}]|[\\x{1F300}-\\x{1F5FF}]|[\\x{1F680}-\\x{1F6FF}]|[\\x{1F1E0}-\\x{1F1FF}]|[\\x{2600}-\\x{26FF}]|[\\x{2700}-\\x{27BF}]")
+        
+        // MERMAID PATTERN
+        private val MERMAID_PATTERN = Pattern.compile("```mermaid\\s*\\n([\\s\\S]*?)\\n```", Pattern.CASE_INSENSITIVE)
         // Programming languages that should get interactive code blocks
         private val PROGRAMMING_LANGUAGES = setOf(
             // Web Technologies
@@ -264,6 +283,463 @@ class UnifiedMarkdownProcessor(
         renderToContainer(content, container, webSearchSources, true)
     }
     /**
+     * Data class for special block extraction results.
+     */
+    private data class SpecialBlockExtractionResult(
+        val extractedBlocks: List<MessageContentBlock>,
+        val remainingContent: String,
+        val footnotes: Map<String, String> = emptyMap()
+    )
+    
+    /**
+     * Extract special blocks (tables, mermaid, footnotes) before CommonMark processing.
+     */
+    private fun extractSpecialBlocks(content: String): SpecialBlockExtractionResult {
+        val extractedBlocks = mutableListOf<MessageContentBlock>()
+        val footnotes = mutableMapOf<String, String>()
+        var remainingContent = content
+        
+        try {
+            // Extract footnote definitions first
+            if (config.enableFootnotes) {
+                val footnoteResult = extractFootnotes(remainingContent)
+                footnotes.putAll(footnoteResult.footnotes)
+                remainingContent = footnoteResult.contentWithoutDefs
+            }
+            
+            // Extract Mermaid diagrams
+            if (config.enableMermaid) {
+                val mermaidResult = extractMermaidDiagrams(remainingContent)
+                extractedBlocks.addAll(mermaidResult.blocks)
+                remainingContent = mermaidResult.remainingContent
+            }
+            
+            // Extract tables
+            if (config.enableTables) {
+                val tableResult = extractTables(remainingContent)
+                extractedBlocks.addAll(tableResult.blocks)
+                remainingContent = tableResult.remainingContent
+            }
+            
+            Timber.d("✅ Extracted ${extractedBlocks.size} special blocks, ${footnotes.size} footnotes")
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to extract special blocks")
+        }
+        
+        return SpecialBlockExtractionResult(extractedBlocks, remainingContent, footnotes)
+    }
+    
+    /**
+     * Extract footnote definitions and references.
+     */
+    private fun extractFootnotes(content: String): FootnoteExtractionResult {
+        val footnotes = mutableMapOf<String, String>()
+        var contentWithoutDefs = content
+        
+        try {
+            // Extract footnote definitions
+            val defMatcher = FOOTNOTE_DEF_PATTERN.matcher(content)
+            while (defMatcher.find()) {
+                val id = defMatcher.group(1) ?: continue
+                val definition = defMatcher.group(2) ?: continue
+                footnotes[id] = definition
+            }
+            
+            // Remove footnote definitions from content
+            contentWithoutDefs = content.replace(FOOTNOTE_DEF_PATTERN.toRegex(), "").trim()
+            
+            if (footnotes.isNotEmpty()) {
+                Timber.d("✅ Extracted ${footnotes.size} footnote definitions")
+            }
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to extract footnotes")
+        }
+        
+        return FootnoteExtractionResult(footnotes, contentWithoutDefs)
+    }
+    
+    /**
+     * Extract Mermaid diagrams from content.
+     */
+    private fun extractMermaidDiagrams(content: String): BlockExtractionResult {
+        val blocks = mutableListOf<MessageContentBlock>()
+        var remainingContent = content
+        
+        try {
+            val matcher = MERMAID_PATTERN.matcher(content)
+            val matches = mutableListOf<Pair<String, String>>()
+            
+            // Collect all matches first
+            while (matcher.find()) {
+                val fullMatch = matcher.group(0) ?: continue
+                val diagramContent = matcher.group(1) ?: continue
+                matches.add(fullMatch to diagramContent.trim())
+            }
+            
+            // Process matches and create blocks
+            for ((fullMatch, diagramContent) in matches) {
+                blocks.add(MessageContentBlock.Mermaid(
+                    diagram = diagramContent,
+                    type = detectMermaidType(diagramContent)
+                ))
+                remainingContent = remainingContent.replace(fullMatch, "\n<!-- MERMAID_PLACEHOLDER -->\n")
+            }
+            
+            // Clean up placeholders
+            remainingContent = remainingContent.replace("<!-- MERMAID_PLACEHOLDER -->", "").trim()
+            
+            if (blocks.isNotEmpty()) {
+                Timber.d("✅ Extracted ${blocks.size} Mermaid diagrams")
+            }
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to extract Mermaid diagrams")
+        }
+        
+        return BlockExtractionResult(blocks, remainingContent)
+    }
+    
+    /**
+     * Extract markdown tables from content.
+     */
+    private fun extractTables(content: String): BlockExtractionResult {
+        val blocks = mutableListOf<MessageContentBlock>()
+        var remainingContent = content
+        
+        try {
+            val lines = content.lines()
+            val processedLines = mutableListOf<String>()
+            var i = 0
+            
+            while (i < lines.size) {
+                val line = lines[i]
+                
+                // Check if this line starts a table
+                if (isTableRow(line)) {
+                    val tableInfo = extractTableFromPosition(lines, i)
+                    if (tableInfo != null && tableInfo.rows.isNotEmpty()) {
+                        // Add table block
+                        blocks.add(MessageContentBlock.Table(
+                            rows = tableInfo.rows,
+                            headers = tableInfo.headers,
+                            alignment = tableInfo.alignment
+                        ))
+                        
+                        // Add placeholder
+                        processedLines.add("<!-- TABLE_PLACEHOLDER -->")
+                        
+                        // Skip processed table lines
+                        i = tableInfo.endIndex
+                        
+                        Timber.d("✅ Extracted table with ${tableInfo.rows.size} rows")
+                    } else {
+                        processedLines.add(line)
+                    }
+                } else {
+                    processedLines.add(line)
+                }
+                i++
+            }
+            
+            // Reconstruct content without tables
+            remainingContent = processedLines.joinToString("\n")
+                .replace("<!-- TABLE_PLACEHOLDER -->", "")
+                .trim()
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to extract tables")
+        }
+        
+        return BlockExtractionResult(blocks, remainingContent)
+    }
+    
+    /**
+     * Helper data classes for extraction results.
+     */
+    private data class FootnoteExtractionResult(
+        val footnotes: Map<String, String>,
+        val contentWithoutDefs: String
+    )
+    
+    private data class BlockExtractionResult(
+        val blocks: List<MessageContentBlock>,
+        val remainingContent: String
+    )
+    
+    private data class TableExtractionInfo(
+        val rows: List<List<String>>,
+        val headers: List<String>?,
+        val alignment: List<TableAlignment>?,
+        val endIndex: Int
+    )
+    
+    /**
+     * Check if a line is a table row.
+     */
+    private fun isTableRow(line: String): Boolean {
+        return PIPE_TABLE_ROW.matcher(line).matches() || SIMPLE_TABLE_ROW.matcher(line).matches()
+    }
+    
+    /**
+     * Extract table starting from given position.
+     */
+    private fun extractTableFromPosition(lines: List<String>, startIndex: Int): TableExtractionInfo? {
+        if (startIndex >= lines.size) return null
+        
+        val tableLines = mutableListOf<String>()
+        var i = startIndex
+        
+        // Collect consecutive table lines
+        while (i < lines.size && isTableRow(lines[i])) {
+            tableLines.add(lines[i])
+            i++
+        }
+        
+        if (tableLines.size < 2) return null // Need at least header + separator
+        
+        return try {
+            parseTableStructure(tableLines, i - 1)
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to parse table structure")
+            null
+        }
+    }
+    
+    /**
+     * Parse table structure from table lines.
+     */
+    private fun parseTableStructure(tableLines: List<String>, endIndex: Int): TableExtractionInfo {
+        val rows = mutableListOf<List<String>>()
+        var headers: List<String>? = null
+        var alignment: List<TableAlignment>? = null
+        
+        for ((index, line) in tableLines.withIndex()) {
+            val trimmedLine = line.trim()
+            
+            // Check if this is a separator line (typically the second line)
+            if (index == 1 && PIPE_TABLE_SEPARATOR.matcher(trimmedLine).matches()) {
+                // Parse alignment from separator
+                alignment = parseTableAlignment(trimmedLine)
+                continue
+            }
+            
+            // Parse regular row
+            val cells = parseTableRow(trimmedLine)
+            if (cells.isNotEmpty()) {
+                if (headers == null && index == 0) {
+                    headers = cells
+                } else {
+                    rows.add(cells)
+                }
+            }
+        }
+        
+        return TableExtractionInfo(rows, headers, alignment, endIndex)
+    }
+    
+    /**
+     * Parse a table row into cells.
+     */
+    private fun parseTableRow(line: String): List<String> {
+        val cells = mutableListOf<String>()
+        
+        // Remove leading and trailing pipes
+        val cleaned = line.removePrefix("|").removeSuffix("|")
+        
+        // Split by pipe and clean up
+        val rawCells = cleaned.split("|")
+        for (cell in rawCells) {
+            cells.add(cell.trim())
+        }
+        
+        return cells
+    }
+    
+    /**
+     * Parse table alignment from separator line.
+     */
+    private fun parseTableAlignment(separatorLine: String): List<TableAlignment> {
+        val alignment = mutableListOf<TableAlignment>()
+        
+        val cleaned = separatorLine.removePrefix("|").removeSuffix("|")
+        val alignCells = cleaned.split("|")
+        
+        for (cell in alignCells) {
+            val trimmed = cell.trim()
+            alignment.add(when {
+                trimmed.startsWith(":") && trimmed.endsWith(":") -> TableAlignment.CENTER
+                trimmed.endsWith(":") -> TableAlignment.RIGHT
+                else -> TableAlignment.LEFT
+            })
+        }
+        
+        return alignment
+    }
+    
+    /**
+     * Detect Mermaid diagram type.
+     */
+    private fun detectMermaidType(diagramContent: String): String {
+        return when {
+            diagramContent.contains("graph") -> "flowchart"
+            diagramContent.contains("sequenceDiagram") -> "sequence"
+            diagramContent.contains("classDiagram") -> "class"
+            diagramContent.contains("stateDiagram") -> "state"
+            diagramContent.contains("erDiagram") -> "er"
+            diagramContent.contains("gantt") -> "gantt"
+            diagramContent.contains("pie") -> "pie"
+            else -> "flowchart"
+        }
+    }
+    
+    /**
+     * Process footnote references in text content.
+     */
+    private fun processFootnoteReferences(content: String, footnotes: Map<String, String>): String {
+        try {
+            var processedContent = content
+            val refMatcher = FOOTNOTE_REF_PATTERN.matcher(content)
+            val replacements = mutableListOf<Pair<String, String>>()
+            
+            while (refMatcher.find()) {
+                val id = refMatcher.group(1) ?: continue
+                if (footnotes.containsKey(id)) {
+                    val reference = refMatcher.group(0) ?: continue
+                    // Convert footnote reference to a clickable link  
+                    val linkText = "[^$id](#footnote-$id \"${footnotes[id]?.take(50)}...\")"
+                    replacements.add(reference to linkText)
+                }
+            }
+            
+            // Apply all replacements
+            for ((original, replacement) in replacements) {
+                processedContent = processedContent.replace(original, replacement)
+            }
+            
+            if (replacements.isNotEmpty()) {
+                Timber.d("✅ Processed ${replacements.size} footnote references")
+            }
+            
+            return processedContent
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to process footnote references")
+            return content
+        }
+    }
+    
+    /**
+     * Create footnote section as a text block.
+     */
+    private fun createFootnoteSection(footnotes: Map<String, String>): MessageContentBlock.Text {
+        try {
+            val footnoteText = StringBuilder()
+            footnoteText.append("\n\n---\n### Footnotes\n\n")
+            
+            for ((id, definition) in footnotes) {
+                footnoteText.append("<a name=\"footnote-$id\"></a>")
+                footnoteText.append("**^$id**: $definition  \n")
+            }
+            
+            Timber.d("✅ Created footnote section with ${footnotes.size} footnotes")
+            return MessageContentBlock.Text(footnoteText.toString())
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to create footnote section")
+            return MessageContentBlock.Text("\n\n---\n### Footnotes\n\n*(Footnote processing error)*\n")
+        }
+    }
+    
+    /**
+     * Add emoji processing to text content.
+     */
+    private fun processEmojiInText(content: String): String {
+        if (!config.enableEmoji) return content
+        
+        return try {
+            var processedContent = content
+            
+            // Process emoji shortcodes like :smile:, :heart:
+            val shortcodeMatcher = EMOJI_SHORTCODE_PATTERN.matcher(content)
+            val replacements = mutableMapOf<String, String>()
+            
+            while (shortcodeMatcher.find()) {
+                val shortcode = shortcodeMatcher.group(1) ?: continue
+                val emoji = getEmojiForShortcode(shortcode)
+                if (emoji != null) {
+                    replacements[":$shortcode:"] = emoji
+                }
+            }
+            
+            // Apply emoji replacements
+            for ((shortcode, emoji) in replacements) {
+                processedContent = processedContent.replace(shortcode, emoji)
+            }
+            
+            if (replacements.isNotEmpty()) {
+                Timber.d("✅ Processed ${replacements.size} emoji shortcodes")
+            }
+            
+            processedContent
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to process emojis")
+            content
+        }
+    }
+    
+    /**
+     * Get emoji for shortcode (basic implementation).
+     */
+    private fun getEmojiForShortcode(shortcode: String): String? {
+        return when (shortcode.lowercase()) {
+            // Common emojis
+            "smile", "smiley" -> "😊"
+            "heart" -> "❤️"
+            "thumbsup", "thumbs_up", "+1" -> "👍"
+            "thumbsdown", "thumbs_down", "-1" -> "👎"
+            "fire" -> "🔥"
+            "star" -> "⭐"
+            "check", "checkmark" -> "✅"
+            "x", "cross" -> "❌"
+            "warning" -> "⚠️"
+            "info" -> "ℹ️"
+            "question" -> "❓"
+            "exclamation" -> "❗"
+            
+            // Programming related
+            "code" -> "💻"
+            "bug" -> "🐛"
+            "rocket" -> "🚀"
+            "gear" -> "⚙️"
+            "wrench" -> "🔧"
+            "hammer" -> "🔨"
+            "key" -> "🔑"
+            "lock" -> "🔒"
+            "unlock" -> "🔓"
+            
+            // Actions
+            "eyes" -> "👀"
+            "thinking" -> "🤔"
+            "bulb" -> "💡"
+            "tada" -> "🎉"
+            "clap" -> "👏"
+            "pray" -> "🙏"
+            
+            // Numbers
+            "one" -> "1️⃣"
+            "two" -> "2️⃣"
+            "three" -> "3️⃣"
+            "four" -> "4️⃣"
+            "five" -> "5️⃣"
+            
+            else -> null
+        }
+    }
+
+    /**
      * REAL-TIME STREAMING: Parse markdown content into ordered content blocks with streaming optimizations
      */
     private fun parseIntoBlocks(
@@ -296,11 +772,35 @@ class UnifiedMarkdownProcessor(
                     }
                 }
             }
-            // Preprocess content
+            // Preprocess content with streaming-safe handling
             var processedContent = preprocessContent(content, webSearchSources)
+            
+            // STREAMING-SAFE: Apply additional preprocessing for streaming content
+            if (isStreaming) {
+                processedContent = preprocessStreamingContent(processedContent)
+            }
+            
             val allBlocks = mutableListOf<MessageContentBlock>()
-            // Parse remaining content with CommonMark AST
-            val document = commonMarkParser.parse(processedContent)
+            
+            // PRE-PROCESS SPECIAL BLOCKS: Extract tables, mermaid, footnotes before CommonMark
+            val extractionResult = extractSpecialBlocks(processedContent)
+            processedContent = extractionResult.remainingContent
+            allBlocks.addAll(extractionResult.extractedBlocks)
+            
+            // PROCESS FOOTNOTES: Replace footnote references with links and add footnote section
+            if (extractionResult.footnotes.isNotEmpty()) {
+                processedContent = processFootnoteReferences(processedContent, extractionResult.footnotes)
+                allBlocks.add(createFootnoteSection(extractionResult.footnotes))
+            }
+            
+            // Parse remaining content with CommonMark AST with error handling
+            val document = try {
+                commonMarkParser.parse(processedContent)
+            } catch (e: Exception) {
+                Timber.w(e, "⚠️ CommonMark parsing failed, creating fallback text block")
+                // If parsing fails, return the content as a single text block
+                return ParseResult.Success(listOf(MessageContentBlock.Text(processedContent)))
+            }
             var currentTextBuilder = StringBuilder()
             document.accept(object : AbstractVisitor() {
                 override fun visit(fencedCodeBlock: FencedCodeBlock) {
@@ -485,7 +985,16 @@ class UnifiedMarkdownProcessor(
         when (block) {
             is MessageContentBlock.Text -> {
                 if (view is TextView) {
-                    textParser.setMarkdown(view, block.text)
+                    // STREAMING-SAFE MARKDOWN: Process streaming content safely
+                    val safeContent = preprocessStreamingContent(block.text)
+                    
+                    try {
+                        // Markwon should preserve the existing beautiful font from setupTextView()
+                        textParser.setMarkdown(view, safeContent)
+                    } catch (e: Exception) {
+                        Timber.w(e, "Markwon processing failed during streaming, using fallback")
+                        view.text = safeContent
+                    }
                 }
             }
             is MessageContentBlock.CodeBlock -> {
@@ -558,6 +1067,24 @@ class UnifiedMarkdownProcessor(
             is MessageContentBlock.HorizontalRule -> {
                 renderHorizontalRule(container)
             }
+            is MessageContentBlock.Table -> {
+                renderTableBlock(block, container)
+            }
+            is MessageContentBlock.Mermaid -> {
+                renderMermaidBlock(block, container)
+            }
+            is MessageContentBlock.Math -> {
+                renderMathBlock(block, container)
+            }
+            is MessageContentBlock.Image -> {
+                renderImageBlock(block, container)
+            }
+            is MessageContentBlock.Quote -> {
+                renderQuoteBlock(block, container)
+            }
+            is MessageContentBlock.List -> {
+                renderListBlock(block, container)
+            }
             else -> {
                 // Fallback for unsupported blocks
                 renderTextBlock(MessageContentBlock.Text(block.toString()), container)
@@ -583,14 +1110,23 @@ class UnifiedMarkdownProcessor(
                 bottomMargin = 8
             }
         }
+        
+        // Setup TextView with beautiful font as DEFAULT
+        setupTextView(textView)
+        
         if (block.text.isNotBlank()) {
-            // Use Markwon for inline formatting
-            textParser.setMarkdown(textView, block.text)
+            try {
+                // Use Markwon for inline formatting - should preserve existing font
+                textParser.setMarkdown(textView, block.text)
+            } catch (e: Exception) {
+                Timber.w(e, "⚠️ Markwon formatting failed for text block, using plain text")
+                textView.text = block.text
+            }
         } else {
             // Plain text
             textView.text = block.text
         }
-        setupTextView(textView)
+        
         container.addView(textView)
     }
     /**
@@ -783,6 +1319,264 @@ class UnifiedMarkdownProcessor(
             renderTextBlock(MessageContentBlock.Text("---"), container)
         }
     }
+    
+    /**
+     * Render a table block with proper HTML table structure.
+     */
+    private fun renderTableBlock(block: MessageContentBlock.Table, container: LinearLayout) {
+        try {
+            // Create table container
+            val tableContainer = LinearLayout(context).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    setMargins(0, 16, 0, 16)
+                }
+                orientation = LinearLayout.VERTICAL
+                setPadding(16, 16, 16, 16)
+                setBackgroundColor(ContextCompat.getColor(context, R.color.table_background))
+            }
+            
+            // Add header row if present
+            block.headers?.let { headers ->
+                val headerRow = createTableRow(headers, isHeader = true)
+                tableContainer.addView(headerRow)
+                
+                // Add header separator
+                val separator = View(context).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        2
+                    ).apply {
+                        setMargins(0, 4, 0, 4)
+                    }
+                    setBackgroundColor(ContextCompat.getColor(context, R.color.table_border))
+                }
+                tableContainer.addView(separator)
+            }
+            
+            // Add data rows
+            for (row in block.rows) {
+                val rowView = createTableRow(row, isHeader = false)
+                tableContainer.addView(rowView)
+            }
+            
+            container.addView(tableContainer)
+            Timber.d("✅ Rendered table with ${block.rows.size} rows")
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to render table, falling back to text")
+            val fallbackText = buildTableFallbackText(block)
+            renderTextBlock(MessageContentBlock.Text(fallbackText), container)
+        }
+    }
+    
+    /**
+     * Create a table row view.
+     */
+    private fun createTableRow(cells: List<String>, isHeader: Boolean): LinearLayout {
+        return LinearLayout(context).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 2, 0, 2)
+            }
+            orientation = LinearLayout.HORIZONTAL
+            weightSum = cells.size.toFloat()
+            
+            for (cell in cells) {
+                val cellView = TextView(context).apply {
+                    text = cell.trim()
+                    textSize = if (isHeader) 14f else 13f
+                    typeface = if (isHeader) {
+                        android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.BOLD)
+                    } else {
+                        android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.NORMAL)
+                    }
+                    setTextColor(ContextCompat.getColor(context, 
+                        if (isHeader) R.color.table_header_text else R.color.table_text
+                    ))
+                    setPadding(12, 8, 12, 8)
+                    layoutParams = LinearLayout.LayoutParams(
+                        0,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        1f
+                    )
+                    setBackgroundColor(ContextCompat.getColor(context,
+                        if (isHeader) R.color.table_header_background else R.color.table_cell_background
+                    ))
+                    setTextIsSelectable(true)
+                }
+                addView(cellView)
+                
+                // Add cell border
+                if (cells.indexOf(cell) < cells.size - 1) {
+                    val border = View(context).apply {
+                        layoutParams = LinearLayout.LayoutParams(1, LinearLayout.LayoutParams.MATCH_PARENT)
+                        setBackgroundColor(ContextCompat.getColor(context, R.color.table_border))
+                    }
+                    addView(border)
+                }
+            }
+        }
+    }
+    
+    /**
+     * Build fallback text for table when rendering fails.
+     */
+    private fun buildTableFallbackText(block: MessageContentBlock.Table): String {
+        val builder = StringBuilder()
+        
+        // Add headers
+        block.headers?.let { headers ->
+            builder.append("| ").append(headers.joinToString(" | ")).append(" |\n")
+            builder.append("|").append(" --- |".repeat(headers.size)).append("\n")
+        }
+        
+        // Add rows
+        for (row in block.rows) {
+            builder.append("| ").append(row.joinToString(" | ")).append(" |\n")
+        }
+        
+        return builder.toString()
+    }
+    
+    /**
+     * Render Mermaid diagram block.
+     */
+    private fun renderMermaidBlock(block: MessageContentBlock.Mermaid, container: LinearLayout) {
+        try {
+            // Create Mermaid container
+            val mermaidContainer = LinearLayout(context).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    setMargins(0, 16, 0, 16)
+                }
+                orientation = LinearLayout.VERTICAL
+                setPadding(16, 16, 16, 16)
+                setBackgroundColor(ContextCompat.getColor(context, R.color.mermaid_background))
+            }
+            
+            // Add type label
+            val typeLabel = TextView(context).apply {
+                text = "📊 ${block.type.uppercase()} Diagram"
+                textSize = 12f
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                setTextColor(ContextCompat.getColor(context, R.color.mermaid_label))
+                setPadding(0, 0, 0, 8)
+            }
+            mermaidContainer.addView(typeLabel)
+            
+            // Add diagram content (as code for now - could be enhanced with actual rendering)
+            val diagramContent = TextView(context).apply {
+                text = block.diagram
+                textSize = 12f
+                typeface = android.graphics.Typeface.MONOSPACE
+                setTextColor(ContextCompat.getColor(context, R.color.mermaid_text))
+                setPadding(8, 8, 8, 8)
+                setBackgroundColor(ContextCompat.getColor(context, R.color.mermaid_code_background))
+                setTextIsSelectable(true)
+            }
+            mermaidContainer.addView(diagramContent)
+            
+            // Add note about diagram rendering
+            val note = TextView(context).apply {
+                text = "Note: Mermaid diagrams require a compatible renderer for visual display"
+                textSize = 10f
+                setTextColor(ContextCompat.getColor(context, R.color.mermaid_note))
+                setPadding(0, 8, 0, 0)
+            }
+            mermaidContainer.addView(note)
+            
+            container.addView(mermaidContainer)
+            Timber.d("✅ Rendered Mermaid ${block.type} diagram")
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to render Mermaid diagram, falling back to code")
+            renderCodeBlock(MessageContentBlock.CodeBlock(block.diagram, "mermaid"), container)
+        }
+    }
+    
+    /**
+     * Render math block with LaTeX.
+     */
+    private fun renderMathBlock(block: MessageContentBlock.Math, container: LinearLayout) {
+        try {
+            val mathView = TextView(context).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    setMargins(0, 8, 0, 8)
+                }
+                setPadding(16, 12, 16, 12)
+                setBackgroundColor(ContextCompat.getColor(context, R.color.math_background))
+            }
+            
+            setupTextView(mathView)
+            
+            try {
+                // Use Markwon's LaTeX plugin to render math
+                val mathContent = if (block.isInline) "$${block.latex}$" else "$$${block.latex}$$"
+                textParser.setMarkdown(mathView, mathContent)
+            } catch (e: Exception) {
+                Timber.w(e, "LaTeX rendering failed, showing raw LaTeX")
+                mathView.apply {
+                    text = if (block.isInline) "\$${block.latex}\$" else "\$\$${block.latex}\$\$"
+                    typeface = android.graphics.Typeface.MONOSPACE
+                    setTextColor(ContextCompat.getColor(context, R.color.code_text))
+                }
+            }
+            
+            container.addView(mathView)
+            Timber.d("✅ Rendered ${if (block.isInline) "inline" else "block"} math")
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to render math block")
+            renderTextBlock(MessageContentBlock.Text(block.latex), container)
+        }
+    }
+    
+    /**
+     * Render image block.
+     */
+    private fun renderImageBlock(block: MessageContentBlock.Image, container: LinearLayout) {
+        // For now, render as a text link - could be enhanced with actual image loading
+        val imageText = if (block.altText != null) {
+            "![${block.altText}](${block.url})"
+        } else {
+            "![Image](${block.url})"
+        }
+        renderTextBlock(MessageContentBlock.Text(imageText), container)
+        Timber.d("✅ Rendered image link: ${block.url}")
+    }
+    
+    /**
+     * Render quote block.
+     */
+    private fun renderQuoteBlock(block: MessageContentBlock.Quote, container: LinearLayout) {
+        val quoteText = "> ${block.text.lines().joinToString("\n> ")}"
+        renderTextBlock(MessageContentBlock.Text(quoteText), container)
+        Timber.d("✅ Rendered quote block")
+    }
+    
+    /**
+     * Render list block.
+     */
+    private fun renderListBlock(block: MessageContentBlock.List, container: LinearLayout) {
+        val listText = StringBuilder()
+        for ((index, item) in block.items.withIndex()) {
+            val bullet = if (block.isOrdered) "${index + 1}. " else "- "
+            listText.append(bullet).append(item.text).append("\n")
+        }
+        renderTextBlock(MessageContentBlock.Text(listText.toString().trim()), container)
+        Timber.d("✅ Rendered ${if (block.isOrdered) "ordered" else "unordered"} list")
+    }
+    
     /**
      * Create text parser for inline markdown formatting.
      */
@@ -810,6 +1604,7 @@ class UnifiedMarkdownProcessor(
             .usePlugin(MovementMethodPlugin.create())
             .usePlugin(createSecureLinkHandler())
             .usePlugin(createThemePlugin())
+            .usePlugin(createFontPreservationPlugin()) // CRITICAL: Preserve beautiful font
             .usePlugin(object : AbstractMarkwonPlugin() {
                 override fun configureVisitor(builder: MarkwonVisitor.Builder) {
                     builder.on(FencedCodeBlock::class.java) { visitor, node ->
@@ -893,7 +1688,13 @@ class UnifiedMarkdownProcessor(
     private fun createThemePlugin(): AbstractMarkwonPlugin {
         return object : AbstractMarkwonPlugin() {
             override fun configureTheme(builder: MarkwonTheme.Builder) {
+                // Create the beautiful ultra-thin typeface - same as default
+                val ultraThinTypeface = android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.NORMAL)
+                
                 builder
+                    // PRESERVE DEFAULT TYPOGRAPHY - Apply to headings only
+                    .headingTypeface(ultraThinTypeface)
+                    
                     // Beautiful Ultra-Thin Link Colors
                     .linkColor(ContextCompat.getColor(context, R.color.ai_response_link_color))
 
@@ -923,6 +1724,120 @@ class UnifiedMarkdownProcessor(
             }
         }
     }
+    
+    /**
+     * CRITICAL PLUGIN: Preserve beautiful font during Markwon processing.
+     * This prevents Markwon from overriding the existing beautiful font.
+     */
+    private fun createFontPreservationPlugin(): AbstractMarkwonPlugin {
+        return object : AbstractMarkwonPlugin() {            
+            override fun afterSetText(textView: TextView) {
+                super.afterSetText(textView)
+                
+                // CRITICAL: Force beautiful font immediately after Markwon finishes
+                textView.typeface = android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.NORMAL)
+                
+                // Preserve all other beautiful styling
+                textView.apply {
+                    setLineSpacing(6f, 1.3f)
+                    letterSpacing = 0.02f
+                    alpha = 0.95f
+                    setTextColor(ContextCompat.getColor(context, R.color.ai_response_text_primary))
+                    setLinkTextColor(ContextCompat.getColor(context, R.color.ai_response_link_color))
+                    paintFlags = paintFlags or android.graphics.Paint.ANTI_ALIAS_FLAG
+                    paintFlags = paintFlags or android.graphics.Paint.SUBPIXEL_TEXT_FLAG
+                }
+                
+                // ULTRA-AGGRESSIVE: Ensure font sticks with multiple attempts
+                Handler(Looper.getMainLooper()).post {
+                    textView.typeface = android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.NORMAL)
+                }
+                Handler(Looper.getMainLooper()).postDelayed({
+                    textView.typeface = android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.NORMAL)
+                }, 50)
+            }
+        }
+    }
+    
+    /**
+     * Preprocess streaming content to handle incomplete markdown safely.
+     * Fixes unclosed code blocks and other streaming markdown issues.
+     */
+    private fun preprocessStreamingContent(content: String): String {
+        return try {
+            var safeContent = content
+            
+            // Count code block fences to detect incomplete blocks
+            val tripleBackticks = safeContent.split("```").size - 1
+            val singleBackticks = safeContent.split("`").size - 1
+            
+            // STREAMING-SAFE: Fix incomplete triple-backtick code blocks
+            if (tripleBackticks % 2 == 1) {
+                // Incomplete code block - don't render as code block during streaming
+                // Replace the last ``` with escaped version to prevent parsing errors
+                val lastTripleIndex = safeContent.lastIndexOf("```")
+                if (lastTripleIndex != -1) {
+                    safeContent = safeContent.substring(0, lastTripleIndex) + 
+                                 "\\`\\`\\`" + safeContent.substring(lastTripleIndex + 3)
+                    Timber.d("🔧 Fixed incomplete triple-backtick code block during streaming")
+                }
+            }
+            
+            // STREAMING-SAFE: Fix incomplete single-backtick inline code
+            if (singleBackticks % 2 == 1) {
+                // Find the last unpaired backtick and escape it
+                var backtickCount = 0
+                var lastUnpairedIndex = -1
+                
+                for (i in safeContent.indices) {
+                    if (safeContent[i] == '`') {
+                        backtickCount++
+                        if (backtickCount % 2 == 1) {
+                            lastUnpairedIndex = i
+                        }
+                    }
+                }
+                
+                if (lastUnpairedIndex != -1) {
+                    safeContent = safeContent.substring(0, lastUnpairedIndex) + 
+                                 "\\`" + safeContent.substring(lastUnpairedIndex + 1)
+                    Timber.d("🔧 Fixed incomplete single-backtick inline code during streaming")
+                }
+            }
+            
+            // STREAMING-SAFE: Fix incomplete bold/italic markers
+            val asteriskCount = safeContent.count { it == '*' }
+            if (asteriskCount % 2 == 1) {
+                // Escape the last unpaired asterisk
+                val lastAsteriskIndex = safeContent.lastIndexOf('*')
+                if (lastAsteriskIndex != -1) {
+                    safeContent = safeContent.substring(0, lastAsteriskIndex) + 
+                                 "\\*" + safeContent.substring(lastAsteriskIndex + 1)
+                }
+            }
+            
+            // STREAMING-SAFE: Fix incomplete links [text](incomplete
+            if (safeContent.contains("[") && safeContent.contains("](") && !safeContent.endsWith(")")) {
+                val linkPattern = "\\[([^\\]]*)\\]\\(([^)]*)$".toRegex()
+                safeContent = linkPattern.replace(safeContent) { matchResult ->
+                    val text = matchResult.groupValues[1]
+                    val incompleteUrl = matchResult.groupValues[2]
+                    "[$text](${incompleteUrl}...)"
+                }
+            }
+            
+            // STREAMING-SAFE: Remove incomplete HTML tags
+            safeContent = safeContent.replace("<[^>]*$".toRegex(), "")
+            
+            Timber.d("✅ Streaming content preprocessed successfully")
+            safeContent
+            
+        } catch (e: Exception) {
+            Timber.w(e, "⚠️ Failed to preprocess streaming content, using original")
+            content
+        }
+    }
+    
     /**
      * Create secure link handler that validates URLs.
      */
@@ -1070,6 +1985,8 @@ class UnifiedMarkdownProcessor(
         if (!webSearchSources.isNullOrEmpty()) {
             processed = processCitations(processed, webSearchSources)
         }
+        // Process emojis
+        processed = processEmojiInText(processed)
         // Normalize line endings
         processed = processed.replace("\r\n", "\n").replace("\r", "\n")
         // Security sanitization
@@ -1130,10 +2047,10 @@ class UnifiedMarkdownProcessor(
         textView.apply {
             movementMethod = LinkMovementMethod.getInstance()
 
-            // ULTRA-THIN BEAUTIFUL AI RESPONSE STYLING
+            // ULTRA-THIN BEAUTIFUL AI RESPONSE STYLING - APPLIED AS DEFAULT
             textSize = 16f
 
-            // Ultra-thin typography for elegant appearance
+            // Ultra-thin typography for elegant appearance - DEFAULT FONT
             typeface = android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.NORMAL)
 
             // Beautiful sophisticated colors

@@ -26,17 +26,23 @@ object ModelIconUtils {
         }
     }
 
-    // Get color for a model
-    fun getColorForModel(modelId: String): Int {
+    // Get color for a model - now uses dynamic accent color
+    fun getColorForModel(modelId: String, context: android.content.Context): Int {
+        return com.cyberflux.qwinai.utils.ThemeManager.getCurrentAccentColor(context)
+    }
+
+    // Get icon resource for a chat model (different from image generation models)
+    fun getIconResourceForChatModel(modelId: String): Int {
         return when {
-            modelId.contains("claude", ignoreCase = true) -> "#5436DA".toColorInt() // Purple for Claude
-            modelId.contains("llama", ignoreCase = true) -> "#0077B5".toColorInt() // Blue for Llama
-            modelId.contains("gemma", ignoreCase = true) -> "#FF5722".toColorInt() // Orange for Gemma
-            modelId.contains("deepseek", ignoreCase = true) -> "#00BCD4".toColorInt() // Cyan for DeepSeek
-            modelId.contains("mistral", ignoreCase = true) -> "#4CAF50".toColorInt() // Green for Mistral
-            modelId.contains("gpt", ignoreCase = true) -> "#10A37F".toColorInt() // Teal for
-            modelId.contains("qwen", ignoreCase = true) -> "#10A37F".toColorInt() // Teal for GPT
-            else -> "#757575".toColorInt() // Gray for default
+            modelId.contains("claude", ignoreCase = true) -> R.drawable.ic_claude
+            modelId.contains("gpt", ignoreCase = true) -> R.drawable.ic_gpt
+            modelId.contains("llama", ignoreCase = true) -> R.drawable.ic_llama
+            modelId.contains("gemma", ignoreCase = true) -> R.drawable.ic_gemma
+            modelId.contains("deepseek", ignoreCase = true) -> R.drawable.ic_ai_brain
+            modelId.contains("mistral", ignoreCase = true) -> R.drawable.ic_mistral
+            modelId.contains("qwen", ignoreCase = true) -> R.drawable.ic_qwen
+            modelId.contains("cohere", ignoreCase = true) -> R.drawable.ic_ai_chip
+            else -> R.drawable.ic_default_model
         }
     }
 
@@ -56,7 +62,7 @@ object ModelIconUtils {
 
     // Method to apply model color to EditText
     fun applyModelColorToInput(editText: EditText, modelId: String) {
-        val color = getColorForModel(modelId)
+        val color = getColorForModel(modelId, editText.context)
 
         // Set the underline color
         editText.backgroundTintList = ColorStateList.valueOf(color)

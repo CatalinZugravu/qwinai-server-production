@@ -11,7 +11,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.cyberflux.qwinai.MainActivity
 import com.cyberflux.qwinai.R
-import com.cyberflux.qwinai.SubscriptionActivity
+import com.cyberflux.qwinai.WelcomeActivity
 import com.cyberflux.qwinai.ads.AdManager
 import com.cyberflux.qwinai.billing.BillingManager
 import com.cyberflux.qwinai.credits.CreditManager
@@ -305,7 +305,7 @@ object SubscriptionManager {
             .setTitle("Premium Feature")
             .setMessage("$featureDescription requires a premium subscription. Upgrade now to unlock this and all other premium features.")
             .setPositiveButton("Upgrade Now") { _, _ ->
-                SubscriptionActivity.start(activity)
+                WelcomeActivity.start(activity)
             }
             .setNegativeButton("Maybe Later", null)
             .create()
@@ -402,7 +402,7 @@ object SubscriptionManager {
                 .setTitle("Subscription Expiring")
                 .setMessage(message)
                 .setPositiveButton("Renew Now") { _, _ ->
-                    SubscriptionActivity.start(activity)
+                    WelcomeActivity.start(activity)
                 }
                 .setNegativeButton("Remind Later", null)
                 .create()

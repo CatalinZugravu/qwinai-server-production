@@ -21,12 +21,12 @@ import timber.log.Timber
 class FileProgressTracker {
 
     // Progress state flows
-    private val _progressFlow = MutableStateFlow<Triple<Int, String, ProcessingStage>>(Triple(0, "Preparing...", ProcessingStage.INITIALIZING))
+    private val _progressFlow = MutableStateFlow<Triple<Int, String, ProcessingStage>>(Triple(0, "Initializing...", ProcessingStage.INITIALIZING))
     val progressFlow: StateFlow<Triple<Int, String, ProcessingStage>> = _progressFlow.asStateFlow()
 
     // Current values
     private var currentProgress = 0
-    private var currentMessage = "Preparing..."
+    private var currentMessage = "Initializing..."
     private var currentStage = ProcessingStage.INITIALIZING
 
     // Item view references
@@ -83,7 +83,7 @@ class FileProgressTracker {
             dotLoadingView?.startAnimation()
 
             // Initialize progress
-            updateProgress(0, "Preparing...", ProcessingStage.INITIALIZING)
+            updateProgress(0, "Initializing...", ProcessingStage.INITIALIZING)
         }
     }
 

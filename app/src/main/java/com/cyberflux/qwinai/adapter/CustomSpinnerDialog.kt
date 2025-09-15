@@ -39,6 +39,7 @@ import com.cyberflux.qwinai.model.ResponseLength
 import com.cyberflux.qwinai.model.ResponsePreferences
 import com.cyberflux.qwinai.model.ResponseTone
 import com.cyberflux.qwinai.utils.TranslationUtils
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
 import timber.log.Timber
@@ -62,13 +63,14 @@ class CustomSpinnerDialog(
     override fun isTranslationMode(): Boolean = isTranslationModeFunc()
 
     private val dialog: Dialog = Dialog(context)
-    private lateinit var viewPager: ViewPager2
-    private lateinit var tabLayout: TabLayout
+    // REMOVED: ViewPager and TabLayout - no longer needed for simplified layout
+    // private lateinit var viewPager: ViewPager2
+    // private lateinit var tabLayout: TabLayout
     private lateinit var dragHandleContainer: View
     private lateinit var dragHandle: View
     private var fixedDialogWidth: Int = 0
     private var fixedDialogHeight: Int = 0
-    private var fixedViewPagerHeight: Int = 0
+    // REMOVED: private var fixedViewPagerHeight: Int = 0
     // Touch handling variables
     private var initialY: Float = 0f
     private var currentY: Float = 0f
@@ -128,41 +130,98 @@ class CustomSpinnerDialog(
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
         dialog.setContentView(R.layout.dialog_tabbed_spinner)
 
-        // Get references to views
-        viewPager = dialog.findViewById(R.id.viewPager)
-        tabLayout = dialog.findViewById(R.id.tabLayout)
+        // Get references to views - updated for simplified layout
+        val modelsRecyclerView = dialog.findViewById<RecyclerView>(R.id.modelsRecyclerView)
+        val btnDone = dialog.findViewById<MaterialButton>(R.id.btnDone)
         dragHandleContainer = dialog.findViewById(R.id.dragHandleContainer)
         dragHandle = dialog.findViewById(R.id.dragHandle)
 
         // Setup drag-to-dismiss functionality
         setupDragToDismiss()
 
-        // Enable ViewPager2 user-initiated scrolling for swiping between tabs
-        viewPager.isUserInputEnabled = true
+        // Setup RecyclerView with models
+        setupModelsRecyclerView(modelsRecyclerView)
+        
+        // Setup Done button
+        btnDone.setOnClickListener {
+            dialog.dismiss()
+        }
+    }
 
-        // BEAUTIFUL TABS: Enhanced styling
-        tabLayout.setSelectedTabIndicatorColor(ContextCompat.getColor(context, R.color.accent_color))
-        tabLayout.setSelectedTabIndicatorHeight((context.resources.displayMetrics.density * 4).toInt())
-        tabLayout.tabIconTint = ContextCompat.getColorStateList(context, R.color.tab_icon_selector)
-        tabLayout.setTabRippleColorResource(R.color.ripple_color)
-
-        // CLEAN ViewPager callback - only handle page indicators
-        viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
-            override fun onPageSelected(position: Int) {
-                super.onPageSelected(position)
-
-                // Update page indicators only
-                updatePageIndicators(position)
-
-                // Simple dimension maintenance - no forced LayoutParams changes
-                dialog.window?.let { window ->
-                    val params = window.attributes
-                    if (params.width > 0 && params.height > 0) {
-                        window.setLayout(params.width, params.height)
-                    }
-                }
+    private fun setupModelsRecyclerView(recyclerView: RecyclerView) {
+        // Setup grid layout manager with 2 columns
+        val spanCount = 2
+        val gridLayoutManager = androidx.recyclerview.widget.GridLayoutManager(context, spanCount)
+        recyclerView.layoutManager = gridLayoutManager
+        
+        // Get all available models from ModelManager
+        val models = com.cyberflux.qwinai.utils.ModelManager.models
+        
+        // Find current selected model position
+        val selectedModelId = com.cyberflux.qwinai.utils.ModelManager.selectedModel.id
+        val selectedPosition = models.indexOfFirst { it.id == selectedModelId }
+        
+        // Create and set adapter
+        val modelAdapter = ModelGridAdapter(
+            context = context,
+            models = models,
+            selectedPosition = if (selectedPosition >= 0) selectedPosition else 0,
+            onItemClick = { position ->
+                val selectedModel = models[position]
+                
+                // Update ModelManager first
+                com.cyberflux.qwinai.utils.ModelManager.selectedModel = selectedModel
+                
+                // Load current response preferences and update model position
+                val preferences = loadResponsePreferences(position)
+                
+                // Save preferences to SharedPreferences for consistency
+                saveResponsePreferences(preferences)
+                
+                // Call selection complete callback with updated preferences
+                onSelectionComplete(preferences)
+                
+                // Dismiss dialog
+                dialog.dismiss()
             }
-        })
+        )
+        
+        recyclerView.adapter = modelAdapter
+    }
+    
+    private fun loadResponsePreferences(): ResponsePreferences {
+        // Load current preferences - simplified version
+        return ResponsePreferences()
+    }
+    
+    /**
+     * Save preferences to SharedPreferences for consistency with spinner behavior
+     */
+    private fun saveResponsePreferences(preferences: ResponsePreferences) {
+        val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+        val editor = prefs.edit()
+        
+        // Save response length
+        editor.putString("response_length", preferences.length.name)
+        
+        // Save response tone
+        editor.putString("response_tone", preferences.tone.name)
+        
+        // Save selected model ID for consistency
+        if (preferences.modelPosition < models.size) {
+            val selectedModel = models[preferences.modelPosition]
+            editor.putString("default_ai_model_id", selectedModel.id)
+        }
+        
+        editor.apply()
+        
+        Timber.d("DIALOG: Saved preferences to SharedPreferences: length=${preferences.length.name}, tone=${preferences.tone.name}")
+    }
+
+    // REMOVED OLD PAGER CODE BELOW
+    /*
+    private fun setupOldPagerAdapter() {
+        // REMOVED: ViewPager callback - no longer needed with simplified layout
 
         // Set up the pager adapter - CLEAN version
         val pagerAdapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
@@ -278,8 +337,8 @@ class CustomSpinnerDialog(
             }
         })
 
-        // Setup custom page indicator
-        setupCustomPageIndicator()
+        // Setup custom page indicator - REMOVED (no more tabs)
+        // setupCustomPageIndicator()
 
         // Add dismiss listener
         dialog.setOnDismissListener {
@@ -287,7 +346,12 @@ class CustomSpinnerDialog(
         }
 
         dialog.setCanceledOnTouchOutside(true)
-    }    private fun setupCustomPageIndicator() {
+    }
+    */
+    
+    // REMOVED: setupCustomPageIndicator() - no longer needed since tabs were removed
+    /*
+    private fun setupCustomPageIndicator() {
         // Get the indicator container from the layout
         val indicatorContainer = dialog.findViewById<LinearLayout>(R.id.pageIndicatorContainer)
 
@@ -323,6 +387,9 @@ class CustomSpinnerDialog(
             Timber.d("PAGE INDICATOR: Created ${indicatorContainer.childCount} dots")
         }
     }
+    */
+    // REMOVED: enforceFixedDimensions - no longer needed without ViewPager
+    /*
     private fun enforceFixedDimensions() {
         if (fixedDialogWidth > 0 && fixedDialogHeight > 0 && fixedViewPagerHeight > 0) {
 
@@ -344,6 +411,9 @@ class CustomSpinnerDialog(
             Timber.d("ENFORCED: dialog=${fixedDialogWidth}x${fixedDialogHeight}, viewPager=height:${fixedViewPagerHeight}")
         }
     }
+    */
+    // REMOVED: createPageIndicatorContainer() - no longer needed since tabs were removed
+    /*
     /**
      * Create container for page indicators if it doesn't exist
      */
@@ -366,6 +436,7 @@ class CustomSpinnerDialog(
 
         return container
     }
+    */
 
     /**
      * Create individual indicator dot
@@ -524,13 +595,18 @@ class CustomSpinnerDialog(
         }
 
         dialog.show()
-        viewPager.setCurrentItem(0, false)
-    }    private fun storeFixedDimensions(dialogWidth: Int, dialogHeight: Int, viewPagerHeight: Int) {
+        // REMOVED: viewPager.setCurrentItem(0, false) - no longer needed
+    }    
+    
+    // REMOVED: storeFixedDimensions - no longer needed without ViewPager
+    /*
+    private fun storeFixedDimensions(dialogWidth: Int, dialogHeight: Int, viewPagerHeight: Int) {
         fixedDialogWidth = dialogWidth
         fixedDialogHeight = dialogHeight
         fixedViewPagerHeight = viewPagerHeight
         Timber.d("STORED DIMENSIONS: dialog=${fixedDialogWidth}x${fixedDialogHeight}, viewPager=height:${fixedViewPagerHeight}")
     }
+    */
     private fun setupModelsPage(view: View) {
         try {
             val recyclerView = view.findViewById<RecyclerView>(R.id.rvModelGrid)
@@ -615,6 +691,8 @@ class CustomSpinnerDialog(
     }
 
 
+    // REMOVED: updatePageIndicators() - no longer needed since tabs were removed
+    /*
     private fun updatePageIndicators(position: Int) {
         val indicatorContainer = dialog.findViewById<LinearLayout>(R.id.pageIndicatorContainer)
         indicatorContainer?.let { container ->
@@ -651,6 +729,7 @@ class CustomSpinnerDialog(
             }
         }
     }
+    */
     private fun setupLengthOptions(container: LinearLayout) {
         container.removeAllViews()
 

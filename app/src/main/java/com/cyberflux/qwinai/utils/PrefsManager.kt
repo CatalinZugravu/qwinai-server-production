@@ -138,6 +138,25 @@ object PrefsManager {
     }
 
     /**
+     * Check if accent color should be applied to status bar
+     */
+    fun isAccentStatusBarEnabled(context: Context): Boolean {
+        val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+        return prefs.getBoolean("accent_status_bar_enabled", true) // Default to enabled
+    }
+
+    /**
+     * Set whether accent color should be applied to status bar
+     */
+    fun setAccentStatusBarEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+            .edit {
+                putBoolean("accent_status_bar_enabled", enabled)
+            }
+        Timber.d("Accent status bar setting updated: $enabled")
+    }
+
+    /**
      * Save all AI settings from one object
      */
     fun saveAiSettings(context: Context, settings: AppSettings) {

@@ -1,5 +1,7 @@
 package com.cyberflux.qwinai.utils
 
+import timber.log.Timber
+
 /**
  * Simplified supported file types management
  * Only includes formats that can be processed reliably without crashes
@@ -47,21 +49,90 @@ object SupportedFileTypes {
 
     /**
      * Check if a MIME type is supported for document extraction
+     * Enhanced to handle alternative MIME types that Android may report
      */
-    fun isDocumentTypeSupported(mimeType: String?): Boolean {
-        if (mimeType == null) return false
+    fun isDocumentTypeSupported(mimeType: String?, fileName: String? = null): Boolean {
+        if (mimeType == null) {
+            Timber.d("🔍 SupportedFileTypes: isDocumentTypeSupported() - mimeType is null")
+            return false
+        }
         
-        return SUPPORTED_DOCUMENT_TYPES.contains(mimeType) || 
-               mimeType.startsWith("text/") ||
-               mimeType.startsWith("application/text")
+        Timber.d("🔍 SupportedFileTypes: isDocumentTypeSupported() checking mimeType='$mimeType', fileName='$fileName'")
+        
+        // First check direct MIME type match
+        if (SUPPORTED_DOCUMENT_TYPES.contains(mimeType) || 
+            mimeType.startsWith("text/") ||
+            mimeType.startsWith("application/text")) {
+            Timber.d("✅ SupportedFileTypes: Direct MIME type match - SUPPORTED")
+            return true
+        }
+        
+        // Handle alternative MIME types that Android reports for Office files
+        if (mimeType == "application/zip" || mimeType == "application/octet-stream") {
+            Timber.d("🔍 SupportedFileTypes: Alternative MIME type detected ($mimeType), checking extension...")
+            val result = isDocumentByExtension(fileName)
+            Timber.d("${if (result) "✅" else "❌"} SupportedFileTypes: Extension check result = $result")
+            return result
+        }
+        
+        Timber.d("❌ SupportedFileTypes: No match found - NOT SUPPORTED")
+        return false
+    }
+
+    /**
+     * Check if file is a supported document based on file extension
+     * Fallback when MIME type detection fails
+     */
+    private fun isDocumentByExtension(fileName: String?): Boolean {
+        if (fileName == null) {
+            Timber.d("🔍 SupportedFileTypes: isDocumentByExtension() - fileName is null")
+            return false
+        }
+        
+        val extension = fileName.substringAfterLast('.', "").lowercase()
+        val supportedExtensions = setOf(
+            "pdf", "docx", "xlsx", "pptx", "txt", "csv", "rtf"
+        )
+        
+        val result = supportedExtensions.contains(extension)
+        Timber.d("🔍 SupportedFileTypes: isDocumentByExtension() fileName='$fileName', extension='$extension', result=$result")
+        
+        return result
     }
 
     /**
      * Check if a MIME type is an unsupported Office format
+     * Enhanced to avoid blocking ZIP-based Office files
      */
-    fun isUnsupportedOfficeType(mimeType: String?): Boolean {
-        if (mimeType == null) return false
-        return UNSUPPORTED_OFFICE_TYPES.contains(mimeType)
+    fun isUnsupportedOfficeType(mimeType: String?, fileName: String? = null): Boolean {
+        if (mimeType == null) {
+            Timber.d("🔍 SupportedFileTypes: isUnsupportedOfficeType() - mimeType is null")
+            return false
+        }
+        
+        Timber.d("🔍 SupportedFileTypes: isUnsupportedOfficeType() checking mimeType='$mimeType', fileName='$fileName'")
+        
+        // Don't block ZIP or octet-stream as these might be valid Office files
+        if (mimeType == "application/zip" || mimeType == "application/octet-stream") {
+            Timber.d("🔍 SupportedFileTypes: ZIP/octet-stream detected, checking extension...")
+            // Only consider it unsupported if the extension is actually unsupported
+            val result = if (fileName != null) {
+                val extension = fileName.substringAfterLast('.', "").lowercase()
+                val unsupportedExtensions = setOf("doc", "xls", "ppt", "odt", "ods", "odp")
+                val isUnsupported = unsupportedExtensions.contains(extension)
+                Timber.d("🔍 SupportedFileTypes: Extension '$extension' ${if (isUnsupported) "IS" else "IS NOT"} in unsupported list")
+                isUnsupported
+            } else {
+                Timber.d("🔍 SupportedFileTypes: No fileName provided, defaulting to false")
+                false // Don't block if we can't determine the file type
+            }
+            Timber.d("${if (result) "❌" else "✅"} SupportedFileTypes: isUnsupportedOfficeType result = $result")
+            return result
+        }
+        
+        val result = UNSUPPORTED_OFFICE_TYPES.contains(mimeType)
+        Timber.d("${if (result) "❌" else "✅"} SupportedFileTypes: Standard unsupported type check result = $result")
+        return result
     }
 
     /**

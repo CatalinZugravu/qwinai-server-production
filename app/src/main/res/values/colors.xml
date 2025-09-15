@@ -6,6 +6,31 @@
     <color name="white">#FFFFFF</color>
     <color name="black">#000000</color>
     <color name="transparent">#00000000</color>
+
+
+
+
+    <!-- Surface Colors -->
+
+    <color name="on_surface">#1A1A1A</color>
+    <color name="dialog_scrim">#66000000</color>
+
+
+
+    <!-- Error Colors -->
+    <color name="error_color_light">#F44336</color>
+
+    <!-- Chip Colors -->
+    <color name="chip_selected">@color/md_theme_light_primary</color>
+    <color name="chip_unselected">#F3F4F6</color>
+    <color name="chip_stroke_selected">@color/md_theme_light_primary</color>
+    <color name="chip_stroke_unselected">#E5E7EB</color>
+
+    <!-- Model Selection Colors -->
+    <color name="selected_model_background">@color/md_theme_light_primaryContainer</color>        <!-- Light accent background -->
+    <color name="selected_model_stroke">@color/md_theme_light_primary</color>           <!-- Accent stroke -->
+    <color name="unselected_model_background">#F3F4F6</color>     <!-- Light gray background -->
+
     
     <!-- =============================================================== -->
     <!-- MATERIAL DESIGN 3 - DYNAMIC THEME SEED COLORS                 -->
@@ -26,6 +51,41 @@
     <color name="accent_red">#EF4444</color>                         <!-- Red -->
     <color name="accent_teal">#14B8A6</color>                        <!-- Teal -->
     <color name="accent_cyan">#06B6D4</color>                        <!-- Cyan -->
+    
+    <!-- Extended accent color palette (15 additional colors) -->
+    <color name="accent_lime">#84CC16</color>                        <!-- Lime -->
+    <color name="accent_amber">#F59E0B</color>                       <!-- Amber -->
+    <color name="accent_rose">#F43F5E</color>                        <!-- Rose -->
+    <color name="accent_violet">#8B5CF6</color>                      <!-- Violet -->
+    <color name="accent_emerald">#10B981</color>                     <!-- Emerald -->
+    <color name="accent_sky">#0EA5E9</color>                         <!-- Sky -->
+    <color name="accent_fuchsia">#D946EF</color>                     <!-- Fuchsia -->
+    <color name="accent_slate">#64748B</color>                       <!-- Slate -->
+    <color name="accent_coral">#FF6B6B</color>                       <!-- Coral -->
+    <color name="accent_mint">#4ECDC4</color>                        <!-- Mint -->
+    <color name="accent_lavender">#A78BFA</color>                    <!-- Lavender -->
+    <color name="accent_peach">#FFAB91</color>                       <!-- Peach -->
+    <color name="accent_forest">#059669</color>                      <!-- Forest -->
+    <color name="accent_crimson">#DC2626</color>                     <!-- Crimson -->
+    <color name="accent_ocean">#0891B2</color>                       <!-- Ocean -->
+    
+    <!-- Premium accent color collection (16 additional colors) -->
+    <color name="accent_turquoise">#40E0D0</color>                   <!-- Turquoise -->
+    <color name="accent_magenta">#FF00FF</color>                     <!-- Magenta -->
+    <color name="accent_gold">#FFD700</color>                        <!-- Gold -->
+    <color name="accent_sapphire">#0F52BA</color>                    <!-- Sapphire -->
+    <color name="accent_ruby">#E0115F</color>                        <!-- Ruby -->
+    <color name="accent_jade">#00A86B</color>                        <!-- Jade -->
+    <color name="accent_bronze">#CD7F32</color>                      <!-- Bronze -->
+    <color name="accent_silver">#C0C0C0</color>                      <!-- Silver -->
+    <color name="accent_copper">#B87333</color>                      <!-- Copper -->
+    <color name="accent_pearl">#F8F6F0</color>                       <!-- Pearl -->
+    <color name="accent_onyx">#353839</color>                        <!-- Onyx -->
+    <color name="accent_ivory">#FFFFF0</color>                       <!-- Ivory -->
+    <color name="accent_champagne">#F7E7CE</color>                   <!-- Champagne -->
+    <color name="accent_plum">#8E4585</color>                        <!-- Plum -->
+    <color name="accent_orchid">#DA70D6</color>                      <!-- Orchid -->
+    <color name="accent_storm">#4F666A</color>                       <!-- Storm -->
     
     <!-- Token system specific colors -->
     <color name="token_warning_color">#FF9800</color>                <!-- Orange warning -->
@@ -408,7 +468,6 @@
     <!-- ACCENT AND FEATURE COLORS                                      -->
     <!-- =============================================================== -->
     <color name="accent_primary">#6366F1</color>
-    <color name="accent_gold">#F59E0B</color>
     <color name="accent_gold_light">#FCD34D</color>
 
     <!-- =============================================================== -->
@@ -425,6 +484,8 @@
     <color name="feature_private_chat">#8B5CF6</color>
     <color name="feature_voice_chat">#F59E0B</color>
     <color name="feature_image_gallery">#EF4444</color>
+    <color name="feature_video_generation">#8B5CF6</color>
+    <color name="feature_music_generation">#EC4899</color>
 
     <!-- =============================================================== -->
     <!-- GRADIENT COLORS                                                -->
@@ -961,11 +1022,23 @@
     
     <!-- TABLE COLORS                                                     -->
     <color name="table_background">#FAFAFA</color>
+    <color name="table_header_background">#F0F0F0</color>
+    <color name="table_cell_background">#FFFFFF</color>
+    <color name="table_header_text">#374151</color>
+    <color name="table_text">#4B5563</color>
+    <color name="table_border">#E5E7EB</color>
     
     <!-- FOOTNOTE COLORS                                                  -->
     <color name="footnote_background">#F5F5F5</color>
     <color name="footnote_marker">#6B7280</color>
     <color name="footnote_text">#4B5563</color>
+    
+    <!-- MERMAID DIAGRAM COLORS                                           -->
+    <color name="mermaid_background">#F8FAFC</color>
+    <color name="mermaid_label">#374151</color>
+    <color name="mermaid_text">#1F2937</color>
+    <color name="mermaid_code_background">#F3F4F6</color>
+    <color name="mermaid_note">#6B7280</color>
     
     <!-- =============================================================== -->
     <!-- COMPREHENSIVE MARKDOWN EXTENSION COLORS                        -->
@@ -1096,5 +1169,8 @@
     <!-- Subscription Colors -->
     <color name="premium_gold">#FFD700</color>
     <color name="premium_text">#FFFFFF</color>
+    <color name="on_primary">#FFFFFF</color>                           <!-- White text on primary background -->
+    <color name="on_surface_variant">#49454F</color>                   <!-- Text on surface variant -->
+    <color name="premium_card_background">@color/md_theme_light_primaryContainer</color>  <!-- Premium card background -->
 
 </resources>

@@ -8,11 +8,11 @@
     android:background="@drawable/dialog_top_rounded_background"
     android:elevation="8dp">
 
-    <!-- Drag handle at the top -->
+    <!-- Drag handle -->
     <FrameLayout
         android:id="@+id/dragHandleContainer"
         android:layout_width="match_parent"
-        android:layout_height="24dp"
+        android:layout_height="32dp"
         android:clickable="true"
         android:focusable="true">
 
@@ -22,45 +22,51 @@
             android:layout_height="4dp"
             android:layout_gravity="center"
             android:background="@drawable/drag_handle_background"
-            android:layout_marginTop="10dp"
-            android:layout_marginBottom="10dp" />
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="8dp" />
     </FrameLayout>
 
-    <!-- Enhanced TabLayout with bigger text and icons -->
-    <com.google.android.material.tabs.TabLayout
-        android:id="@+id/tabLayout"
-        android:layout_width="match_parent"
-        android:layout_height="48dp"
-        android:background="@drawable/tab_background"
-        app:tabIndicatorColor="@color/accent_color"
-        app:tabIndicatorHeight="4dp"
-        app:tabSelectedTextColor="@color/accent_color"
-        app:tabTextColor="@color/text_secondary"
-        app:tabRippleColor="@color/ripple_color"
-        app:tabIconTint="@color/tab_icon_selector"
-        app:tabInlineLabel="true"
-        app:tabGravity="fill"
-        app:tabMode="fixed"
-        app:tabTextAppearance="@style/CustomTabTextAppearance" />
+    <!-- Choose Model Title -->
+    <TextView
+        android:id="@+id/tvChooseModelTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="16dp"
+        android:text="Choose model"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:textColor="?attr/colorOnSurface"
+        android:fontFamily="@font/ultrathink" />
 
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
+        android:layout_marginHorizontal="16dp"
         android:background="@color/divider" />
 
-    <!-- Custom Page Indicator -->
-    <LinearLayout
-        android:id="@+id/pageIndicatorContainer"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center"
-        android:paddingVertical="8dp"
-        android:background="?attr/colorSurface" />
-
-    <androidx.viewpager2.widget.ViewPager2
-        android:id="@+id/viewPager"
+    <!-- Models RecyclerView -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/modelsRecyclerView"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1" />
+        android:layout_weight="1"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="16dp"
+        android:clipToPadding="false" />
+
+    <!-- Done Button -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnDone"
+        style="@style/Widget.Material3.Button"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="16dp"
+        android:text="Done"
+        android:fontFamily="@font/ultrathink"
+        android:textStyle="bold" />
+
 </LinearLayout>

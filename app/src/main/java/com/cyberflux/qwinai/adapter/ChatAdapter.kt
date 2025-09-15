@@ -309,6 +309,33 @@ class ChatAdapter(
         notifyDataSetChanged()
     }
 
+    // Font size management
+    private var currentFontSize: Float = 16f
+    
+    @SuppressLint("NotifyDataSetChanged")
+    fun updateFontSize(fontSize: Float) {
+        this.currentFontSize = fontSize
+        notifyDataSetChanged()
+    }
+    
+    private fun applyFontSize(textView: TextView) {
+        textView.textSize = currentFontSize
+        // Apply Ultrathink font with fallback protection
+        try {
+            val customFont = androidx.core.content.res.ResourcesCompat.getFont(textView.context, R.font.ultrathink)
+            if (customFont != null) {
+                textView.typeface = customFont
+            } else {
+                // Fallback to default typeface if font loading returns null
+                textView.typeface = Typeface.DEFAULT
+            }
+        } catch (e: Exception) {
+            // Fallback to default typeface if font loading fails
+            textView.typeface = Typeface.DEFAULT
+            Timber.w("Failed to load ultrathink font, using default: ${e.message}")
+        }
+    }
+
     @Deprecated("Use updateStreamingContentDirect instead for better performance", ReplaceWith("updateStreamingContentDirect(messageId, content, false)"))
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     fun updateStreamingContent(messageId: String, content: String) {
@@ -943,7 +970,7 @@ class ChatAdapter(
             val welcomeMessage = getWelcomeMessageForModel(currentModelId, modelName)
             welcomeHeader.text = welcomeMessage
             
-            val modelColor = ModelIconUtils.getColorForModel(currentModelId)
+            val modelColor = ModelIconUtils.getColorForModel(currentModelId, itemView.context)
             welcomeHeader.setTextColor(modelColor)
             val parent = itemView.parent as? RecyclerView
             parent?.let { itemView.minimumHeight = (parent.height * 0.7).toInt() }
@@ -1041,6 +1068,7 @@ class ChatAdapter(
         fun bind(message: ChatMessage) {
             messageText.text = message.getCurrentVersionText()
             messageText.setTextIsSelectable(false)
+            applyFontSize(messageText)
             timestampText.text = formatTimestamp(message.timestamp)
 
             if (voiceIndicator != null) {
@@ -1374,6 +1402,8 @@ class ChatAdapter(
                         movementMethod = LinkMovementMethod.getInstance()
                         setPadding(0, 8, 0, 8)
                         setTextColor(ContextCompat.getColor(context, android.R.color.black))
+                        textSize = currentFontSize
+                        typeface = androidx.core.content.res.ResourcesCompat.getFont(context, R.font.ultrathink)
                     }
                     messageContentContainer.addView(fallbackTextView)
                 }
@@ -1393,6 +1423,7 @@ class ChatAdapter(
             try {
                 // DEPRECATED: Old method - now using view-based rendering
                 textView.text = textContent.text // Simple fallback for deprecated method
+                applyFontSize(textView) // Apply font size and typeface
                 
                 Timber.d("TEXT_CONTENT: Added text view with simple text (deprecated method)")
                 
@@ -1406,6 +1437,7 @@ class ChatAdapter(
                 // Fallback: simple text display
                 try {
                     textView.text = textContent.text
+                    applyFontSize(textView) // Apply font size and typeface
                     messageContentContainer.addView(textView)
                     Timber.d("MIXED_CONTENT: Added fallback text view $index")
                 } catch (fallbackError: Exception) {
@@ -1488,7 +1520,7 @@ class ChatAdapter(
                 // For now, add as simple text with link - could be enhanced with actual ImageView
                 val textView = TextView(messageContentContainer.context)
                 textView.text = "🖼️ [Image: ${imageContent.altText ?: "Image"}](${imageContent.imageUrl})"
-                textView.textSize = 15f
+                applyFontSize(textView)
                 textView.setPadding(0, 8, 0, 8)
                 
                 messageContentContainer.addView(textView)
@@ -1507,7 +1539,7 @@ class ChatAdapter(
             try {
                 val textView = TextView(messageContentContainer.context)
                 textView.text = content
-                textView.textSize = 15f
+                applyFontSize(textView)
                 textView.setTextColor(ContextCompat.getColor(messageContentContainer.context, R.color.text_primary))
                 textView.setPadding(0, 8, 0, 8)
                 
@@ -1610,6 +1642,19 @@ class ChatAdapter(
                 }
             }
             return textViews
+        }
+
+        // Apply font size and typeface to all TextViews in the AI message
+        private fun applyFontToAllTextViews() {
+            try {
+                val allTextViews = getAllTextViewsFromContainer(messageContentContainer)
+                allTextViews.forEach { textView ->
+                    applyFontSize(textView)
+                }
+                Timber.d("Applied font to ${allTextViews.size} TextViews in AI message")
+            } catch (e: Exception) {
+                Timber.e(e, "Error applying fonts to AI message TextViews")
+            }
         }
         
         private fun applyCitationsToTextView(textView: TextView, sources: List<ChatAdapter.WebSearchSource>) {
@@ -2210,6 +2255,9 @@ class ChatAdapter(
             messageContentContainer.alpha = 1f
 
             timestampText.text = formatTimestamp(message.timestamp)
+
+            // Apply font size and typeface to all TextViews in the AI message
+            applyFontToAllTextViews()
 
             // Handle thinking functionality
             setupThinkingComponents(message)
@@ -3829,26 +3877,64 @@ class ChatAdapter(
         fun bind(message: ChatMessage) {
             timestampText.text = formatTimestamp(message.timestamp)
             try {
-                Timber.d("Binding grouped files message: ${message.message.take(50)}...")
-                Timber.d("Full message JSON: ${message.message}")
+                Timber.d("🔧 BINDING grouped files message: ${message.message.take(50)}...")
+                Timber.d("🔧 FULL message JSON: ${message.message}")
                 
                 // First validate that we have a non-empty message
                 if (message.message.isNullOrBlank()) {
-                    Timber.e("Empty or null message content for grouped files")
-                    showErrorState("No file content")
+                    Timber.e("❌ BIND ERROR: Empty or null message content for grouped files")
+                    showFallbackMessage("No file content available")
+                    return
+                }
+                
+                // CRITICAL FIX: Detect if message field contains AI response text instead of JSON
+                // This was the root cause of "URI=The content you've shared appe..." issue
+                if (!message.message.startsWith("{") && !message.message.startsWith("[")) {
+                    Timber.e("🔧 DETECTED UI BUG: Message field contains AI response text instead of GroupedFileMessage JSON!")
+                    Timber.e("🔧 PROBLEMATIC CONTENT: ${message.message.take(100)}...")
+                    
+                    // Try to fallback to prompt field which might have the correct JSON
+                    if (!message.prompt.isNullOrBlank() && (message.prompt.startsWith("{") || message.prompt.startsWith("["))) {
+                        Timber.w("🔧 ATTEMPTING FALLBACK: Using prompt field as JSON source")
+                        val groupedMessageFromPrompt = JsonUtils.fromJson(message.prompt, GroupedFileMessage::class.java)
+                        if (groupedMessageFromPrompt != null) {
+                            Timber.w("✅ FALLBACK SUCCESS: Parsed GroupedFileMessage from prompt field")
+                            renderGroupedFiles(groupedMessageFromPrompt)
+                            return
+                        } else {
+                            Timber.e("❌ FALLBACK FAILED: Prompt field also not valid JSON")
+                        }
+                    }
+                    
+                    // Final fallback: show error with the AI response text issue
+                    showFallbackMessage("Files display error - contact support if this persists")
                     return
                 }
                 
                 val groupedMessage = JsonUtils.fromJson(message.message, GroupedFileMessage::class.java)
 
                 if (groupedMessage == null) {
-                    Timber.e("Failed to parse GroupedFileMessage JSON: ${message.message}")
-                    showErrorState("Failed to load files")
+                    Timber.e("❌ BIND ERROR: Failed to parse GroupedFileMessage JSON: ${message.message}")
+                    showFallbackMessage("Failed to load file information")
                     return
                 }
 
-                Timber.d("✅ Parsed GroupedFileMessage: images=${groupedMessage.images.size}, documents=${groupedMessage.documents.size}")
+                Timber.d("✅ BIND SUCCESS: Parsed GroupedFileMessage: images=${groupedMessage.images.size}, documents=${groupedMessage.documents.size}")
                 
+                // Render the files using the helper method
+                renderGroupedFiles(groupedMessage)
+                
+            } catch (e: Exception) {
+                Timber.e(e, "❌ BIND ERROR: Exception in UserGroupedFilesViewHolder.bind: ${e.message}")
+                showFallbackMessage("Error displaying files")
+            }
+        }
+        
+        /**
+         * Helper method to render grouped files from a valid GroupedFileMessage object
+         */
+        private fun renderGroupedFiles(groupedMessage: GroupedFileMessage) {
+            try {
                 // Log detailed info about what we're about to display
                 Timber.d("🖼️ Images to display:")
                 groupedMessage.images.forEach { img ->
@@ -3935,21 +4021,29 @@ class ChatAdapter(
                     messageCardView.visibility = View.GONE
                 }
 
-                itemView.requestLayout()
-
             } catch (e: Exception) {
-                Timber.e(e, "Error parsing grouped file message: ${e.message}")
-                Timber.e(e, "Message content: ${message.message}")
-                showErrorState("Error loading files: ${e.message}")
+                Timber.e(e, "❌ RENDER ERROR: Exception in renderGroupedFiles: ${e.message}")
+                showFallbackMessage("Error rendering files")
             }
         }
         
-        private fun showErrorState(errorMessage: String) {
-            imagesScrollView.visibility = View.GONE
-            documentsScrollView.visibility = View.GONE
-            messageCardView.visibility = View.VISIBLE
-            messageText.text = errorMessage
-            messageText.setTextColor(ContextCompat.getColor(itemView.context, android.R.color.holo_red_dark))
+        /**
+         * Show a fallback message when file display fails
+         */
+        private fun showFallbackMessage(errorMessage: String) {
+            try {
+                // Hide file containers
+                imagesScrollView.visibility = View.GONE
+                documentsScrollView.visibility = View.GONE
+                
+                // Show error message in text card
+                messageCardView.visibility = View.VISIBLE
+                messageText.text = "⚠️ $errorMessage"
+                
+                Timber.w("🔧 SHOWING FALLBACK: $errorMessage")
+            } catch (e: Exception) {
+                Timber.e(e, "❌ FALLBACK ERROR: Failed to show fallback message: ${e.message}")
+            }
         }
 
         private fun createImageView(context: Context, uri: Uri, imageName: String = "Image"): View {

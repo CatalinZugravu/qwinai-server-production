@@ -78,4 +78,94 @@
     <string name="restore_purchases">Restore Purchases</string>
     <string name="close">Close</string>
     
+    <!-- Comprehensive Subscription Strings for Legal Compliance -->
+    <string name="subscription_auto_renewal_notice">Subscription automatically renews unless cancelled at least 24 hours before the end of the current period.</string>
+    <string name="subscription_trial_notice">Free trial automatically converts to paid subscription unless cancelled before trial ends.</string>
+    <string name="subscription_refund_policy">Payment charged to account after confirmation. Subscriptions may be managed and auto-renewal turned off in Account Settings.</string>
+    <string name="subscription_privacy_notice">By subscribing, you agree to our Terms of Service and Privacy Policy.</string>
+    
+    <!-- Legal Compliance -->
+    <string name="refund_policy">Refund Policy</string>
+    <string name="subscription_terms">Subscription Terms</string>
+    <string name="manage_subscription">Manage Subscription</string>
+    <string name="cancel_subscription">Cancel Subscription</string>
+    <string name="billing_information">Billing Information</string>
+    <string name="help_support">Help &amp; Support</string>
+    
+    <!-- Feature Marketing -->
+    <string name="unlimited_conversations">🚀 Unlimited AI conversations</string>
+    <string name="premium_ai_models">⭐ Premium AI models</string>
+    <string name="ad_free_experience">🔇 Ad-free experience</string>
+    <string name="priority_support">📱 Priority customer support</string>
+    <string name="advanced_features">🧠 Advanced AI features</string>
+    <string name="early_access">🌟 Early access to new features</string>
+    <string name="ai_image_generation">🎨 AI image generation</string>
+    
+    <!-- Pricing and Plans -->
+    <string name="weekly_plan_title">Weekly Premium</string>
+    <string name="monthly_plan_title">Monthly Premium</string>
+    <string name="most_popular_plan">MOST POPULAR</string>
+    <string name="free_trial_available">Free trial available</string>
+    <string name="save_percentage">Save %d%%</string>
+    <string name="per_week">per week</string>
+    <string name="per_month">per month</string>
+    <string name="start_premium">Start Premium</string>
+    
+    <!-- Subscription Status -->
+    <string name="subscription_expires_on">Expires on %s</string>
+    <string name="subscription_renews_on">Renews on %s</string>
+    <string name="subscription_trial_ends_on">Trial ends on %s</string>
+    <string name="subscription_cancelled">Subscription cancelled</string>
+    <string name="subscription_pending">Subscription pending</string>
+    <string name="active_subscription">Active subscription</string>
+    <string name="trial_active">Trial active</string>
+    
+    <!-- Error Messages -->
+    <string name="subscription_error_network">Network error. Please check your connection and try again.</string>
+    <string name="subscription_error_billing">Billing service unavailable. Please try again later.</string>
+    <string name="subscription_error_already_owned">You already have an active subscription.</string>
+    <string name="subscription_error_payment_declined">Payment was declined. Please check your payment method.</string>
+    <string name="subscription_error_unknown">An unexpected error occurred. Please try again.</string>
+    <string name="subscription_error_no_products">No subscription plans available.</string>
+    
+    <!-- Success Messages -->
+    <string name="purchase_successful">Purchase successful! Welcome to Premium!</string>
+    <string name="restoration_successful">Subscriptions restored successfully.</string>
+    <string name="cancellation_successful">Subscription cancelled successfully.</string>
+    <string name="trial_started">Free trial started successfully!</string>
+    
+    <!-- Compliance and Legal -->
+    <string name="data_security_notice">Your payment information is processed securely and we never store payment details on our servers.</string>
+    <string name="subscription_managed_by_store">Subscriptions are managed by %s</string>
+    <string name="contact_support">Contact Support</string>
+    <string name="billing_support">Billing Support</string>
+    <string name="open_store">Open Store</string>
+    <string name="view_terms">View Terms</string>
+    
+    <!-- Regional Compliance (EU GDPR, etc.) -->
+    <string name="gdpr_consent_notice">By continuing, you consent to data processing as described in our Privacy Policy.</string>
+    <string name="right_to_cancel">You have the right to cancel within 14 days of purchase.</string>
+    <string name="automatic_renewal_warning">⚠️ This subscription will automatically renew</string>
+    <string name="cancel_anytime">Cancel anytime in settings</string>
+    <string name="secure_payment">🔒 Secure payment processing</string>
+    
+    <!-- Subscription Management -->
+    <string name="subscription_management">Subscription Management</string>
+    <string name="manage_in_store">🏪 Manage in Store</string>
+    <string name="view_terms_policies">📋 View Terms &amp; Policies</string>
+    <string name="keep_subscription">Keep Subscription</string>
+    <string name="still_cancel">Still Cancel</string>
+    <string name="pause_subscription">Pause 1 Month</string>
+    <string name="final_step">⚠️ Final Step</string>
+    <string name="pause_not_available">❌ Pause Not Available</string>
+    <string name="legal_documents">Legal Documents</string>
+    
+    <!-- Menu item content descriptions -->
+    <string name="new_chat">New Chat</string>
+    <string name="chat_settings">Chat Settings</string>
+    <string name="speech_settings">Speech Settings</string>
+    <string name="font_size">Font Size</string>
+    <string name="share">Share</string>
+    <string name="follow_up_questions">Follow-up questions</string>
+    
 </resources>

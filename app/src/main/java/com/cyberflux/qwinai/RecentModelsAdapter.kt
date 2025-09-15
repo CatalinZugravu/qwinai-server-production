@@ -13,13 +13,17 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.ColorUtils
 import androidx.recyclerview.widget.RecyclerView
 import com.cyberflux.qwinai.model.RecentModel
 import com.cyberflux.qwinai.model.TrendingPrompt
 import com.cyberflux.qwinai.utils.ModelIconUtils
+import com.cyberflux.qwinai.utils.DynamicColorManager
+import com.cyberflux.qwinai.utils.ThemeManager
 import com.google.android.material.card.MaterialCardView
 import timber.log.Timber
 import androidx.core.graphics.toColorInt
+import android.util.TypedValue
 
 /**
  * Enhanced adapter for displaying recently used AI models with
@@ -37,7 +41,7 @@ class RecentModelsAdapter(
     }
 
     override fun onBindViewHolder(holder: ModelViewHolder, position: Int) {
-        holder.bind(models[position], onModelClick)
+        holder.bind(models[position], onModelClick, position == 0)
     }
 
     override fun getItemCount() = models.size
@@ -47,14 +51,54 @@ class RecentModelsAdapter(
         private val modelIcon: ImageView = itemView.findViewById(R.id.modelIcon)
         private val modelName: TextView = itemView.findViewById(R.id.modelName)
 
-        fun bind(model: RecentModel, onModelClick: (RecentModel) -> Unit) {
+        fun bind(model: RecentModel, onModelClick: (RecentModel) -> Unit, isFirstCard: Boolean = false) {
             // Set model details
             modelName.text = model.displayName
             modelIcon.setImageResource(model.iconResId)
             
             // Use layout-defined purple hint background, just set icon color
-            val modelColor = ModelIconUtils.getColorForModel(model.id)
+            val modelColor = ModelIconUtils.getColorForModel(model.id, itemView.context)
             modelIcon.setColorFilter(modelColor)
+
+            // Apply special styling to first card with dynamic accent color
+            if (isFirstCard) {
+                val accentColor = ThemeManager.getCurrentAccentColor(itemView.context)
+                
+                // Apply prominent accent border
+                modelCard.strokeColor = accentColor
+                modelCard.strokeWidth = 6 // 3dp stroke - prominent but not overwhelming
+                
+                // Subtle accent background tint
+                val lightAccent = ColorUtils.setAlphaComponent(accentColor, 50) // ~20% opacity for more visibility
+                modelCard.setCardBackgroundColor(lightAccent)
+                
+                // Enhanced elevation for premium feel
+                modelCard.cardElevation = 4f
+                
+                // Custom ripple effect with accent color
+                val rippleColor = ColorUtils.setAlphaComponent(accentColor, 60) // ~25% opacity
+                modelCard.rippleColor = ColorStateList.valueOf(rippleColor)
+                
+                Timber.d("🎨 Applied accent color styling to first card: #${Integer.toHexString(accentColor)}")
+                
+            } else {
+                // Style other cards to match model grid cards
+                modelCard.strokeWidth = 0 // No stroke like model grid cards
+                modelCard.cardElevation = 1f // 1dp elevation like model grid cards
+                
+                // Use model card background color resource (same as model grid)
+                val modelCardBackground = ContextCompat.getColorStateList(itemView.context, R.color.model_card_background)
+                modelCard.setCardBackgroundColor(modelCardBackground)
+                
+                // Default ripple effect with proper color
+                val typedValue = TypedValue()
+                val theme = itemView.context.theme
+                
+                // Get the default text color and make it semi-transparent for ripple
+                theme.resolveAttribute(android.R.attr.textColorPrimary, typedValue, true)
+                val defaultRippleColor = ColorUtils.setAlphaComponent(typedValue.data, 30) // ~12% opacity
+                modelCard.rippleColor = ColorStateList.valueOf(defaultRippleColor)
+            }
 
             // Setup click listener
             modelCard.setOnClickListener {

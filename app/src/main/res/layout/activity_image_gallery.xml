@@ -132,17 +132,10 @@
 
     <!-- Main Content -->
     <FrameLayout
+        android:id="@+id/frameLayout"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
-
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/recyclerView"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:padding="8dp"
-            android:clipToPadding="false"
-            tools:listitem="@layout/item_image_gallery_grid" />
 
         <!-- Empty State -->
         <LinearLayout
@@ -150,34 +143,34 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            android:orientation="vertical"
             android:gravity="center"
+            android:orientation="vertical"
             android:visibility="gone">
 
             <ImageView
                 android:layout_width="72dp"
                 android:layout_height="72dp"
                 android:layout_marginBottom="16dp"
-                android:src="@drawable/ic_image_gallery_empty"
                 android:alpha="0.6"
+                android:src="@drawable/ic_image_gallery_empty"
                 app:tint="?android:attr/textColorSecondary" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
                 android:text="No images yet"
-                android:textSize="18sp"
-                android:textStyle="bold"
                 android:textColor="@color/colorOnSurface"
-                android:layout_marginBottom="8dp" />
+                android:textSize="18sp"
+                android:textStyle="bold" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:gravity="center"
                 android:text="Generate some AI images to see them here"
-                android:textSize="14sp"
                 android:textColor="?android:attr/textColorSecondary"
-                android:gravity="center" />
+                android:textSize="14sp" />
 
         </LinearLayout>
 
@@ -193,5 +186,15 @@
         android:contentDescription="Toggle view mode"
         android:src="@drawable/ic_list_view"
         app:tint="@color/colorOnPrimary" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recyclerView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToPadding="false"
+        android:padding="8dp"
+        app:layout_anchor="@+id/frameLayout"
+        app:layout_anchorGravity="center"
+        tools:listitem="@layout/item_image_gallery_grid" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

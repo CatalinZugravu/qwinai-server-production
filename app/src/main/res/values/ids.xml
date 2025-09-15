@@ -51,4 +51,9 @@
     <item name="downloadIcon" type="id" />
     <item name="skeleton_animation_tag" type="id" />
     <item name="conversationStatus" type="id" />
+    <item name="btnMore" type="id" />
+    <item name="app_bar" type="id" />
+    <item name="expandedImage" type="id" />
+    <item name="searchLayout" type="id" />
+    <item name="original_typeface_tag" type="id" />
 </resources>

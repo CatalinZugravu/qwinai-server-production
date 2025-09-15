@@ -83,30 +83,9 @@ class ModelSpinnerAdapter(
         // Use the selectedPosition for the main view
         val model = getItem(selectedPosition)
 
-        // Set model name with proper styling (clean and simple)
+        // Set model name with clean ultrathink styling
         holder.textView.text = model.displayName
-        holder.textView.setTypeface(Typeface.DEFAULT_BOLD)
-        holder.textView.maxLines = 1  // Always single line for the closed spinner
-
-        // Simple styling for custom layout - just text and arrow
-        holder.textView.setTextColor(ContextCompat.getColor(context, R.color.text_primary))
-
-        // Handle translation mode styling (simplified for clean layout)
-        if (isTranslationMode()) {
-            val isSupported = TranslationUtils.supportsTranslation(model.id)
-            if (!isSupported) {
-                // Dim the spinner if selected model doesn't support translation
-                view.alpha = 0.5f
-                holder.textView.setTextColor(ContextCompat.getColor(context, R.color.text_disabled))
-            } else {
-                view.alpha = 1.0f
-                holder.textView.setTextColor(ContextCompat.getColor(context, R.color.text_primary))
-            }
-        } else {
-            // Reset styling for normal mode
-            view.alpha = 1.0f
-            holder.textView.setTextColor(ContextCompat.getColor(context, R.color.text_primary))
-        }
+        holder.textView.maxLines = 1
 
         return view
     }
@@ -135,47 +114,30 @@ class ModelSpinnerAdapter(
 
         val model = getItem(position)
 
-        // Check translation compatibility
-        val translationActive = isTranslationMode()
-        val isCompatibleWithTranslation = TranslationUtils.supportsTranslation(model.id)
-
-        // Set model name with clean typography
+        // Set model name with clean ultrathink styling
         holder.textView.text = model.displayName
-        holder.textView.maxLines = 1 // Keep single line for clean appearance
+        holder.textView.maxLines = 1
 
-        // Handle translation mode styling (simplified)
-        if (translationActive && !isCompatibleWithTranslation) {
-            // DISABLE non-compatible models with clear visual indication
-            view.alpha = 0.5f
-            holder.textView.setTextColor(ContextCompat.getColor(context, R.color.text_disabled))
+        // Handle translation mode compatibility
+        if (isTranslationMode() && !TranslationUtils.supportsTranslation(model.id)) {
             holder.textView.text = "${model.displayName} (Not for translation)"
-
-            // Make non-clickable
+            view.alpha = 0.5f
             view.isEnabled = false
-            view.isClickable = false
         } else {
-            // Normal styling for compatible models
             view.alpha = 1.0f
-            holder.textView.setTextColor(ContextCompat.getColor(context, R.color.text_primary))
-
-            // Make clickable
             view.isEnabled = true
-            view.isClickable = true
 
-            // Handle selection state (simplified)
+            // Simple selection highlighting
             if (position == selectedPosition) {
-                // Selected item styling - bolder text
-                holder.textView.setTypeface(holder.textView.typeface, Typeface.BOLD)
                 view.setBackgroundColor(ContextCompat.getColor(context, R.color.selected_item_background))
             } else {
-                // Unselected item styling
-                holder.textView.setTypeface(holder.textView.typeface, Typeface.NORMAL)
                 view.setBackgroundColor(ContextCompat.getColor(context, android.R.color.transparent))
             }
         }
 
         return view
     }
+
 
     private class ViewHolder {
         lateinit var textView: TextView

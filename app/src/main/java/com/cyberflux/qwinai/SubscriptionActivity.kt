@@ -2,17 +2,13 @@ package com.cyberflux.qwinai
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
-import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
-import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
-import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -21,16 +17,13 @@ import androidx.cardview.widget.CardView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.cyberflux.qwinai.billing.BillingManager
-import com.cyberflux.qwinai.billing.MockBillingProvider
+import com.cyberflux.qwinai.billing.BillingProvider
 import com.cyberflux.qwinai.billing.ProductInfo
 import com.cyberflux.qwinai.utils.BaseThemedActivity
 import com.cyberflux.qwinai.utils.HapticManager
 import com.cyberflux.qwinai.utils.PrefsManager
-import com.cyberflux.qwinai.utils.ThemeManager
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import timber.log.Timber
-import java.util.Date
 
 class SubscriptionActivity : BaseThemedActivity() {
 
@@ -43,7 +36,6 @@ class SubscriptionActivity : BaseThemedActivity() {
     private lateinit var statusTitle: TextView
     private lateinit var statusSubtitle: TextView
     private lateinit var btnManageSubscription: TextView
-    private lateinit var featuresContainer: LinearLayout
     private lateinit var loadingProgress: ProgressBar
     private lateinit var plansContainer: LinearLayout
     private lateinit var errorCard: CardView
@@ -56,17 +48,15 @@ class SubscriptionActivity : BaseThemedActivity() {
     private lateinit var btnPrivacy: TextView
     private lateinit var btnRestorePurchases: TextView
     
-    // Debug UI (only in debug builds)
-    private var debugContainer: LinearLayout? = null
-    
     // State
-    private var isInitialized = false
     private var availableProducts: List<ProductInfo> = emptyList()
     private var isProcessingPurchase = false
+    private var connectionRetryCount = 0
+    private val maxRetries = 3
     
     companion object {
-        private const val TERMS_URL = "https://your-app-terms.com"
-        private const val PRIVACY_URL = "https://your-app-privacy.com"
+        private const val TERMS_URL = "https://docs.google.com/document/d/1example-terms"
+        private const val PRIVACY_URL = "https://docs.google.com/document/d/1example-privacy"
         
         fun start(context: Context) {
             val intent = Intent(context, SubscriptionActivity::class.java)
@@ -78,13 +68,21 @@ class SubscriptionActivity : BaseThemedActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_subscription)
         
-        initializeViews()
-        setupBillingManager()
-        setupClickListeners()
-        setupFeaturesList()
-        setupDebugMenu()
+        Timber.d("🚀 SubscriptionActivity started")
         
-        // Haptic feedback is handled per-interaction
+        // Track subscription screen view for analytics
+        val source = intent.getStringExtra("source") ?: "unknown"
+        SubscriptionAnalyticsManager.trackSubscriptionScreenView(this, source)
+        SubscriptionAnalyticsManager.trackPurchaseFunnel(
+            this, 
+            SubscriptionAnalyticsManager.PurchaseStep.SUBSCRIPTION_SCREEN_VIEWED, 
+            "all_plans"
+        )
+        
+        initializeViews()
+        setupClickListeners()
+        initializeBillingManager()
+        updateUIBasedOnCurrentStatus()
     }
 
     private fun initializeViews() {
@@ -94,7 +92,6 @@ class SubscriptionActivity : BaseThemedActivity() {
         statusTitle = findViewById(R.id.statusTitle)
         statusSubtitle = findViewById(R.id.statusSubtitle)
         btnManageSubscription = findViewById(R.id.btnManageSubscription)
-        featuresContainer = findViewById(R.id.featuresContainer)
         loadingProgress = findViewById(R.id.loadingProgress)
         plansContainer = findViewById(R.id.plansContainer)
         errorCard = findViewById(R.id.errorCard)
@@ -106,54 +103,8 @@ class SubscriptionActivity : BaseThemedActivity() {
         btnTerms = findViewById(R.id.btnTerms)
         btnPrivacy = findViewById(R.id.btnPrivacy)
         btnRestorePurchases = findViewById(R.id.btnRestorePurchases)
-    }
-
-    private fun setupBillingManager() {
-        billingManager = BillingManager.getInstance(this)
         
-        // Observe subscription status
-        lifecycleScope.launch {
-            billingManager.subscriptionStatus.collectLatest { isSubscribed ->
-                updateSubscriptionStatus(isSubscribed)
-            }
-        }
-        
-        // Observe product details
-        lifecycleScope.launch {
-            billingManager.productDetails.collectLatest { products ->
-                availableProducts = products
-                updateProductsUI(products)
-            }
-        }
-        
-        // Observe error messages
-        lifecycleScope.launch {
-            billingManager.errorMessage.collectLatest { error ->
-                if (error.isNotEmpty()) {
-                    handleBillingError(error)
-                }
-            }
-        }
-        
-        // Connect to billing and query products
-        connectToBilling()
-    }
-
-    private fun connectToBilling() {
-        showLoading()
-        
-        billingManager.connectToPlayBilling { success ->
-            if (success) {
-                billingManager.queryProducts()
-                billingManager.restoreSubscriptions()
-                isInitialized = true
-            } else {
-                showError(
-                    "Connection Failed",
-                    "Unable to connect to the billing service. Please check your internet connection and try again."
-                )
-            }
-        }
+        Timber.d("✅ Views initialized successfully")
     }
 
     private fun setupClickListeners() {
@@ -161,607 +112,582 @@ class SubscriptionActivity : BaseThemedActivity() {
             HapticManager.lightVibration(this)
             finish()
         }
-        
-        btnManageSubscription.setOnClickListener {
-            HapticManager.lightVibration(this)
-            openSubscriptionManagement()
-        }
-        
+
         btnRetry.setOnClickListener {
             HapticManager.lightVibration(this)
-            connectToBilling()
+            retryConnection()
         }
-        
+
         btnContinue.setOnClickListener {
             HapticManager.lightVibration(this)
-            finishWithSuccess()
+            finish()
         }
-        
-        btnTerms.setOnClickListener {
-            HapticManager.lightVibration(this)
-            openUrl(TERMS_URL)
-        }
-        
-        btnPrivacy.setOnClickListener {
-            HapticManager.lightVibration(this)
-            openUrl(PRIVACY_URL)
-        }
-        
+
         btnRestorePurchases.setOnClickListener {
             HapticManager.lightVibration(this)
             restorePurchases()
         }
-    }
 
-    private fun setupFeaturesList() {
-        val features = listOf(
-            FeatureItem("Unlimited AI Conversations", "No daily limits or restrictions", R.drawable.ic_auto_awesome),
-            FeatureItem("Remove All Ads", "Enjoy a clean, distraction-free experience", R.drawable.ic_clear),
-            FeatureItem("Advanced AI Models", "Access to latest and most powerful AI models", R.drawable.ic_lightbulb),
-            FeatureItem("Priority Support", "Get faster response times and dedicated help", R.drawable.ic_person),
-            FeatureItem("Early Access", "Be the first to try new features and updates", R.drawable.ic_refresh),
-            FeatureItem("File Processing", "Upload and analyze documents, images, and more", R.drawable.ic_attachment),
-            FeatureItem("Voice Chat", "Natural voice conversations with AI", R.drawable.ic_reply),
-            FeatureItem("Image Generation", "Create stunning AI-generated images", R.drawable.ic_image_generation)
-        )
-        
-        features.forEach { feature ->
-            addFeatureToList(feature)
+        btnTerms.setOnClickListener {
+            HapticManager.lightVibration(this)
+            SubscriptionComplianceManager.openTermsOfService(this)
         }
-    }
 
-    private fun addFeatureToList(feature: FeatureItem) {
-        val featureView = layoutInflater.inflate(R.layout.item_premium_feature, featuresContainer, false)
-        
-        val icon = featureView.findViewById<ImageView>(R.id.featureIcon)
-        val title = featureView.findViewById<TextView>(R.id.featureTitle)
-        val description = featureView.findViewById<TextView>(R.id.featureDescription)
-        val checkmark = featureView.findViewById<ImageView>(R.id.featureCheckmark)
-        
-        icon.setImageResource(feature.iconRes)
-        title.text = feature.title
-        description.text = feature.description
-        
-        // Apply theme colors
-        val primaryColor = ContextCompat.getColor(this, ThemeManager.getAccentColorResource(this))
-        checkmark.setColorFilter(primaryColor)
-        icon.setColorFilter(primaryColor)
-        
-        featuresContainer.addView(featureView)
-    }
+        btnPrivacy.setOnClickListener {
+            HapticManager.lightVibration(this)
+            SubscriptionComplianceManager.openPrivacyPolicy(this)
+        }
 
-    private fun updateSubscriptionStatus(isSubscribed: Boolean) {
-        if (isSubscribed) {
-            showCurrentSubscriptionStatus()
-        } else {
-            hideCurrentSubscriptionStatus()
+        btnManageSubscription.setOnClickListener {
+            HapticManager.lightVibration(this)
+            SubscriptionComplianceManager.showSubscriptionManagement(this)
         }
     }
 
-    private fun showCurrentSubscriptionStatus() {
-        currentStatusCard.visibility = View.VISIBLE
-        
-        statusIcon.setImageResource(R.drawable.ic_checkmark_green)
-        statusTitle.text = getString(R.string.premium_active)
-        
-        val endTime = PrefsManager.getSubscriptionEndTime(this)
-        statusSubtitle.text = if (endTime > 0) {
-            val remainingDays = (endTime - System.currentTimeMillis()) / (24 * 60 * 60 * 1000)
-            if (remainingDays > 0) {
-                getString(R.string.expires_in_days, remainingDays.toInt())
-            } else {
-                getString(R.string.expires_soon)
-            }
-        } else {
-            getString(R.string.expires_never)
-        }
-    }
-
-    private fun hideCurrentSubscriptionStatus() {
-        currentStatusCard.visibility = View.GONE
-    }
-
-    private fun updateProductsUI(products: List<ProductInfo>) {
-        runOnUiThread {
-            hideLoading()
-            hideError()
-            
-            if (products.isEmpty()) {
-                showError(
-                    "No Plans Available",
-                    "Unable to load subscription plans. Please try again later."
-                )
-                return@runOnUiThread
-            }
-            
-            showPlans(products)
-        }
-    }
-
-    private fun showPlans(products: List<ProductInfo>) {
-        plansContainer.removeAllViews()
-        plansContainer.visibility = View.VISIBLE
-        
-        // Sort products by price (weekly first, then monthly)
-        val sortedProducts = products.sortedBy { product ->
-            when (product.productId) {
-                "qwinai_weekly_subscription" -> 0
-                "qwinai_monthly_subscription" -> 1
-                else -> 2
-            }
-        }
-        
-        sortedProducts.forEach { product ->
-            addPlanCard(product)
-        }
-    }
-
-    private fun addPlanCard(product: ProductInfo) {
-        val planCard = createPlanCard(product)
-        plansContainer.addView(planCard)
-    }
-
-    private fun createPlanCard(product: ProductInfo): CardView {
-        val cardView = CardView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = 16.dpToPx()
-            }
-            radius = 16.dpToPx().toFloat()
-            cardElevation = 6.dpToPx().toFloat()
-            useCompatPadding = true
-        }
-        
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24.dpToPx(), 24.dpToPx(), 24.dpToPx(), 24.dpToPx())
-            setBackgroundResource(
-                if (product.productId.contains("monthly")) R.drawable.premium_platinum_card
-                else R.drawable.premium_gold_accent_card
-            )
-        }
-        
-        // Popular badge for monthly
-        if (product.productId.contains("monthly")) {
-            val badge = TextView(this).apply {
-                text = "MOST POPULAR"
-                textSize = 10f
-                setTextColor(Color.WHITE)
-                setBackgroundResource(R.drawable.badge_background)
-                setPadding(12.dpToPx(), 6.dpToPx(), 12.dpToPx(), 6.dpToPx())
-                typeface = android.graphics.Typeface.DEFAULT_BOLD
-            }
-            
-            val badgeContainer = LinearLayout(this).apply {
-                gravity = android.view.Gravity.CENTER
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    bottomMargin = 16.dpToPx()
-                }
-            }
-            badgeContainer.addView(badge)
-            container.addView(badgeContainer)
-        }
-        
-        // Plan title and period
-        val titleContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = android.view.Gravity.CENTER_VERTICAL
-        }
-        
-        val planTitle = TextView(this).apply {
-            text = when {
-                product.productId.contains("weekly") -> "Weekly Premium"
-                product.productId.contains("monthly") -> "Monthly Premium"
-                else -> product.title
-            }
-            textSize = 20f
-            setTextColor(ContextCompat.getColor(this@SubscriptionActivity, R.color.premium_text))
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        
-        val priceText = TextView(this).apply {
-            text = product.price
-            textSize = 24f
-            setTextColor(ContextCompat.getColor(this@SubscriptionActivity, R.color.premium_gold))
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            gravity = android.view.Gravity.END
-        }
-        
-        titleContainer.addView(planTitle)
-        titleContainer.addView(priceText)
-        container.addView(titleContainer)
-        
-        // Billing period
-        val billingPeriod = TextView(this).apply {
-            text = when {
-                product.productId.contains("weekly") -> "Billed weekly, cancel anytime"
-                product.productId.contains("monthly") -> "Billed monthly, cancel anytime"
-                else -> "Subscription plan"
-            }
-            textSize = 14f
-            setTextColor(ContextCompat.getColor(this@SubscriptionActivity, R.color.premium_text_secondary))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = 8.dpToPx()
-                bottomMargin = 20.dpToPx()
-            }
-        }
-        container.addView(billingPeriod)
-        
-        // Subscribe button
-        val subscribeButton = AppCompatButton(this).apply {
-            text = "Choose ${if (product.productId.contains("weekly")) "Weekly" else "Monthly"}"
-            textSize = 16f
-            setTextColor(Color.WHITE)
-            setBackgroundResource(R.drawable.modern_button_background)
-            setPadding(0, 16.dpToPx(), 0, 16.dpToPx())
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            
-            setOnClickListener {
-                HapticManager.mediumVibration(this@SubscriptionActivity)
-                purchaseSubscription(product)
-            }
-        }
-        container.addView(subscribeButton)
-        
-        cardView.addView(container)
-        return cardView
-    }
-
-    private fun purchaseSubscription(product: ProductInfo) {
-        if (isProcessingPurchase) {
-            Toast.makeText(this, "Purchase in progress...", Toast.LENGTH_SHORT).show()
-            return
-        }
-        
-        if (!isInitialized) {
-            Toast.makeText(this, "Billing service not ready. Please wait...", Toast.LENGTH_SHORT).show()
-            return
-        }
-        
-        isProcessingPurchase = true
-        showPurchaseProgress()
+    private fun initializeBillingManager() {
+        Timber.d("🔧 Initializing billing manager")
         
         try {
-            billingManager.launchBillingFlow(this, product.productId)
+            billingManager = BillingManager.getInstance(this)
             
-            // Reset processing flag after a delay to prevent stuck state
-            Handler(Looper.getMainLooper()).postDelayed({
-                isProcessingPurchase = false
-                hidePurchaseProgress()
-            }, 30000) // 30 seconds timeout
+            // Show loading state
+            showLoadingState()
+            
+            // Observe billing manager states
+            observeBillingStates()
+            
+            // Connect to billing service
+            billingManager.connectToPlayBilling { success ->
+                if (success) {
+                    Timber.d("✅ Billing connected successfully")
+                    billingManager.queryProducts()
+                } else {
+                    Timber.e("❌ Billing connection failed")
+                    showErrorState("Failed to connect to billing service")
+                }
+            }
             
         } catch (e: Exception) {
-            Timber.e(e, "Error launching billing flow")
-            isProcessingPurchase = false
-            hidePurchaseProgress()
-            Toast.makeText(this, "Unable to start purchase: ${e.message}", Toast.LENGTH_LONG).show()
+            Timber.e(e, "❌ Error initializing billing manager")
+            showErrorState("Error initializing billing: ${e.message}")
         }
     }
 
-    private fun showPurchaseProgress() {
-        runOnUiThread {
-            plansContainer.alpha = 0.5f
-            loadingProgress.visibility = View.VISIBLE
-        }
-    }
-
-    private fun hidePurchaseProgress() {
-        runOnUiThread {
-            plansContainer.alpha = 1.0f
-            loadingProgress.visibility = View.GONE
-        }
-    }
-
-    private fun restorePurchases() {
-        showLoading()
-        billingManager.restoreSubscriptions()
-        
-        Handler(Looper.getMainLooper()).postDelayed({
-            hideLoading()
-            
-            if (PrefsManager.isSubscribed(this)) {
-                showSuccess()
-            } else {
-                Toast.makeText(this, "No active subscriptions found to restore", Toast.LENGTH_LONG).show()
+    private fun observeBillingStates() {
+        // Observe product details
+        lifecycleScope.launch {
+            billingManager.productDetails.collect { products ->
+                Timber.d("📦 Received ${products.size} products from billing manager")
+                availableProducts = products
+                
+                if (products.isNotEmpty()) {
+                    showSubscriptionPlans(products)
+                } else if (loadingProgress.visibility == View.VISIBLE) {
+                    // Only show error if we're currently loading
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        if (availableProducts.isEmpty()) {
+                            showErrorState("No subscription plans available")
+                        }
+                    }, 3000) // Give it 3 seconds to load
+                }
             }
-        }, 3000)
-    }
+        }
 
-    private fun handleBillingError(error: String) {
-        runOnUiThread {
-            isProcessingPurchase = false
-            hidePurchaseProgress()
-            
-            when {
-                error.contains("canceled", ignoreCase = true) -> {
-                    Toast.makeText(this, "Purchase cancelled", Toast.LENGTH_SHORT).show()
+        // Observe subscription status
+        lifecycleScope.launch {
+            billingManager.subscriptionStatus.collect { isSubscribed ->
+                Timber.d("📱 Subscription status: $isSubscribed")
+                updateUIBasedOnCurrentStatus()
+                
+                if (isSubscribed) {
+                    showSuccessState()
                 }
-                error.contains("unavailable", ignoreCase = true) -> {
-                    showError(
-                        "Service Unavailable",
-                        "The billing service is temporarily unavailable. Please try again later."
-                    )
-                }
-                error.contains("network", ignoreCase = true) -> {
-                    showError(
-                        "Network Error",
-                        "Please check your internet connection and try again."
-                    )
-                }
-                else -> {
-                    Toast.makeText(this, "Error: $error", Toast.LENGTH_LONG).show()
+            }
+        }
+
+        // Observe error messages
+        lifecycleScope.launch {
+            billingManager.errorMessage.collect { error ->
+                if (error.isNotBlank()) {
+                    Timber.w("⚠️ Billing error: $error")
+                    if (!isProcessingPurchase) {
+                        Toast.makeText(this@SubscriptionActivity, error, Toast.LENGTH_LONG).show()
+                    }
                 }
             }
         }
     }
 
-    private fun showLoading() {
+    private fun showLoadingState() {
         loadingProgress.visibility = View.VISIBLE
         plansContainer.visibility = View.GONE
         errorCard.visibility = View.GONE
         successCard.visibility = View.GONE
     }
 
-    private fun hideLoading() {
+    private fun showSubscriptionPlans(products: List<ProductInfo>) {
+        Timber.d("🎯 Displaying ${products.size} subscription plans")
+        
         loadingProgress.visibility = View.GONE
-    }
-
-    private fun showError(title: String, message: String) {
-        errorTitle.text = title
-        errorMessage.text = message
-        errorCard.visibility = View.VISIBLE
-        plansContainer.visibility = View.GONE
+        plansContainer.visibility = View.VISIBLE
+        errorCard.visibility = View.GONE
         successCard.visibility = View.GONE
+        
+        // Clear existing plans
+        plansContainer.removeAllViews()
+        
+        // Sort products: weekly first, then monthly
+        val sortedProducts = products.sortedBy { product ->
+            when (product.productId) {
+                BillingProvider.SUBSCRIPTION_WEEKLY -> 0
+                BillingProvider.SUBSCRIPTION_MONTHLY -> 1
+                else -> 2
+            }
+        }
+        
+        sortedProducts.forEachIndexed { index, product ->
+            val planCard = createPlanCard(product, index == 1) // Make monthly plan popular
+            plansContainer.addView(planCard)
+        }
     }
 
-    private fun hideError() {
-        errorCard.visibility = View.GONE
+    private fun createPlanCard(product: ProductInfo, isPopular: Boolean): CardView {
+        // Get theme-aware colors using TypedValue
+        val typedValue = android.util.TypedValue()
+        val theme = this.theme
+        
+        theme.resolveAttribute(com.google.android.material.R.attr.colorSurface, typedValue, true)
+        val surfaceColor = ContextCompat.getColor(this, typedValue.resourceId)
+        
+        theme.resolveAttribute(com.google.android.material.R.attr.colorPrimaryContainer, typedValue, true)
+        val primaryContainerColor = ContextCompat.getColor(this, typedValue.resourceId)
+        
+        theme.resolveAttribute(com.google.android.material.R.attr.colorOnSurface, typedValue, true)
+        val onSurfaceColor = ContextCompat.getColor(this, typedValue.resourceId)
+        
+        theme.resolveAttribute(com.google.android.material.R.attr.colorPrimary, typedValue, true)
+        val primaryColor = ContextCompat.getColor(this, typedValue.resourceId)
+        
+        theme.resolveAttribute(com.google.android.material.R.attr.colorOnPrimary, typedValue, true)
+        val onPrimaryColor = ContextCompat.getColor(this, typedValue.resourceId)
+        
+        theme.resolveAttribute(com.google.android.material.R.attr.colorOnSurfaceVariant, typedValue, true)
+        val onSurfaceVariantColor = ContextCompat.getColor(this, typedValue.resourceId)
+
+        val cardView = CardView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            ).apply {
+                if (plansContainer.childCount > 0) {
+                    marginStart = resources.getDimensionPixelSize(R.dimen.subscription_plan_spacing)
+                }
+            }
+            radius = resources.getDimensionPixelSize(R.dimen.card_corner_radius).toFloat()
+            cardElevation = if (isPopular) 12f else 6f
+            setCardBackgroundColor(if (isPopular) primaryContainerColor else surfaceColor)
+            
+            // Add subtle stroke for better definition
+            if (isPopular) {
+                foreground = ContextCompat.getDrawable(context, R.drawable.premium_card_stroke)
+            }
+        }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val padding = resources.getDimensionPixelSize(R.dimen.card_corner_radius) + 8
+            setPadding(padding, padding, padding, padding)
+        }
+
+        // Popular badge with professional styling
+        if (isPopular) {
+            val badgeContainer = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER
+                setPadding(0, 0, 0, 16)
+            }
+            
+            val crown = TextView(this).apply {
+                text = "👑"
+                textSize = 16f
+                setPadding(0, 0, 8, 0)
+            }
+            
+            val badge = TextView(this).apply {
+                text = "MOST POPULAR"
+                textSize = 11f
+                setTextColor(onPrimaryColor)
+                background = ContextCompat.getDrawable(context, R.drawable.popular_badge_background)
+                setPadding(12, 6, 12, 6)
+                gravity = android.view.Gravity.CENTER
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+            }
+            
+            badgeContainer.addView(crown)
+            badgeContainer.addView(badge)
+            container.addView(badgeContainer)
+        } else {
+            // Add spacer for alignment
+            val spacer = android.view.View(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    resources.getDimensionPixelSize(R.dimen.small_margin) * 4
+                )
+            }
+            container.addView(spacer)
+        }
+
+        // Plan title with better typography
+        val title = TextView(this).apply {
+            text = when (product.productId) {
+                BillingProvider.SUBSCRIPTION_WEEKLY -> "Weekly Premium"
+                BillingProvider.SUBSCRIPTION_MONTHLY -> "Monthly Premium"
+                else -> product.title
+            }
+            textSize = 20f
+            setTextColor(onSurfaceColor)
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, 8, 0, 4)
+        }
+        container.addView(title)
+
+        // Price with enhanced styling
+        val priceContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_HORIZONTAL or android.view.Gravity.CENTER_VERTICAL
+        }
+        
+        val currencySymbol = TextView(this).apply {
+            text = product.price.take(1) // Get currency symbol
+            textSize = 18f
+            setTextColor(primaryColor)
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setPadding(0, 0, 4, 0)
+        }
+        
+        val priceAmount = TextView(this).apply {
+            text = product.price.drop(1) // Remove currency symbol
+            textSize = 32f
+            setTextColor(primaryColor)
+            typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
+        }
+        
+        priceContainer.addView(currencySymbol)
+        priceContainer.addView(priceAmount)
+        container.addView(priceContainer)
+
+        // Duration with professional styling
+        val duration = TextView(this).apply {
+            text = when (product.productId) {
+                BillingProvider.SUBSCRIPTION_WEEKLY -> "per week"
+                BillingProvider.SUBSCRIPTION_MONTHLY -> "per month" 
+                else -> "subscription"
+            }
+            textSize = 14f
+            setTextColor(onSurfaceVariantColor)
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, 4, 0, 20)
+            alpha = 0.8f
+        }
+        container.addView(duration)
+
+        // Features list for popular plan
+        if (isPopular) {
+            val featuresContainer = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, 0, 0, 16)
+            }
+            
+            val features = listOf(
+                "🚀 Unlimited AI conversations",
+                "⭐ Premium AI models",
+                "🎨 AI image generation",
+                "📱 Priority support"
+            )
+            
+            features.forEach { feature ->
+                val featureText = TextView(this).apply {
+                    text = feature
+                    textSize = 12f
+                    setTextColor(onSurfaceColor)
+                    gravity = android.view.Gravity.CENTER
+                    setPadding(0, 2, 0, 2)
+                    alpha = 0.9f
+                }
+                featuresContainer.addView(featureText)
+            }
+            
+            container.addView(featuresContainer)
+        }
+
+        // Subscribe button with Material 3 styling
+        val button = AppCompatButton(this).apply {
+            text = if (isPopular) "Start Premium" else "Subscribe"
+            textSize = 16f
+            setTextColor(onPrimaryColor)
+            background = ContextCompat.getDrawable(context, R.drawable.modern_button_background)
+            isAllCaps = false
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            
+            val buttonPadding = resources.getDimensionPixelSize(R.dimen.standard_corner_radius) * 2
+            setPadding(buttonPadding, buttonPadding, buttonPadding, buttonPadding)
+            
+            // Add ripple effect
+            foreground = ContextCompat.getDrawable(context, android.R.drawable.list_selector_background)
+            
+            setOnClickListener {
+                HapticManager.mediumVibration(this@SubscriptionActivity)
+                
+                // Track plan selection for analytics
+                SubscriptionAnalyticsManager.trackPlanInteraction(
+                    this@SubscriptionActivity, 
+                    product.productId, 
+                    "tapped"
+                )
+                SubscriptionAnalyticsManager.trackPurchaseFunnel(
+                    this@SubscriptionActivity,
+                    SubscriptionAnalyticsManager.PurchaseStep.PLAN_SELECTED,
+                    product.productId
+                )
+                
+                purchaseSubscription(product)
+            }
+        }
+        container.addView(button, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
+
+        cardView.addView(container)
+        return cardView
     }
 
-    private fun showSuccess() {
-        successCard.visibility = View.VISIBLE
+    private fun purchaseSubscription(product: ProductInfo) {
+        if (isProcessingPurchase) {
+            Timber.w("⏳ Purchase already in progress")
+            return
+        }
+
+        // CRITICAL: Show legal compliance disclosure before purchase
+        val billingPeriod = when (product.productId) {
+            BillingProvider.SUBSCRIPTION_WEEKLY -> "weekly"
+            BillingProvider.SUBSCRIPTION_MONTHLY -> "monthly"
+            else -> "subscription"
+        }
+        
+        // Track disclosure step
+        SubscriptionAnalyticsManager.trackPurchaseFunnel(
+            this,
+            SubscriptionAnalyticsManager.PurchaseStep.DISCLOSURE_SHOWN,
+            product.productId
+        )
+        
+        SubscriptionComplianceManager.showSubscriptionDisclosure(
+            context = this,
+            productId = product.productId,
+            price = product.price,
+            billingPeriod = billingPeriod,
+            onAccept = {
+                SubscriptionAnalyticsManager.trackPurchaseFunnel(
+                    this,
+                    SubscriptionAnalyticsManager.PurchaseStep.DISCLOSURE_ACCEPTED,
+                    product.productId
+                )
+                proceedWithPurchase(product)
+            }
+        )
+    }
+    
+    private fun proceedWithPurchase(product: ProductInfo) {
+        Timber.d("🛒 Starting purchase for ${product.productId}")
+        isProcessingPurchase = true
+        
+        try {
+            // Track billing flow start
+            SubscriptionAnalyticsManager.trackPurchaseFunnel(
+                this,
+                SubscriptionAnalyticsManager.PurchaseStep.BILLING_FLOW_STARTED,
+                product.productId
+            )
+            
+            billingManager.launchBillingFlow(this, product.productId)
+            
+            // Reset processing flag after timeout
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (isProcessingPurchase) {
+                    isProcessingPurchase = false
+                    SubscriptionAnalyticsManager.trackPurchaseFunnel(
+                        this,
+                        SubscriptionAnalyticsManager.PurchaseStep.PURCHASE_FAILED,
+                        product.productId,
+                        mapOf("reason" to "timeout")
+                    )
+                }
+            }, 30000) // 30 seconds timeout
+            
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Error launching billing flow")
+            isProcessingPurchase = false
+            
+            SubscriptionAnalyticsManager.trackPurchaseFunnel(
+                this,
+                SubscriptionAnalyticsManager.PurchaseStep.PURCHASE_FAILED,
+                product.productId,
+                mapOf("reason" to "billing_flow_error", "error" to e.message.orEmpty())
+            )
+            
+            Toast.makeText(this, getString(R.string.subscription_error_unknown), Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun showErrorState(message: String) {
+        loadingProgress.visibility = View.GONE
+        plansContainer.visibility = View.GONE
+        errorCard.visibility = View.VISIBLE
+        successCard.visibility = View.GONE
+        
+        errorMessage.text = message
+    }
+
+    private fun showSuccessState() {
+        loadingProgress.visibility = View.GONE
         plansContainer.visibility = View.GONE
         errorCard.visibility = View.GONE
-        loadingProgress.visibility = View.GONE
+        successCard.visibility = View.VISIBLE
+        
+        // Auto-close after 3 seconds
+        Handler(Looper.getMainLooper()).postDelayed({
+            finish()
+        }, 3000)
+    }
+
+    private fun retryConnection() {
+        if (connectionRetryCount >= maxRetries) {
+            Toast.makeText(this, "Max retries reached. Please check your connection.", Toast.LENGTH_LONG).show()
+            return
+        }
+        
+        connectionRetryCount++
+        Timber.d("🔄 Retrying connection (attempt $connectionRetryCount)")
+        
+        showLoadingState()
+        initializeBillingManager()
+    }
+
+    private fun restorePurchases() {
+        Timber.d("🔄 Restoring purchases")
+        Toast.makeText(this, "Restoring purchases...", Toast.LENGTH_SHORT).show()
+        
+        billingManager.restoreSubscriptions()
+        
+        // Refresh UI after restoration
+        Handler(Looper.getMainLooper()).postDelayed({
+            updateUIBasedOnCurrentStatus()
+        }, 2000)
+    }
+
+    private fun updateUIBasedOnCurrentStatus() {
+        val isSubscribed = PrefsManager.isSubscribed(this)
+        val subscriptionType = PrefsManager.getSubscriptionType(this)
+        val endTime = PrefsManager.getSubscriptionEndTime(this)
+        
+        if (isSubscribed) {
+            currentStatusCard.visibility = View.VISIBLE
+            statusIcon.setImageResource(R.drawable.ic_checkmark_green)
+            statusTitle.text = "Premium Active"
+            
+            if (endTime > 0) {
+                val date = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.getDefault())
+                    .format(java.util.Date(endTime))
+                statusSubtitle.text = "Expires on $date"
+            } else {
+                statusSubtitle.text = "Active subscription"
+            }
+            
+            btnManageSubscription.visibility = View.VISIBLE
+        } else {
+            currentStatusCard.visibility = View.GONE
+        }
     }
 
     private fun openSubscriptionManagement() {
         try {
             val intent = Intent(Intent.ACTION_VIEW).apply {
-                data = Uri.parse("https://play.google.com/store/account/subscriptions")
-                setPackage("com.android.vending")
+                data = android.net.Uri.parse("https://play.google.com/store/account/subscriptions")
             }
             startActivity(intent)
         } catch (e: Exception) {
-            // Fallback to web
-            openUrl("https://play.google.com/store/account/subscriptions")
+            Toast.makeText(this, "Unable to open subscription management", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun openUrl(url: String) {
         try {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
             startActivity(intent)
         } catch (e: Exception) {
             Toast.makeText(this, "Unable to open link", Toast.LENGTH_SHORT).show()
         }
     }
 
-    private fun finishWithSuccess() {
-        setResult(RESULT_OK)
-        finish()
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        
+        Timber.d("🔄 Activity result: requestCode=$requestCode, resultCode=$resultCode")
+        
+        val handled = billingManager.processPurchaseResult(requestCode, resultCode, data)
+        if (handled) {
+            isProcessingPurchase = false
+            
+            // Track purchase completion analytics
+            if (resultCode == RESULT_OK) {
+                val subscriptionType = PrefsManager.getSubscriptionType(this) ?: "unknown"
+                SubscriptionAnalyticsManager.trackPurchaseFunnel(
+                    this,
+                    SubscriptionAnalyticsManager.PurchaseStep.PURCHASE_COMPLETED,
+                    subscriptionType
+                )
+                SubscriptionAnalyticsManager.trackSubscriptionEvent(
+                    this,
+                    SubscriptionAnalyticsManager.SubscriptionEvent.SUBSCRIPTION_STARTED,
+                    mapOf("plan" to subscriptionType)
+                )
+            } else {
+                SubscriptionAnalyticsManager.trackPurchaseFunnel(
+                    this,
+                    SubscriptionAnalyticsManager.PurchaseStep.PURCHASE_FAILED,
+                    "unknown",
+                    mapOf("reason" to "user_cancelled_or_failed")
+                )
+            }
+            
+            // Refresh subscription status
+            Handler(Looper.getMainLooper()).postDelayed({
+                billingManager.refreshSubscriptionStatus()
+                updateUIBasedOnCurrentStatus()
+            }, 1000)
+        }
     }
 
     override fun onResume() {
         super.onResume()
         
-        // Check if subscription status changed while away
-        val wasSubscribed = PrefsManager.isSubscribed(this)
-        billingManager.validateSubscriptionStatus()
+        // Refresh subscription status when returning to activity
         billingManager.refreshSubscriptionStatus()
+        updateUIBasedOnCurrentStatus()
         
-        val isNowSubscribed = PrefsManager.isSubscribed(this)
-        
-        // If user became subscribed while in another app, show success
-        if (!wasSubscribed && isNowSubscribed) {
-            showSuccess()
-        }
-        
-        // Reset processing flag in case user returned from billing
-        isProcessingPurchase = false
-        hidePurchaseProgress()
-    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        
-        // Handle billing result
-        val handled = billingManager.processPurchaseResult(requestCode, resultCode, data)
-        
-        if (handled) {
-            // Wait a moment for the purchase to be processed
+        // Reset processing flag in case user returned from billing flow
+        if (isProcessingPurchase) {
             Handler(Looper.getMainLooper()).postDelayed({
-                billingManager.refreshSubscriptionStatus()
-                
-                if (PrefsManager.isSubscribed(this)) {
-                    showSuccess()
-                }
-                
                 isProcessingPurchase = false
-                hidePurchaseProgress()
-            }, 1000)
+            }, 2000)
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        // Clean up is handled by BillingManager singleton
-    }
-
-    private fun Int.dpToPx(): Int {
-        val density = resources.displayMetrics.density
-        return (this * density + 0.5f).toInt()
-    }
-
-    private data class FeatureItem(
-        val title: String,
-        val description: String,
-        val iconRes: Int
-    )
-
-    /**
-     * Setup debug menu for testing subscription flows (debug builds only)
-     */
-    private fun setupDebugMenu() {
-        // Only show debug menu in debug builds
-        if (!BuildConfig.DEBUG) return
-
-        try {
-            // Find the main container (the LinearLayout inside the ScrollView)
-            val scrollView = findViewById<ScrollView>(android.R.id.content)?.getChildAt(0) as? ScrollView
-                ?: window.decorView.findViewById<ScrollView>(android.R.id.content)
-                ?: return
-                
-            val mainContainer = scrollView.getChildAt(0) as? LinearLayout ?: return
-
-            // Create debug container
-            debugContainer = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(16.dpToPx(), 16.dpToPx(), 16.dpToPx(), 16.dpToPx())
-                setBackgroundColor(ContextCompat.getColor(this@SubscriptionActivity, R.color.debug_background))
-            }
-
-            // Debug title
-            val debugTitle = TextView(this).apply {
-                text = "🧪 DEBUG MENU"
-                textSize = 16f
-                setTextColor(ContextCompat.getColor(this@SubscriptionActivity, android.R.color.holo_orange_dark))
-                typeface = android.graphics.Typeface.DEFAULT_BOLD
-                setPadding(0, 0, 0, 16.dpToPx())
-            }
-            debugContainer?.addView(debugTitle)
-
-            // Grant Free Premium Button
-            val btnGrantPremium = AppCompatButton(this).apply {
-                text = "Grant Free Premium (30 days)"
-                setBackgroundColor(ContextCompat.getColor(this@SubscriptionActivity, android.R.color.holo_green_dark))
-                setTextColor(Color.WHITE)
-                setPadding(16.dpToPx(), 8.dpToPx(), 16.dpToPx(), 8.dpToPx())
-                
-                setOnClickListener {
-                    val mockProvider = billingManager.activeProvider as? MockBillingProvider
-                    mockProvider?.grantFreePremium(30)
-                    
-                    Toast.makeText(this@SubscriptionActivity, "🧪 Granted 30 days free premium!", Toast.LENGTH_SHORT).show()
-                    billingManager.refreshSubscriptionStatus()
-                }
-            }
-            debugContainer?.addView(btnGrantPremium)
-
-            // Expire Subscription Button
-            val btnExpireSubscription = AppCompatButton(this).apply {
-                text = "Expire Subscription"
-                setBackgroundColor(ContextCompat.getColor(this@SubscriptionActivity, android.R.color.holo_red_dark))
-                setTextColor(Color.WHITE)
-                setPadding(16.dpToPx(), 8.dpToPx(), 16.dpToPx(), 8.dpToPx())
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    topMargin = 8.dpToPx()
-                }
-                
-                setOnClickListener {
-                    val mockProvider = billingManager.activeProvider as? MockBillingProvider
-                    mockProvider?.simulateSubscriptionExpiry()
-                    
-                    Toast.makeText(this@SubscriptionActivity, "🧪 Subscription expired!", Toast.LENGTH_SHORT).show()
-                    billingManager.refreshSubscriptionStatus()
-                }
-            }
-            debugContainer?.addView(btnExpireSubscription)
-
-            // Reset Billing State Button
-            val btnResetBilling = AppCompatButton(this).apply {
-                text = "Reset Billing State"
-                setBackgroundColor(ContextCompat.getColor(this@SubscriptionActivity, android.R.color.holo_blue_dark))
-                setTextColor(Color.WHITE)
-                setPadding(16.dpToPx(), 8.dpToPx(), 16.dpToPx(), 8.dpToPx())
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    topMargin = 8.dpToPx()
-                }
-                
-                setOnClickListener {
-                    PrefsManager.setSubscribed(this@SubscriptionActivity, false, 0)
-                    PrefsManager.setSubscriptionType(this@SubscriptionActivity, "")
-                    
-                    Toast.makeText(this@SubscriptionActivity, "🧪 Billing state reset!", Toast.LENGTH_SHORT).show()
-                    billingManager.refreshSubscriptionStatus()
-                }
-            }
-            debugContainer?.addView(btnResetBilling)
-
-            // Show Current Status Button
-            val btnShowStatus = AppCompatButton(this).apply {
-                text = "Show Debug Info"
-                setBackgroundColor(ContextCompat.getColor(this@SubscriptionActivity, android.R.color.darker_gray))
-                setTextColor(Color.WHITE)
-                setPadding(16.dpToPx(), 8.dpToPx(), 16.dpToPx(), 8.dpToPx())
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    topMargin = 8.dpToPx()
-                }
-                
-                setOnClickListener {
-                    val isSubscribed = PrefsManager.isSubscribed(this@SubscriptionActivity)
-                    val endTime = PrefsManager.getSubscriptionEndTime(this@SubscriptionActivity)
-                    val subscriptionType = PrefsManager.getSubscriptionType(this@SubscriptionActivity) ?: "none"
-                    val productsCount = availableProducts.size
-                    
-                    val info = """
-                        🧪 Debug Info:
-                        
-                        Subscribed: $isSubscribed
-                        End Time: ${if (endTime > 0) Date(endTime) else "Never"}
-                        Subscription Type: $subscriptionType
-                        Available Products: $productsCount
-                        Provider: ${billingManager.activeProvider?.javaClass?.simpleName}
-                    """.trimIndent()
-                    
-                    androidx.appcompat.app.AlertDialog.Builder(this@SubscriptionActivity)
-                        .setTitle("🧪 Debug Information")
-                        .setMessage(info)
-                        .setPositiveButton("OK", null)
-                        .show()
-                }
-            }
-            debugContainer?.addView(btnShowStatus)
-
-            // Add debug container to main layout
-            mainContainer.addView(debugContainer)
-
-            Timber.d("🧪 Debug menu setup completed")
-
-        } catch (e: Exception) {
-            Timber.e(e, "Error setting up debug menu")
-        }
+        Timber.d("🔚 SubscriptionActivity destroyed")
     }
 }

@@ -7,7 +7,9 @@
     android:gravity="center_vertical"
     android:paddingHorizontal="16dp"
     android:paddingVertical="12dp"
-    android:textSize="16sp"
-    android:textColor="@color/text_primary"
+    android:textSize="14sp"
+    android:textColor="#212121"
+    android:fontFamily="@font/ultrathink"
     android:background="?android:attr/selectableItemBackground"
-    android:text="Model Name" />
+    android:text="GPT-4o mini"
+    android:maxLines="1" />

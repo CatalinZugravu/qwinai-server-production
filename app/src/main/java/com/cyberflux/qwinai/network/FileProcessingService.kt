@@ -1,6 +1,7 @@
 package com.cyberflux.qwinai.network
 
 import android.content.Context
+import com.cyberflux.qwinai.BuildConfig
 import com.cyberflux.qwinai.security.UserStateManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -44,7 +45,8 @@ class FileProcessingService private constructor(private val context: Context) {
         .writeTimeout(120, TimeUnit.SECONDS)
         .build()
     
-    private val serverUrl = UserStateManager.SERVER_BASE_URL + "file-processor/"
+    // Let's check what the correct endpoint should be
+    private val serverUrl = UserStateManager.SERVER_BASE_URL
     
     /**
      * Process a file and return extracted content with token analysis
@@ -66,9 +68,12 @@ class FileProcessingService private constructor(private val context: Context) {
                 .build()
             
             val request = Request.Builder()
-                .url(serverUrl + "process")
+                .url(serverUrl + "file-processor/process")
+                .addHeader("Authorization", "Bearer ${BuildConfig.AIMLAPI_KEY}")
                 .post(requestBody)
                 .build()
+            
+            Timber.d("🔄 Making request to: ${serverUrl}file-processor/process")
             
             client.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
@@ -77,12 +82,23 @@ class FileProcessingService private constructor(private val context: Context) {
                         val result = parseProcessingResult(jsonResponse)
                         Timber.d("✅ File processed successfully: ${result.chunks.size} chunks, ${result.tokenAnalysis.totalTokens} tokens")
                         return@withContext result
+                    } else {
+                        throw Exception("Server returned empty response body")
+                    }
+                } else {
+                    val error = response.body?.string() ?: "Unknown error"
+                    Timber.e("❌ Server error: ${response.code} - $error")
+                    
+                    when (response.code) {
+                        404 -> throw Exception("Server endpoint not found. Make sure the server is deployed and running at ${serverUrl}file-processor/process")
+                        401, 403 -> throw Exception("Authentication failed. Check API key configuration.")
+                        413 -> throw Exception("File too large. Maximum size is 50MB.")
+                        415 -> throw Exception("Unsupported file type. Supported: PDF, DOCX, XLSX, PPTX, TXT")
+                        429 -> throw Exception("Rate limit exceeded. Please try again later.")
+                        500, 502, 503 -> throw Exception("Server error: $error. The server may be temporarily unavailable.")
+                        else -> throw Exception("File processing failed (${response.code}): $error")
                     }
                 }
-                
-                val error = response.body?.string() ?: "Unknown error"
-                Timber.e("❌ File processing failed: ${response.code} - $error")
-                throw Exception("File processing failed: $error")
             }
             
         } catch (e: Exception) {

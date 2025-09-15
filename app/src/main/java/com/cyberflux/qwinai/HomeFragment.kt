@@ -9,16 +9,15 @@ import android.text.style.ForegroundColorSpan
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.cyberflux.qwinai.adapter.PromptChipAdapter
 import com.cyberflux.qwinai.databinding.FragmentHomeBinding
 import com.cyberflux.qwinai.model.AIFeature
-import com.cyberflux.qwinai.model.PromptChip
 import com.cyberflux.qwinai.model.RecentModel
 import com.cyberflux.qwinai.model.TrendingPrompt
 import com.cyberflux.qwinai.utils.LocationService
@@ -41,16 +40,10 @@ class HomeFragment : Fragment() {
     private val binding get() = _binding!!
 
     private lateinit var featureAdapter: FeatureCardAdapter
-    private lateinit var promptChipAdapter: PromptChipAdapter
     private lateinit var recentModelsAdapter: RecentModelsAdapter
     private lateinit var trendingPromptsAdapter: TrendingPromptsAdapter
 
 
-    private lateinit var creativePromptsRecyclerView: RecyclerView
-    private lateinit var productivityPromptsRecyclerView: RecyclerView
-    private lateinit var educationPromptsRecyclerView: RecyclerView
-    private lateinit var techPromptsRecyclerView: RecyclerView
-    private lateinit var everydayPromptsRecyclerView: RecyclerView
 
 
     // More diverse greetings organized by time of day
@@ -159,12 +152,9 @@ class HomeFragment : Fragment() {
 
         setupGreeting()
         setupAiTipOfTheDay()
-        setupImageGenerationCard()
         setupRecentModels()
         setupTrendingPrompts()
         setupFeatureCards()
-        setupPromptChips()
-        setupPromptChipRecyclerViews()
 
         // Apply animations
         applyAnimations()
@@ -177,159 +167,12 @@ class HomeFragment : Fragment() {
         scheduleGreetingUpdates()
     }
 
-    private fun setupPromptChipRecyclerViews() {
-        // Original quick prompts
-        setupQuickPrompts()
 
-        // Setup additional prompt categories
-        setupCreativePrompts()
-        setupProductivityPrompts()
-        setupEducationPrompts()
-        setupTechPrompts()
-        setupEverydayPrompts()
-    }
 
-    private fun setupQuickPrompts() {
-        val quickPromptsList = listOf(
-            PromptChip("general_1", "Tell me a joke", "quick"),
-            PromptChip("general_2", "Write a short story", "quick"),
-            PromptChip("general_3", "What's the weather today?", "quick"),
-            PromptChip("general_4", "Help me plan a trip", "quick"),
-            PromptChip("general_5", "Explain quantum physics", "quick"),
-            PromptChip("general_6", "Create a workout routine", "quick"),
-            PromptChip("general_7", "Recipe ideas for dinner", "quick")
-        )
 
-        val promptChipsAdapter = PromptChipAdapter(quickPromptsList) { promptChip ->
-            // Handle prompt chip click
-            (activity as? StartActivity)?.startChatWithPrompt(promptChip.text)
-        }
 
-        binding.promptChipsRecyclerView.apply {
-            layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
-            adapter = promptChipsAdapter
-        }
-    }
 
-    private fun setupCreativePrompts() {
-        // Initialize recycler view
-        creativePromptsRecyclerView = binding.root.findViewById(R.id.creativePromptsRecyclerView)
 
-        val creativePromptsList = listOf(
-            PromptChip("creative_1", "Write a sci-fi story opening", "creative"),
-            PromptChip("creative_2", "Design a fantasy character", "creative"),
-            PromptChip("creative_3", "Create a haiku about nature", "creative"),
-            PromptChip("creative_4", "Draft a movie script scene", "creative"),
-            PromptChip("creative_5", "Invent a unique superhero", "creative"),
-            PromptChip("creative_6", "Write song lyrics about love", "creative"),
-            PromptChip("creative_7", "Design a fictional world", "creative")
-        )
-
-        val creativePromptsAdapter = PromptChipAdapter(creativePromptsList) { promptChip ->
-            (activity as? StartActivity)?.startChatWithPrompt(promptChip.text)
-        }
-
-        creativePromptsRecyclerView.apply {
-            layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
-            adapter = creativePromptsAdapter
-        }
-    }
-
-    private fun setupProductivityPrompts() {
-        // Initialize recycler view
-        productivityPromptsRecyclerView = binding.root.findViewById(R.id.productivityPromptsRecyclerView)
-
-        val productivityPromptsList = listOf(
-            PromptChip("productivity_1", "Create a daily schedule", "productivity"),
-            PromptChip("productivity_2", "Generate a to-do list template", "productivity"),
-            PromptChip("productivity_3", "Time management strategies", "productivity"),
-            PromptChip("productivity_4", "Help write a professional email", "productivity"),
-            PromptChip("productivity_5", "Meeting agenda template", "productivity"),
-            PromptChip("productivity_6", "Weekly planning framework", "productivity"),
-            PromptChip("productivity_7", "Focus techniques for work", "productivity")
-        )
-
-        val productivityPromptsAdapter = PromptChipAdapter(productivityPromptsList) { promptChip ->
-            (activity as? StartActivity)?.startChatWithPrompt(promptChip.text)
-        }
-
-        productivityPromptsRecyclerView.apply {
-            layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
-            adapter = productivityPromptsAdapter
-        }
-    }
-
-    private fun setupEducationPrompts() {
-        // Initialize recycler view
-        educationPromptsRecyclerView = binding.root.findViewById(R.id.educationPromptsRecyclerView)
-
-        val educationPromptsList = listOf(
-            PromptChip("education_1", "Explain like I'm 5: black holes", "education"),
-            PromptChip("education_2", "Help me learn JavaScript", "education"),
-            PromptChip("education_3", "Summary of world history", "education"),
-            PromptChip("education_4", "Chemistry concepts simplified", "education"),
-            PromptChip("education_5", "Math problem solver", "education"),
-            PromptChip("education_6", "Language learning tips", "education"),
-            PromptChip("education_7", "Study techniques for exams", "education")
-        )
-
-        val educationPromptsAdapter = PromptChipAdapter(educationPromptsList) { promptChip ->
-            (activity as? StartActivity)?.startChatWithPrompt(promptChip.text)
-        }
-
-        educationPromptsRecyclerView.apply {
-            layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
-            adapter = educationPromptsAdapter
-        }
-    }
-
-    private fun setupTechPrompts() {
-        // Initialize recycler view
-        techPromptsRecyclerView = binding.root.findViewById(R.id.techPromptsRecyclerView)
-
-        val techPromptsList = listOf(
-            PromptChip("tech_1", "Debug this Android code", "tech"),
-            PromptChip("tech_2", "Explain REST API concepts", "tech"),
-            PromptChip("tech_3", "Kotlin vs Java comparison", "tech"),
-            PromptChip("tech_4", "Android UI best practices", "tech"),
-            PromptChip("tech_5", "Write a simple SQLite query", "tech"),
-            PromptChip("tech_6", "RecyclerView optimization tips", "tech"),
-            PromptChip("tech_7", "Jetpack Compose tutorial", "tech")
-        )
-
-        val techPromptsAdapter = PromptChipAdapter(techPromptsList) { promptChip ->
-            (activity as? StartActivity)?.startChatWithPrompt(promptChip.text)
-        }
-
-        techPromptsRecyclerView.apply {
-            layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
-            adapter = techPromptsAdapter
-        }
-    }
-
-    private fun setupEverydayPrompts() {
-        // Initialize recycler view
-        everydayPromptsRecyclerView = binding.root.findViewById(R.id.everydayPromptsRecyclerView)
-
-        val everydayPromptsList = listOf(
-            PromptChip("everyday_1", "Healthy meal ideas", "everyday"),
-            PromptChip("everyday_2", "Workout routines at home", "everyday"),
-            PromptChip("everyday_3", "Mindfulness exercises", "everyday"),
-            PromptChip("everyday_4", "Budget planning tips", "everyday"),
-            PromptChip("everyday_5", "Home organization ideas", "everyday"),
-            PromptChip("everyday_6", "Quick dinner recipes", "everyday"),
-            PromptChip("everyday_7", "Weekend activity suggestions", "everyday")
-        )
-
-        val everydayPromptsAdapter = PromptChipAdapter(everydayPromptsList) { promptChip ->
-            (activity as? StartActivity)?.startChatWithPrompt(promptChip.text)
-        }
-
-        everydayPromptsRecyclerView.apply {
-            layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
-            adapter = everydayPromptsAdapter
-        }
-    }
 
     private fun applyAnimations() {
         // Staggered animations for a more dynamic entrance
@@ -344,16 +187,16 @@ class HomeFragment : Fragment() {
             .setStartDelay(100)
             .start()
 
+        // Add beautiful continuous animations to the animation card
+        startAnimationCardAnimations()
+
         // 2. Fade in cards with staggered delay
         listOf(
             binding.tipCardView,
-            binding.imageGenerationCardView,
             binding.recentModelsLabel,
             binding.recentModelsRecyclerView,
             binding.featuresTitle,
-            binding.featuresRecyclerView,
-            binding.promptsTitle,
-            binding.promptChipsRecyclerView
+            binding.featuresRecyclerView
         ).forEachIndexed { index, view ->
             view.alpha = 0f
             view.translationY = 30f
@@ -544,26 +387,6 @@ class HomeFragment : Fragment() {
         }
     }
 
-    private fun setupImageGenerationCard() {
-        // Set up image generation card with beautiful content
-        binding.imageGenTextView.text = "Create Images"
-        
-        // Add click action to open ImageGenerationActivity
-        binding.imageGenerationCardView.setOnClickListener {
-            try {
-                val intent = android.content.Intent(requireContext(), ImageGenerationActivity::class.java)
-                startActivity(intent)
-                
-                // Add transition animation
-                requireActivity().overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
-                
-                Timber.d("Opened ImageGenerationActivity from home card")
-            } catch (e: Exception) {
-                Timber.e(e, "Error opening ImageGenerationActivity: ${e.message}")
-                android.widget.Toast.makeText(requireContext(), "Error opening image generation", android.widget.Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
 
 
 
@@ -574,17 +397,18 @@ class HomeFragment : Fragment() {
         // Log for debugging
         Timber.d("Loaded recent models: ${recentModels.map { it.displayName }}")
 
-        // If we don't have 3 models yet, fill with defaults
-        val modelsToShow = if (recentModels.size < 3) {
+        // If we don't have 4 models yet, fill with defaults
+        val modelsToShow = if (recentModels.size < 4) {
             val defaults = listOf(
                 RecentModel("Claude 3.7 Sonnet", ModelManager.CLAUDE_3_7_SONNET_ID, R.drawable.ic_claude),
                 RecentModel("GPT-4o", ModelManager.GPT_4O_ID, R.drawable.ic_gpt),
-                RecentModel("Llama 4 Maverick", ModelManager.LLAMA_4_MAVERICK_ID, R.drawable.ic_llama)
+                RecentModel("Llama 4 Maverick", ModelManager.LLAMA_4_MAVERICK_ID, R.drawable.ic_llama),
+                RecentModel("DeepSeek R1", ModelManager.DEEPSEEK_R1_ID, R.drawable.ic_ai)
             )
 
             // Merge user models with defaults, removing duplicates
             val existingIds = recentModels.map { it.id }
-            recentModels + defaults.filterNot { it.id in existingIds }.take(3 - recentModels.size)
+            recentModels + defaults.filterNot { it.id in existingIds }.take(4 - recentModels.size)
         } else {
             recentModels
         }
@@ -645,23 +469,38 @@ class HomeFragment : Fragment() {
         }
 
         binding.featuresRecyclerView.apply {
-            layoutManager = LinearLayoutManager(requireContext())
+            layoutManager = androidx.recyclerview.widget.GridLayoutManager(requireContext(), 2)
             adapter = featureAdapter
+            // Add spacing between grid items
+            if (itemDecorationCount == 0) {
+                addItemDecoration(object : androidx.recyclerview.widget.RecyclerView.ItemDecoration() {
+                    override fun getItemOffsets(
+                        outRect: android.graphics.Rect,
+                        view: View,
+                        parent: androidx.recyclerview.widget.RecyclerView,
+                        state: androidx.recyclerview.widget.RecyclerView.State
+                    ) {
+                        val position = parent.getChildAdapterPosition(view)
+                        val spacing = 16 // 16dp spacing
+                        
+                        // Add bottom margin for all items except last row
+                        if (position < (featureAdapter.itemCount - (featureAdapter.itemCount % 2))) {
+                            outRect.bottom = spacing
+                        }
+                        
+                        // Add right margin for left column items
+                        if (position % 2 == 0) {
+                            outRect.right = spacing / 2
+                        } else {
+                            // Add left margin for right column items
+                            outRect.left = spacing / 2
+                        }
+                    }
+                })
+            }
         }
     }
 
-    private fun setupPromptChips() {
-        val prompts = getPromptChips()
-        promptChipAdapter = PromptChipAdapter(prompts) { prompt ->
-            // Let parent activity handle prompts
-            (activity as? StartActivity)?.startChatWithPrompt(prompt.text)
-        }
-
-        binding.promptChipsRecyclerView.apply {
-            layoutManager = LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
-            adapter = promptChipAdapter
-        }
-    }
 
     private fun getAIFeatures(): List<AIFeature> {
         return listOf(
@@ -734,41 +573,21 @@ class HomeFragment : Fragment() {
                 description = "Browse and manage AI generated images",
                 iconResId = R.drawable.ic_gallery,
                 colorResId = R.color.feature_image_gallery,
+            ),
+            AIFeature(
+                id = "video_generation",
+                title = "Video Generation",
+                description = "Generate AI videos from text or images",
+                iconResId = R.drawable.ic_videocam,
+                colorResId = R.color.feature_video_generation,
+            ),
+            AIFeature(
+                id = "music_generation",
+                title = "Voice & Music",
+                description = "Generate AI voice and music content",
+                iconResId = R.drawable.ic_library_music,
+                colorResId = R.color.feature_music_generation,
             )
-        )
-    }
-    private fun getPromptChips(): List<PromptChip> {
-        return listOf(
-            PromptChip("Tell me a joke", "Write a short story", "quick"),
-            PromptChip("Write a poem", "Write a short story", "quick"),
-            PromptChip("Explain quantum physics", "Write a short story", "quick"),
-            PromptChip("Plan my day", "Write a short story", "quick"),
-            PromptChip("Creative story ideas", "Write a short story", "quick"),
-            PromptChip("Coding help", "Write a short story", "quick"),
-            PromptChip("Recipe suggestions", "Write a short story", "quick"),
-            PromptChip("Travel recommendations", "Write a short story", "quick"),
-            PromptChip("Summarize this article", "Write a short story", "quick"),
-            PromptChip("Improve my resume", "Write a short story", "quick"),
-            PromptChip("Write a love letter", "Write a short story", "quick"),
-            PromptChip("Help with homework", "Write a short story", "quick"),
-            PromptChip("Describe this image", "Write a short story", "quick"),
-            PromptChip("Translate this text", "Write a short story", "quick"),
-            PromptChip("Give me business ideas", "Write a short story", "quick"),
-            PromptChip("Generate a workout plan", "Write a short story", "quick"),
-            PromptChip("Teach me a new language", "Write a short story", "quick"),
-            PromptChip("Draft an email", "Write a short story", "quick"),
-            PromptChip("Create a short story", "Write a short story", "quick"),
-            PromptChip("Explain this concept simply", "Write a short story", "quick"),
-            PromptChip("Generate social media captions", "Write a short story", "quick"),
-            PromptChip("Suggest books to read", "Write a short story", "quick"),
-            PromptChip("Help me meditate", "Write a short story", "quick"),
-            PromptChip("What's trending in tech?", "Write a short story", "quick"),
-            PromptChip("Write a song verse", "Write a short story", "quick"),
-            PromptChip("Give me movie suggestions", "Write a short story", "quick"),
-            PromptChip("Make a shopping list", "Write a short story", "quick"),
-            PromptChip("Create a study schedule", "Write a short story", "quick"),
-            PromptChip("Give me fun facts", "Write a short story", "quick"),
-            PromptChip("Simulate a job interview", "Write a short story", "quick")
         )
     }
 
@@ -822,7 +641,7 @@ class HomeFragment : Fragment() {
             .start()
 
         binding.btnUpgrade.setOnClickListener {
-            SubscriptionActivity.start(requireContext())
+            WelcomeActivity.start(requireContext())
         }
     }
 
@@ -843,6 +662,101 @@ class HomeFragment : Fragment() {
         // Refresh greeting (time of day might have changed)
         setupGreeting()
     }
+    private fun startAnimationCardAnimations() {
+        // Pulsing brain animation
+        binding.root.findViewById<ImageView>(R.id.brainIcon)?.let { brainIcon ->
+            val pulseAnimation = { 
+                brainIcon.animate()
+                    .scaleX(1.15f)
+                    .scaleY(1.15f)
+                    .alpha(0.8f)
+                    .setDuration(1500)
+                    .withEndAction {
+                        brainIcon.animate()
+                            .scaleX(1.0f)
+                            .scaleY(1.0f)
+                            .alpha(1.0f)
+                            .setDuration(1500)
+                            .start()
+                    }
+                    .start()
+            }
+            
+            // Start initial animation and repeat every 3 seconds
+            pulseAnimation()
+            val handler = Handler(Looper.getMainLooper())
+            val runnable = object : Runnable {
+                override fun run() {
+                    pulseAnimation()
+                    handler.postDelayed(this, 3000)
+                }
+            }
+            handler.postDelayed(runnable, 3000)
+        }
+
+        // Floating particles animation
+        listOf(
+            R.id.particle1 to (-15f to 15f),
+            R.id.particle2 to (12f to -12f), 
+            R.id.particle3 to (-8f to 8f)
+        ).forEach { (particleId, range) ->
+            binding.root.findViewById<ImageView>(particleId)?.let { particle ->
+                val floatAnimation = {
+                    particle.animate()
+                        .translationX(range.first)
+                        .translationY(range.first * 0.8f)
+                        .alpha(1f)
+                        .setDuration(2500)
+                        .withEndAction {
+                            particle.animate()
+                                .translationX(range.second)
+                                .translationY(range.second * 0.8f)
+                                .alpha(0.3f)
+                                .setDuration(2500)
+                                .start()
+                        }
+                        .start()
+                }
+                
+                floatAnimation()
+                val handler = Handler(Looper.getMainLooper())
+                val runnable = object : Runnable {
+                    override fun run() {
+                        floatAnimation()
+                        handler.postDelayed(this, 5000)
+                    }
+                }
+                handler.postDelayed(runnable, 5000)
+            }
+        }
+
+        // ULTRATHINK label gentle glow effect
+        binding.root.findViewById<android.widget.TextView>(R.id.ultrathinkLabel)?.let { label ->
+            val glowAnimation = {
+                label.animate()
+                    .alpha(1f)
+                    .setDuration(2000)
+                    .withEndAction {
+                        label.animate()
+                            .alpha(0.7f)
+                            .setDuration(2000)
+                            .start()
+                    }
+                    .start()
+            }
+            
+            glowAnimation()
+            val handler = Handler(Looper.getMainLooper())
+            val runnable = object : Runnable {
+                override fun run() {
+                    glowAnimation()
+                    handler.postDelayed(this, 4000)
+                }
+            }
+            handler.postDelayed(runnable, 4000)
+        }
+    }
+
     private fun scheduleGreetingUpdates() {
         // Check for greeting updates every hour
         val greetingHandler = Handler(Looper.getMainLooper())

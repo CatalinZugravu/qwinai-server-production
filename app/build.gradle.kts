@@ -314,32 +314,13 @@ dependencies {
     implementation(libs.ext.tables)
     implementation(libs.ext.tasklist)
     implementation(libs.html)
-    implementation(libs.image)
-    implementation(libs.image.glide)
     implementation(libs.linkify)
-    implementation(libs.recycler)
-    implementation(libs.simple.ext)
-    
+
     // NEW: Advanced Markwon Features
-    implementation(libs.syntax.highlight)  // Professional syntax highlighting
     implementation(libs.ext.latex)         // LaTeX math formulas
     implementation(libs.inline.parser)     // CRITICAL: Required for JLatexMathPlugin
-    implementation(libs.editor)            // Markdown editor support
-    implementation(libs.recycler.table)    // Advanced table layouts
 
 
-    // ====================
-    // DOCUMENT PROCESSING - SIMPLIFIED
-    // ====================
-    
-    // CSV Processing
-    implementation("com.opencsv:opencsv:5.9") {
-        exclude(group = "commons-collections")
-        exclude(group = "org.apache.commons", module = "commons-lang3")
-    }
-    
-    // Character Encoding Detection
-    implementation(libs.juniversalchardet)
 
     // ====================
     // NETWORKING

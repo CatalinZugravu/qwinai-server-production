@@ -55,15 +55,12 @@ class UnifiedFileHandler(private val context: Context) {
 
             // Determine file type for processing - expanded with server-side support
             val isImage = mimeType.startsWith("image/")
-            val isDocument = listOf(
-                "application/pdf",
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // DOCX
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",      // XLSX
-                "application/vnd.openxmlformats-officedocument.presentationml.presentation", // PPTX
-                "text/plain",  // TXT
-                "text/csv",    // CSV
-                "application/rtf" // RTF
-            ).contains(mimeType)
+            
+            // Enhanced document detection with alternative MIME types and file extensions
+            val isDocument = isDocumentFile(mimeType, fileName)
+            
+            // Log detected MIME type for debugging
+            Timber.d("📋 File analysis: name=$fileName, mimeType=$mimeType, isImage=$isImage, isDocument=$isDocument")
 
             when {
                 isImage -> {
@@ -84,10 +81,10 @@ class UnifiedFileHandler(private val context: Context) {
                 }
                 
                 isDocument -> {
-                    // 🚀 NEW: Advanced server-side document processing
+                    // Try server-side document processing first, fallback to local processing
                     tracker?.updateProgress(
                         30,
-                        "Uploading to server for processing...",
+                        "Trying server processing...",
                         FileProgressTracker.ProcessingStage.PROCESSING_PAGES
                     )
 
@@ -95,83 +92,122 @@ class UnifiedFileHandler(private val context: Context) {
                     val tempFile = uriToTempFile(uri, fileName ?: "document")
                     
                     try {
-                        // Process with server
-                        val fileProcessingService = FileProcessingService.getInstance(context)
-                        val processingResult = fileProcessingService.processFile(
-                            file = tempFile,
-                            aiModel = modelId,
-                            maxTokensPerChunk = 6000
-                        )
-
-                        tracker?.updateProgress(
-                            70,
-                            "Server processing complete, analyzing content...",
-                            FileProgressTracker.ProcessingStage.PROCESSING_PAGES
-                        )
-
-                        // Get optimal chunks for this model
-                        val optimalChunks = fileProcessingService.getOptimalChunksForModel(
-                            processingResult, modelId
-                        )
-
-                        if (optimalChunks.isEmpty()) {
-                            Timber.w("⚠️ No suitable chunks found for model $modelId")
-                            return@withContext Result.failure(
-                                IOException("Document is too large for model $modelId context window")
+                        // Try server processing first
+                        try {
+                            val fileProcessingService = FileProcessingService.getInstance(context)
+                            val processingResult = fileProcessingService.processFile(
+                                file = tempFile,
+                                aiModel = modelId,
+                                maxTokensPerChunk = 6000
                             )
-                        }
 
-                        tracker?.updateProgress(
-                            90,
-                            "Creating AI-ready content...",
-                            FileProgressTracker.ProcessingStage.FINALIZING
-                        )
+                            tracker?.updateProgress(
+                                70,
+                                "Server processing complete, analyzing content...",
+                                FileProgressTracker.ProcessingStage.PROCESSING_PAGES
+                            )
 
-                        // Create content for AI model
-                        val documentText = if (optimalChunks.size == 1) {
-                            // Single chunk - use directly
-                            optimalChunks[0].text
-                        } else {
-                            // Multiple chunks - create structured content
-                            buildString {
-                                append("📄 Document: ${processingResult.originalFileName}\n")
-                                append("📊 ${optimalChunks.size} sections, ${processingResult.tokenAnalysis.totalTokens} tokens total\n")
-                                append("💰 Estimated cost: ${processingResult.tokenAnalysis.estimatedCost}\n\n")
-                                
-                                optimalChunks.forEachIndexed { index, chunk ->
-                                    if (optimalChunks.size > 1) {
-                                        append("=== Section ${index + 1}/${optimalChunks.size} ===\n")
+                            // Get optimal chunks for this model
+                            val optimalChunks = fileProcessingService.getOptimalChunksForModel(
+                                processingResult, modelId
+                            )
+
+                            if (optimalChunks.isEmpty()) {
+                                Timber.w("⚠️ No suitable chunks found for model $modelId")
+                                return@withContext Result.failure(
+                                    IOException("Document is too large for model $modelId context window")
+                                )
+                            }
+
+                            tracker?.updateProgress(
+                                90,
+                                "Creating AI-ready content...",
+                                FileProgressTracker.ProcessingStage.FINALIZING
+                            )
+
+                            // Create content for AI model
+                            val documentText = if (optimalChunks.size == 1) {
+                                // Single chunk - use directly
+                                optimalChunks[0].text
+                            } else {
+                                // Multiple chunks - create structured content
+                                buildString {
+                                    append("📄 Document: ${processingResult.originalFileName}\n")
+                                    append("📊 ${optimalChunks.size} sections, ${processingResult.tokenAnalysis.totalTokens} tokens total\n")
+                                    append("💰 Estimated cost: ${processingResult.tokenAnalysis.estimatedCost}\n\n")
+                                    
+                                    optimalChunks.forEachIndexed { index, chunk ->
+                                        if (optimalChunks.size > 1) {
+                                            append("=== Section ${index + 1}/${optimalChunks.size} ===\n")
+                                        }
+                                        append(chunk.text)
+                                        append("\n\n")
                                     }
-                                    append(chunk.text)
-                                    append("\n\n")
                                 }
                             }
-                        }
 
-                        // Create content item
-                        val contentItem = AimlApiRequest.ContentPart(
-                            type = "text",
-                            text = documentText
-                        )
-
-                        tracker?.updateProgress(
-                            100,
-                            "Document processed successfully! ${processingResult.tokenAnalysis.totalTokens} tokens",
-                            FileProgressTracker.ProcessingStage.COMPLETE
-                        )
-
-                        // Log processing summary
-                        Timber.d("✅ Document processed: ${processingResult.originalFileName}")
-                        Timber.d("   📊 Total tokens: ${processingResult.tokenAnalysis.totalTokens}")
-                        Timber.d("   💰 Estimated cost: ${processingResult.tokenAnalysis.estimatedCost}")
-                        Timber.d("   📑 Chunks used: ${optimalChunks.size}/${processingResult.chunks.size}")
-
-                        return@withContext Result.success(
-                            ProcessedFileResult(
-                                contentItem = contentItem,
-                                fileType = FileType.DOCUMENT
+                            // Create content item
+                            val contentItem = AimlApiRequest.ContentPart(
+                                type = "text",
+                                text = documentText
                             )
-                        )
+
+                            tracker?.updateProgress(
+                                100,
+                                "Document processed successfully! ${processingResult.tokenAnalysis.totalTokens} tokens",
+                                FileProgressTracker.ProcessingStage.COMPLETE
+                            )
+
+                            // Log processing summary
+                            Timber.d("✅ Server document processing successful: ${processingResult.originalFileName}")
+                            Timber.d("   📊 Total tokens: ${processingResult.tokenAnalysis.totalTokens}")
+                            Timber.d("   💰 Estimated cost: ${processingResult.tokenAnalysis.estimatedCost}")
+                            Timber.d("   📑 Chunks used: ${optimalChunks.size}/${processingResult.chunks.size}")
+
+                            return@withContext Result.success(
+                                ProcessedFileResult(
+                                    contentItem = contentItem,
+                                    fileType = FileType.DOCUMENT
+                                )
+                            )
+
+                        } catch (serverException: Exception) {
+                            // Server processing failed, try local fallback
+                            Timber.w("⚠️ Server processing failed: ${serverException.message}")
+                            Timber.d("🔄 Attempting local document processing fallback...")
+                            
+                            tracker?.updateProgress(
+                                50,
+                                "Server unavailable, trying local processing...",
+                                FileProgressTracker.ProcessingStage.PROCESSING_PAGES
+                            )
+
+                            // Check if this is a PDF and we can process it locally
+                            if (mimeType == "application/pdf") {
+                                Timber.d("📄 Attempting local PDF processing")
+                                
+                                val localResult = processPdfWithRetry(uri, modelId, tracker, fileName)
+                                if (localResult.isSuccess) {
+                                    Timber.d("✅ Local PDF processing successful")
+                                    return@withContext Result.success(
+                                        ProcessedFileResult(
+                                            contentItem = localResult.getOrThrow(),
+                                            fileType = FileType.PDF
+                                        )
+                                    )
+                                } else {
+                                    Timber.w("❌ Local PDF processing also failed: ${localResult.exceptionOrNull()?.message}")
+                                }
+                            }
+
+                            // If we get here, both server and local processing failed
+                            val errorMessage = when {
+                                mimeType == "application/pdf" -> "Both server and local PDF processing failed. Server error: ${serverException.message}"
+                                else -> "Server processing failed and no local fallback available for $mimeType files. Please ensure the server is deployed and running. Server error: ${serverException.message}"
+                            }
+                            
+                            return@withContext Result.failure(IOException(errorMessage))
+                        }
 
                     } finally {
                         // Clean up temp file
@@ -185,10 +221,14 @@ class UnifiedFileHandler(private val context: Context) {
                 
                 else -> {
                     // Unsupported file type
+                    val fileExtension = fileName?.substringAfterLast('.', "")?.lowercase() ?: "unknown"
                     return@withContext Result.failure(
                         UnsupportedOperationException(
-                            "File type '$mimeType' not supported. " +
-                            "Supported: Images (JPG, PNG, WebP, GIF), Documents (PDF, DOCX, XLSX, PPTX, TXT, CSV, RTF)"
+                            "File type not supported.\n" +
+                            "• Detected: $mimeType (.$fileExtension)\n" +
+                            "• Supported Images: JPG, PNG, WebP, GIF\n" +
+                            "• Supported Documents: PDF, DOCX, DOC, XLSX, XLS, PPTX, PPT, TXT, CSV, RTF\n" +
+                            "• Note: Server processing required for most document types"
                         )
                     )
                 }
@@ -202,6 +242,55 @@ class UnifiedFileHandler(private val context: Context) {
             )
             return@withContext Result.failure(e)
         }
+    }
+
+    /**
+     * Enhanced document detection using both MIME type and file extension
+     */
+    private fun isDocumentFile(mimeType: String, fileName: String?): Boolean {
+        // Primary MIME type detection
+        val supportedMimeTypes = listOf(
+            "application/pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // DOCX
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",      // XLSX
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation", // PPTX
+            "text/plain",  // TXT
+            "text/csv",    // CSV
+            "application/rtf", // RTF
+            // Alternative MIME types that sometimes get detected
+            "application/msword", // Old DOC format
+            "application/vnd.ms-excel", // Old XLS format
+            "application/vnd.ms-powerpoint", // Old PPT format
+            "application/zip", // Sometimes Office files are detected as ZIP
+            "application/octet-stream" // Generic binary, check by extension
+        )
+        
+        // Check by MIME type first
+        if (supportedMimeTypes.contains(mimeType)) {
+            // If it's ZIP or octet-stream, we need to verify by extension
+            if (mimeType == "application/zip" || mimeType == "application/octet-stream") {
+                return isDocumentByExtension(fileName)
+            }
+            return true
+        }
+        
+        // Fallback: check by file extension if MIME type detection failed
+        return isDocumentByExtension(fileName)
+    }
+    
+    /**
+     * Check if file is a document based on file extension
+     */
+    private fun isDocumentByExtension(fileName: String?): Boolean {
+        if (fileName == null) return false
+        
+        val extension = fileName.substringAfterLast('.', "").lowercase()
+        val supportedExtensions = setOf(
+            "pdf", "docx", "doc", "xlsx", "xls", "pptx", "ppt", 
+            "txt", "csv", "rtf", "odt", "ods", "odp"
+        )
+        
+        return supportedExtensions.contains(extension)
     }
 
     /**

@@ -15,6 +15,7 @@ import android.widget.Toast
 import androidx.core.content.edit
 import androidx.core.net.toUri
 import com.cyberflux.qwinai.utils.BaseThemedActivity
+import com.cyberflux.qwinai.utils.DynamicColorManager
 import com.cyberflux.qwinai.utils.ModelManager
 import com.cyberflux.qwinai.utils.PrefsManager
 import com.cyberflux.qwinai.utils.PrefsManager.isHapticFeedbackEnabled
@@ -43,6 +44,25 @@ class SettingsActivity : BaseThemedActivity() {
         Log.d(TAG, "SettingsActivity created, setting up click listeners")
         setupClickListeners()
         loadSavedPreferences()
+    }
+
+    /**
+     * Override from BaseThemedActivity to apply dynamic accent colors
+     */
+    override fun applyDynamicAccentColor() {
+        try {
+            if (::binding.isInitialized) {
+                // Apply accent colors to the settings UI
+                DynamicColorManager.applyAccentColorToViewGroup(this, binding.root)
+                
+                // Apply to common elements
+                DynamicColorManager.applyAccentColorToCommonElements(this, binding.root)
+                
+                Log.d(TAG, "Applied dynamic accent colors to SettingsActivity")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error applying dynamic accent colors: ${e.message}")
+        }
     }
 
     private fun loadSavedPreferences() {

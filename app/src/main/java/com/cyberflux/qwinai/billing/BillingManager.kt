@@ -128,7 +128,7 @@ class BillingManager private constructor(private val context: Context) {
         Timber.d("Google Play doesn't need explicit result processing")
         return false
     }
-
+    
     /**
      * Refresh UI based on subscription status
      * Call this after processing a purchase result
@@ -142,6 +142,7 @@ class BillingManager private constructor(private val context: Context) {
 
         Timber.d("Subscription status refreshed: ${PrefsManager.isSubscribed(context)}")
     }
+    
 
     /**
      * Initialize the appropriate billing provider based on device with improved detection

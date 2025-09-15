@@ -42,7 +42,10 @@
       "Bash(git push:*)",
       "Bash(git remote add:*)",
       "Bash(git pull:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "WebFetch(domain:qwinai-server-production.up.railway.app)",
+      "Bash(\"C:/Users/Catalin/AppData/Local/Android/Sdk/platform-tools/adb.exe\" devices)",
+      "Bash(git stash:*)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits",
