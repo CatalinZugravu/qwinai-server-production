@@ -31,24 +31,38 @@ android {
             generatedDensities()
         }
 
-        // BuildConfig fields
-        buildConfigField("String", "AIMLAPI_KEY", "\"${project.property("AIMLAPI_KEY")}\"")
-        buildConfigField("String", "TOGETHER_AI_KEY", "\"${project.property("TOGETHER_AI_KEY")}\"")
-        buildConfigField("String", "GOOGLE_API_KEY", "\"${project.property("GOOGLE_API_KEY")}\"")
-        buildConfigField("String", "GOOGLE_SEARCH_ENGINE_ID", "\"${project.property("GOOGLE_SEARCH_ENGINE_ID")}\"")
-        buildConfigField("String", "WEATHER_API_KEY", "\"${project.property("WEATHER_API_KEY")}\"")
+        // BuildConfig fields - use safe property access for server compatibility
+        buildConfigField("String", "AIMLAPI_KEY", "\"${project.findProperty("AIMLAPI_KEY") ?: ""}\"")
+        buildConfigField("String", "TOGETHER_AI_KEY", "\"${project.findProperty("TOGETHER_AI_KEY") ?: ""}\"")
+        buildConfigField("String", "GOOGLE_API_KEY", "\"${project.findProperty("GOOGLE_API_KEY") ?: ""}\"")
+        buildConfigField("String", "GOOGLE_SEARCH_ENGINE_ID", "\"${project.findProperty("GOOGLE_SEARCH_ENGINE_ID") ?: ""}\"")
+        buildConfigField("String", "WEATHER_API_KEY", "\"${project.findProperty("WEATHER_API_KEY") ?: ""}\"")
     }
 
     signingConfigs {
-        // Only create release signing config if key file exists
+        // Only create release signing config if key file exists and is accessible
         val keyPath = System.getenv("KEY_PATH") ?: project.findProperty("KEY_PATH")?.toString()
-        if (keyPath != null && file(keyPath).exists()) {
+        var hasValidSigningKey = false
+
+        if (keyPath != null) {
+            try {
+                val keyFile = file(keyPath)
+                if (keyFile.exists()) {
+                    hasValidSigningKey = true
+                }
+            } catch (e: Exception) {
+                println("⚠️ Cannot access signing key path '$keyPath': ${e.message}")
+                hasValidSigningKey = false
+            }
+        }
+
+        if (hasValidSigningKey) {
             create("release") {
                 try {
-                    storeFile = file(keyPath)
-                    storePassword = System.getenv("STORE_PWD") ?: project.property("STORE_PWD").toString()
-                    keyAlias = System.getenv("KEY_ALIAS") ?: project.property("KEY_ALIAS").toString()
-                    keyPassword = System.getenv("KEY_PWD") ?: project.property("KEY_PWD").toString()
+                    storeFile = file(keyPath!!)
+                    storePassword = System.getenv("STORE_PWD") ?: project.findProperty("STORE_PWD")?.toString() ?: ""
+                    keyAlias = System.getenv("KEY_ALIAS") ?: project.findProperty("KEY_ALIAS")?.toString() ?: ""
+                    keyPassword = System.getenv("KEY_PWD") ?: project.findProperty("KEY_PWD")?.toString() ?: ""
                     enableV1Signing = true
                     enableV2Signing = true
                     println("✅ Release signing configured with key: $keyPath")
@@ -57,7 +71,7 @@ android {
                 }
             }
         } else {
-            println("⚠️ Release signing key not found at: $keyPath - will use debug signing only")
+            println("⚠️ No valid signing key found - server will use debug signing only")
         }
     }
 
