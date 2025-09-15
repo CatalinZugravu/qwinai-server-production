@@ -1176,4 +1176,8 @@
     <color name="on_surface_variant">#49454F</color>                   <!-- Text on surface variant -->
     <color name="premium_card_background">@color/md_theme_light_primaryContainer</color>  <!-- Premium card background -->
 
+    <!-- Additional Subscription UI Colors -->
+    <color name="premium_card_stroke">@color/md_theme_light_primary</color>   <!-- Premium card stroke -->
+    <color name="popular_badge_background">@color/accent_gold</color>         <!-- Popular badge background -->
+
 </resources>

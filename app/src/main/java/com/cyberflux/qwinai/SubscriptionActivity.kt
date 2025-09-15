@@ -22,6 +22,10 @@ import com.cyberflux.qwinai.billing.ProductInfo
 import com.cyberflux.qwinai.utils.BaseThemedActivity
 import com.cyberflux.qwinai.utils.HapticManager
 import com.cyberflux.qwinai.utils.PrefsManager
+import com.cyberflux.qwinai.utils.SubscriptionAnalyticsManager
+import com.cyberflux.qwinai.utils.SubscriptionComplianceManager
+import com.cyberflux.qwinai.utils.PurchaseStep
+import com.cyberflux.qwinai.utils.SubscriptionEvent
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
