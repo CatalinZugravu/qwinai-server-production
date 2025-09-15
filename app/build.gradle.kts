@@ -40,37 +40,24 @@ android {
     }
 
     signingConfigs {
-        create("release") {
-            try {
-                val keyPath = System.getenv("KEY_PATH") ?: project.property("KEY_PATH")?.toString()
-                val storePassword = System.getenv("STORE_PWD") ?: project.property("STORE_PWD")?.toString()
-                val keyAlias = System.getenv("KEY_ALIAS") ?: project.property("KEY_ALIAS")?.toString()
-                val keyPassword = System.getenv("KEY_PWD") ?: project.property("KEY_PWD")?.toString()
-
-                if (keyPath != null && file(keyPath).exists()) {
+        // Only create release signing config if key file exists
+        val keyPath = System.getenv("KEY_PATH") ?: project.findProperty("KEY_PATH")?.toString()
+        if (keyPath != null && file(keyPath).exists()) {
+            create("release") {
+                try {
                     storeFile = file(keyPath)
-                    this.storePassword = storePassword
-                    this.keyAlias = keyAlias
-                    this.keyPassword = keyPassword
+                    storePassword = System.getenv("STORE_PWD") ?: project.property("STORE_PWD").toString()
+                    keyAlias = System.getenv("KEY_ALIAS") ?: project.property("KEY_ALIAS").toString()
+                    keyPassword = System.getenv("KEY_PWD") ?: project.property("KEY_PWD").toString()
                     enableV1Signing = true
                     enableV2Signing = true
                     println("✅ Release signing configured with key: $keyPath")
-                } else {
-                    println("⚠️ Release signing key not found, will use debug signing")
-                    // Use default debug signing
-                    storeFile = null
-                    storePassword = null
-                    keyAlias = null
-                    keyPassword = null
+                } catch (e: Exception) {
+                    println("⚠️ Release signing setup failed: ${e.message}")
                 }
-            } catch (e: Exception) {
-                println("⚠️ Release signing configuration failed: ${e.message}, using debug signing")
-                // Fallback to debug signing values
-                storeFile = null
-                storePassword = null
-                keyAlias = null
-                keyPassword = null
             }
+        } else {
+            println("⚠️ Release signing key not found at: $keyPath - will use debug signing only")
         }
     }
 
@@ -85,12 +72,12 @@ android {
             )
 
             signingConfig = try {
-                val keyPath = System.getenv("KEY_PATH") ?: project.property("KEY_PATH")?.toString()
-                if (keyPath != null && file(keyPath).exists()) {
+                // Check if release signing config exists
+                signingConfigs.findByName("release")?.let { releaseConfig ->
                     println("🔑 Using release signing for build")
-                    signingConfigs.getByName("release")
-                } else {
-                    println("🔧 Using debug signing for build (no release key found)")
+                    releaseConfig
+                } ?: run {
+                    println("🔧 Using debug signing for build (no release config available)")
                     signingConfigs.getByName("debug")
                 }
             } catch (e: Exception) {
