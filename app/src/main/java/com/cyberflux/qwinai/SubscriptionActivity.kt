@@ -11,7 +11,6 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.AppCompatButton
 import androidx.cardview.widget.CardView
 import androidx.core.content.ContextCompat
@@ -23,9 +22,9 @@ import com.cyberflux.qwinai.utils.BaseThemedActivity
 import com.cyberflux.qwinai.utils.HapticManager
 import com.cyberflux.qwinai.utils.PrefsManager
 import com.cyberflux.qwinai.utils.SubscriptionAnalyticsManager
-import com.cyberflux.qwinai.utils.SubscriptionComplianceManager
 import com.cyberflux.qwinai.utils.PurchaseStep
 import com.cyberflux.qwinai.utils.SubscriptionEvent
+import com.cyberflux.qwinai.utils.SubscriptionComplianceManager
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -76,10 +75,10 @@ class SubscriptionActivity : BaseThemedActivity() {
         
         // Track subscription screen view for analytics
         val source = intent.getStringExtra("source") ?: "unknown"
-        SubscriptionAnalyticsManager.trackSubscriptionScreenView(this, source)
+        SubscriptionAnalyticsManager.trackSubscriptionScreenView(this)
         SubscriptionAnalyticsManager.trackPurchaseFunnel(
-            this, 
-            SubscriptionAnalyticsManager.PurchaseStep.SUBSCRIPTION_SCREEN_VIEWED, 
+            this,
+            PurchaseStep.SCREEN_VIEWED,
             "all_plans"
         )
         
@@ -452,7 +451,7 @@ class SubscriptionActivity : BaseThemedActivity() {
                 )
                 SubscriptionAnalyticsManager.trackPurchaseFunnel(
                     this@SubscriptionActivity,
-                    SubscriptionAnalyticsManager.PurchaseStep.PLAN_SELECTED,
+                    PurchaseStep.PLAN_SELECTED,
                     product.productId
                 )
                 
@@ -484,24 +483,32 @@ class SubscriptionActivity : BaseThemedActivity() {
         // Track disclosure step
         SubscriptionAnalyticsManager.trackPurchaseFunnel(
             this,
-            SubscriptionAnalyticsManager.PurchaseStep.DISCLOSURE_SHOWN,
+            PurchaseStep.DISCLOSURE_SHOWN,
             product.productId
         )
         
-        SubscriptionComplianceManager.showSubscriptionDisclosure(
-            context = this,
-            productId = product.productId,
-            price = product.price,
-            billingPeriod = billingPeriod,
-            onAccept = {
+        SubscriptionComplianceManager.showSubscriptionDisclosure(this) { disclosureAccepted ->
+            if (disclosureAccepted) {
                 SubscriptionAnalyticsManager.trackPurchaseFunnel(
                     this,
-                    SubscriptionAnalyticsManager.PurchaseStep.DISCLOSURE_ACCEPTED,
+                    PurchaseStep.DISCLOSURE_ACCEPTED,
+                    product.productId
+                )
+                SubscriptionAnalyticsManager.trackPurchaseFunnel(
+                    this,
+                    PurchaseStep.PURCHASE_INITIATED,
                     product.productId
                 )
                 proceedWithPurchase(product)
+            } else {
+                SubscriptionAnalyticsManager.trackPurchaseFunnel(
+                    this,
+                    PurchaseStep.PURCHASE_CANCELLED,
+                    product.productId,
+                    mapOf("reason" to "disclosure_rejected")
+                )
             }
-        )
+        }
     }
     
     private fun proceedWithPurchase(product: ProductInfo) {
@@ -512,7 +519,7 @@ class SubscriptionActivity : BaseThemedActivity() {
             // Track billing flow start
             SubscriptionAnalyticsManager.trackPurchaseFunnel(
                 this,
-                SubscriptionAnalyticsManager.PurchaseStep.BILLING_FLOW_STARTED,
+                PurchaseStep.BILLING_FLOW_STARTED,
                 product.productId
             )
             
@@ -524,7 +531,7 @@ class SubscriptionActivity : BaseThemedActivity() {
                     isProcessingPurchase = false
                     SubscriptionAnalyticsManager.trackPurchaseFunnel(
                         this,
-                        SubscriptionAnalyticsManager.PurchaseStep.PURCHASE_FAILED,
+                        PurchaseStep.PURCHASE_FAILED,
                         product.productId,
                         mapOf("reason" to "timeout")
                     )
@@ -537,7 +544,7 @@ class SubscriptionActivity : BaseThemedActivity() {
             
             SubscriptionAnalyticsManager.trackPurchaseFunnel(
                 this,
-                SubscriptionAnalyticsManager.PurchaseStep.PURCHASE_FAILED,
+                PurchaseStep.PURCHASE_FAILED,
                 product.productId,
                 mapOf("reason" to "billing_flow_error", "error" to e.message.orEmpty())
             )
@@ -650,18 +657,18 @@ class SubscriptionActivity : BaseThemedActivity() {
                 val subscriptionType = PrefsManager.getSubscriptionType(this) ?: "unknown"
                 SubscriptionAnalyticsManager.trackPurchaseFunnel(
                     this,
-                    SubscriptionAnalyticsManager.PurchaseStep.PURCHASE_COMPLETED,
+                    PurchaseStep.PURCHASE_COMPLETED,
                     subscriptionType
                 )
                 SubscriptionAnalyticsManager.trackSubscriptionEvent(
                     this,
-                    SubscriptionAnalyticsManager.SubscriptionEvent.SUBSCRIPTION_STARTED,
+                    SubscriptionEvent.SUBSCRIPTION_STARTED,
                     mapOf("plan" to subscriptionType)
                 )
             } else {
                 SubscriptionAnalyticsManager.trackPurchaseFunnel(
                     this,
-                    SubscriptionAnalyticsManager.PurchaseStep.PURCHASE_FAILED,
+                    PurchaseStep.PURCHASE_FAILED,
                     "unknown",
                     mapOf("reason" to "user_cancelled_or_failed")
                 )

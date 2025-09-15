@@ -358,6 +358,9 @@ dependencies {
     implementation(libs.timber)
     implementation(libs.mathparser.org.mxparser)
 
+    // CSV Processing
+    implementation("com.opencsv:opencsv:5.9")
+
     // ====================
     // TESTING
     // ====================

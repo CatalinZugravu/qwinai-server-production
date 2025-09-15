@@ -1,8 +1,10 @@
 package com.cyberflux.qwinai.utils
 
+import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import timber.log.Timber
 
 /**
@@ -38,11 +40,39 @@ object SubscriptionComplianceManager {
     }
 
     /**
-     * Show subscription disclosure information
+     * Show subscription disclosure dialog with callback
      */
-    fun showSubscriptionDisclosure(context: Context) {
+    fun showSubscriptionDisclosure(context: Context, onResult: (Boolean) -> Unit) {
         Timber.tag(TAG).d("📋 Showing subscription disclosure")
-        // TODO: Implement subscription disclosure dialog
+
+        try {
+            val builder = AlertDialog.Builder(context)
+                .setTitle("Subscription Terms")
+                .setMessage("""
+                    By subscribing, you agree to:
+
+                    • Automatic renewal until cancelled
+                    • Payment will be charged to your account
+                    • Cancel anytime in your account settings
+                    • No refunds for partial periods
+
+                    View our Terms of Service and Privacy Policy for complete details.
+                """.trimIndent())
+                .setPositiveButton("Accept & Continue") { _, _ ->
+                    Timber.tag(TAG).d("✅ User accepted subscription disclosure")
+                    onResult(true)
+                }
+                .setNegativeButton("Cancel") { _, _ ->
+                    Timber.tag(TAG).d("❌ User rejected subscription disclosure")
+                    onResult(false)
+                }
+                .setCancelable(false)
+
+            builder.show()
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "Error showing subscription disclosure")
+            onResult(false)
+        }
     }
 
     /**
@@ -79,10 +109,19 @@ object SubscriptionComplianceManager {
     }
 
     /**
-     * Show subscription management options
+     * Show subscription management
      */
     fun showSubscriptionManagement(context: Context) {
-        Timber.tag(TAG).d("⚙️ Showing subscription management")
-        // TODO: Implement subscription management interface
+        Timber.tag(TAG).d("⚙️ Opening subscription management")
+
+        try {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                data = Uri.parse("https://play.google.com/store/account/subscriptions")
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "Error opening subscription management")
+            Toast.makeText(context, "Unable to open subscription management", Toast.LENGTH_SHORT).show()
+        }
     }
 }

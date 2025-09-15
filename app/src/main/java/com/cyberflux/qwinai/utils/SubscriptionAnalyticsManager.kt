@@ -10,6 +10,9 @@ enum class PurchaseStep {
     SCREEN_VIEWED,
     PLAN_SELECTED,
     PURCHASE_INITIATED,
+    DISCLOSURE_SHOWN,
+    DISCLOSURE_ACCEPTED,
+    BILLING_FLOW_STARTED,
     PAYMENT_PROCESSING,
     PURCHASE_COMPLETED,
     PURCHASE_FAILED,
@@ -21,6 +24,7 @@ enum class PurchaseStep {
  */
 enum class SubscriptionEvent {
     ACTIVATED,
+    SUBSCRIPTION_STARTED,
     CANCELLED,
     RENEWED,
     EXPIRED,
@@ -58,6 +62,14 @@ object SubscriptionAnalyticsManager {
     }
 
     /**
+     * Track purchase funnel step with additional data
+     */
+    fun trackPurchaseFunnel(context: Context, step: PurchaseStep, planId: String? = null, data: Map<String, String>) {
+        Timber.tag(TAG).d("📊 Purchase funnel: $step for plan: $planId with data: $data")
+        // TODO: Implement analytics tracking
+    }
+
+    /**
      * Track plan interaction
      */
     fun trackPlanInteraction(context: Context, planId: String, action: String) {
@@ -70,6 +82,14 @@ object SubscriptionAnalyticsManager {
      */
     fun trackSubscriptionEvent(context: Context, event: SubscriptionEvent, planId: String? = null) {
         Timber.tag(TAG).d("📊 Subscription event: $event for plan: $planId")
+        // TODO: Implement analytics tracking
+    }
+
+    /**
+     * Track subscription event with additional data
+     */
+    fun trackSubscriptionEvent(context: Context, event: SubscriptionEvent, data: Map<String, String>) {
+        Timber.tag(TAG).d("📊 Subscription event: $event with data: $data")
         // TODO: Implement analytics tracking
     }
 

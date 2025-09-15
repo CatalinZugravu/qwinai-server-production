@@ -43,12 +43,12 @@ object DynamicColorManager {
             val accentColorStateList = ColorStateList.valueOf(accentColor)
 
             // Apply to MaterialButtons
-            findViewsByType<MaterialButton>(viewGroup).forEach { button ->
+            findViewsByType(viewGroup, MaterialButton::class.java).forEach { button ->
                 button.backgroundTintList = accentColorStateList
             }
 
             // Apply to FloatingActionButtons
-            findViewsByType<FloatingActionButton>(viewGroup).forEach { fab ->
+            findViewsByType(viewGroup, FloatingActionButton::class.java).forEach { fab ->
                 fab.backgroundTintList = accentColorStateList
             }
 
@@ -106,18 +106,77 @@ object DynamicColorManager {
     }
 
     /**
+     * Apply safe accent colors to an activity (non-intrusive approach)
+     */
+    fun applySafeAccentColorsToActivity(activity: Activity) {
+        try {
+            val rootView = activity.findViewById<ViewGroup>(android.R.id.content)
+            if (rootView != null) {
+                applyAccentColorToCommonElements(activity, rootView)
+                Timber.tag(TAG).d("Applied safe accent colors to activity: ${activity.javaClass.simpleName}")
+            }
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "Error applying safe accent colors to activity")
+        }
+    }
+
+    /**
+     * Update card selection state with dynamic accent colors
+     */
+    fun updateCardSelectionState(context: Context, cardView: View, isSelected: Boolean) {
+        try {
+            val accentColor = ThemeManager.getCurrentAccentColor(context)
+
+            when (cardView) {
+                is androidx.cardview.widget.CardView -> {
+                    if (isSelected) {
+                        cardView.setCardBackgroundColor(accentColor)
+                        // Note: androidx.cardview.widget.CardView doesn't support stroke properties
+                        // Consider using MaterialCardView for stroke support
+                    } else {
+                        cardView.setCardBackgroundColor(ContextCompat.getColor(context, R.color.md_theme_light_surface))
+                    }
+                }
+                is com.google.android.material.card.MaterialCardView -> {
+                    if (isSelected) {
+                        cardView.setCardBackgroundColor(accentColor)
+                        cardView.strokeColor = accentColor
+                        cardView.strokeWidth = 4
+                    } else {
+                        cardView.setCardBackgroundColor(ContextCompat.getColor(context, R.color.md_theme_light_surface))
+                        cardView.strokeColor = ContextCompat.getColor(context, R.color.md_theme_light_outline)
+                        cardView.strokeWidth = 1
+                    }
+                }
+                else -> {
+                    // Generic approach for other view types
+                    if (isSelected) {
+                        cardView.backgroundTintList = ColorStateList.valueOf(accentColor)
+                    } else {
+                        cardView.backgroundTintList = ColorStateList.valueOf(
+                            ContextCompat.getColor(context, R.color.md_theme_light_surface)
+                        )
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "Error updating card selection state")
+        }
+    }
+
+    /**
      * Find all views of a specific type in a ViewGroup
      */
-    private inline fun <reified T : View> findViewsByType(viewGroup: ViewGroup): List<T> {
+    private fun <T : View> findViewsByType(viewGroup: ViewGroup, clazz: Class<T>): List<T> {
         val result = mutableListOf<T>()
 
         for (i in 0 until viewGroup.childCount) {
             val child = viewGroup.getChildAt(i)
 
-            if (child is T) {
-                result.add(child)
+            if (clazz.isInstance(child)) {
+                result.add(child as T)
             } else if (child is ViewGroup) {
-                result.addAll(findViewsByType<T>(child))
+                result.addAll(findViewsByType(child, clazz))
             }
         }
 
