@@ -1,0 +1,29 @@
+# Exclude Android app and build files
+app/
+.gradle/
+build/
+.kotlin/
+*.apk
+*.aab
+
+# Exclude development files
+node_modules/
+.git/
+.gitignore
+README.md
+*.md
+
+# Exclude logs and temporary files
+*.log
+uploads/
+temp/
+
+# Exclude IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Exclude OS files
+.DS_Store
+Thumbs.db
