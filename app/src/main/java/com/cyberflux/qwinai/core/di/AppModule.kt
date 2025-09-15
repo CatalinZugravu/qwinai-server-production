@@ -6,7 +6,6 @@ import androidx.room.Room
 import com.cyberflux.qwinai.database.AppDatabase
 import com.cyberflux.qwinai.network.AimlApiService
 import com.cyberflux.qwinai.network.RetrofitInstance
-import com.cyberflux.qwinai.utils.SimplifiedDocumentExtractor
 import com.cyberflux.qwinai.network.OCRApiService
 import dagger.Module
 import dagger.Provides
@@ -51,11 +50,6 @@ object AppModule {
         return RetrofitInstance.createOCRApiService()
     }
 
-    @Provides
-    @Singleton
-    fun provideDocumentContentExtractor(@ApplicationContext context: Context): SimplifiedDocumentExtractor {
-        return SimplifiedDocumentExtractor(context)
-    }
 
 
 }

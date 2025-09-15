@@ -91,6 +91,9 @@
     <color name="token_warning_color">#FF9800</color>                <!-- Orange warning -->
     <color name="token_info_color">#2196F3</color>                   <!-- Blue info -->
     <color name="token_text_color">#212121</color>                   <!-- Default text -->
+
+    <!-- Accent element color for UI elements -->
+    <color name="accent_element">@color/md_theme_light_primary</color>  <!-- Dynamic accent element -->
     
     <!-- =============================================================== -->
     <!-- SKELETON LOADING COLORS                                        -->
