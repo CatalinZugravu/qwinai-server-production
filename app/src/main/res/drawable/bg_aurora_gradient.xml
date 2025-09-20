@@ -1,7 +1,0 @@
-<shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <gradient
-        android:startColor="@color/aurora_gradient_start"
-        android:centerColor="@color/aurora_gradient_mid"
-        android:endColor="@color/aurora_gradient_end"
-        android:angle="135"/>
-</shape>

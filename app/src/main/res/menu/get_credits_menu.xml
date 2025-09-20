@@ -1,8 +1,0 @@
-<menu xmlns:android="http://schemas.android.com/apk/res/android">
-    <item
-        android:id="@+id/menu_get_unlimited_credits"
-        android:title="@string/get_unlimited_credits" />
-    <item
-        android:id="@+id/menu_watch_ad_1"
-        android:title="@string/watch_an_ad" />
-</menu>
