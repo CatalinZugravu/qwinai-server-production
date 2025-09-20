@@ -202,9 +202,9 @@ class FileExtractor {
         console.log(`📝 [${extractionId}] Processing DOCX...`);
         
         // Validate DOCX file signature (ZIP header)
-        const buffer = await fs.readFile(filePath, { start: 0, end: 4 });
+        const buffer = await fs.readFile(filePath, { length: 4 });
         const zipSignature = [0x50, 0x4B, 0x03, 0x04]; // PK..
-        const fileSignature = Array.from(buffer);
+        const fileSignature = Array.from(buffer.slice(0, 4));
         
         if (!zipSignature.every((byte, index) => byte === fileSignature[index])) {
             throw new Error('Invalid DOCX file signature - file may be corrupted or not a valid DOCX');
