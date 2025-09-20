@@ -1,656 +1,696 @@
+// ==================== DATABASE SCHEMA ====================
+/*
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    user_uuid UUID DEFAULT gen_random_uuid() UNIQUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE device_fingerprints (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    fingerprint_hash VARCHAR(64) UNIQUE NOT NULL,
+    android_id VARCHAR(64),
+    google_ad_id VARCHAR(64),
+    huawei_oaid VARCHAR(64),
+    device_model VARCHAR(128),
+    device_brand VARCHAR(64),
+    android_version VARCHAR(32),
+    app_version VARCHAR(16),
+    screen_resolution VARCHAR(32),
+    timezone VARCHAR(64),
+    language VARCHAR(16),
+    country VARCHAR(8),
+    carrier VARCHAR(64),
+    total_ram BIGINT,
+    cpu_cores INTEGER,
+    first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    trust_score DECIMAL(3,2) DEFAULT 1.00,
+    is_suspicious BOOLEAN DEFAULT FALSE
+);
+
+CREATE TABLE user_states (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) NOT NULL,
+    credits_chat_daily INTEGER DEFAULT 0,
+    credits_image_daily INTEGER DEFAULT 0,
+    credits_chat_bonus INTEGER DEFAULT 0,
+    credits_image_bonus INTEGER DEFAULT 0,
+    model_usage JSONB DEFAULT '{}',
+    daily_reset_date DATE DEFAULT CURRENT_DATE,
+    subscription_type VARCHAR(32),
+    subscription_end_time BIGINT DEFAULT 0,
+    subscription_platform VARCHAR(32),
+    weekly_ad_credits INTEGER DEFAULT 0,
+    total_ads_watched INTEGER DEFAULT 0,
+    last_ad_timestamp BIGINT DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE usage_history (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    action_type VARCHAR(32),
+    credits_used INTEGER,
+    model_name VARCHAR(64),
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    device_fingerprint_id INTEGER REFERENCES device_fingerprints(id),
+    ip_address INET,
+    session_id VARCHAR(64)
+);
+
+CREATE TABLE fraud_events (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    event_type VARCHAR(64),
+    severity VARCHAR(16),
+    details JSONB,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_fingerprint_hash ON device_fingerprints(fingerprint_hash);
+CREATE INDEX idx_user_states_user_id ON user_states(user_id);
+CREATE INDEX idx_usage_history_user_timestamp ON usage_history(user_id, timestamp);
+*/
+
+const crypto = require('crypto');
 const express = require('express');
-const { body, param, validationResult } = require('express-validator');
 const router = express.Router();
 
-// Enhanced validation middleware
-const validateDeviceId = param('deviceId')
-    .isLength({ min: 16, max: 32 })
-    .matches(/^[a-zA-Z0-9]+$/)
-    .withMessage('Invalid device ID format');
-
-const validateUserState = [
-    body('deviceFingerprint').isLength({ min: 10, max: 500 }).withMessage('Invalid device fingerprint'),
-    body('creditsConsumedTodayChat').isInt({ min: 0, max: 500 }).withMessage('Invalid chat credits'),
-    body('creditsConsumedTodayImage').isInt({ min: 0, max: 200 }).withMessage('Invalid image credits'),
-    body('hasActiveSubscription').isBoolean().withMessage('Invalid subscription status'),
-    body('subscriptionType').optional().isString().isLength({ max: 50 }),
-    body('subscriptionEndTime').optional().isInt({ min: 0 }),
-    body('appVersion').isString().isLength({ min: 1, max: 10 }).withMessage('Invalid app version'),
-    body('date').matches(/^\d{4}-\d{2}-\d{2}$/).withMessage('Invalid date format')
-];
-
-// Security middleware for validation errors
-const handleValidationErrors = (req, res, next) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        console.warn(`⚠️ Validation errors for ${req.ip}: ${JSON.stringify(errors.array())}`);
-        return res.status(400).json({
-            error: 'Validation failed',
-            details: errors.array()
-        });
+// ==================== CONFIGURATION ====================
+const CONFIG = {
+    DAILY_LIMITS: {
+        FREE: {
+            chat: 10,
+            image: 3,
+            models: {
+                'gpt-3.5': 10,
+                'gpt-4': 2,
+                'claude': 3,
+                'dalle': 3
+            }
+        },
+        WEEKLY_SUB: {
+            chat: 100,
+            image: 30,
+            models: {
+                'gpt-3.5': 100,
+                'gpt-4': 20,
+                'claude': 30,
+                'dalle': 30
+            }
+        },
+        MONTHLY_SUB: {
+            chat: 500,
+            image: 150,
+            models: {
+                'gpt-3.5': 500,
+                'gpt-4': 100,
+                'claude': 150,
+                'dalle': 150
+            }
+        }
+    },
+    AD_REWARDS: {
+        chat: 2,
+        image: 1,
+        dailyLimit: 10,
+        cooldownMinutes: 30
+    },
+    FRAUD_THRESHOLDS: {
+        maxDailyReinstalls: 3,
+        maxWeeklyReinstalls: 10,
+        suspiciousPatternScore: 0.7,
+        rapidConsumptionMinutes: 5,
+        maxDevicesPerUser: 5
     }
-    next();
 };
 
-// Rate limiting for suspicious activity
-const suspiciousActivityCheck = (req, res, next) => {
-    const userState = req.body;
-    const { deviceId } = req.params;
-    
-    // Check for unrealistic consumption patterns
-    if (userState && (userState.creditsConsumedTodayChat > 300 || userState.creditsConsumedTodayImage > 150)) {
-        console.log(`🚨 SECURITY ALERT: Suspicious activity from device ${deviceId} IP ${req.ip}`);
-        req.monitoring?.recordSecurityEvent('SUSPICIOUS_CREDIT_CONSUMPTION', {
-            deviceId,
-            ip: req.ip,
-            chatCredits: userState.creditsConsumedTodayChat,
-            imageCredits: userState.creditsConsumedTodayImage
-        });
+// ==================== FINGERPRINTING ENGINE ====================
+class DeviceFingerprinter {
+    static generateFingerprint(deviceData) {
+        // Create a stable fingerprint from multiple device characteristics
+        const components = [
+            deviceData.androidId || '',
+            deviceData.googleAdId || deviceData.huaweiOaid || '',
+            deviceData.deviceModel || '',
+            deviceData.deviceBrand || '',
+            deviceData.screenResolution || '',
+            deviceData.totalRam ? Math.floor(deviceData.totalRam / 100000000) : '', // Round to 100MB
+            deviceData.cpuCores || '',
+            deviceData.timezone || '',
+            deviceData.language || ''
+        ];
         
-        return res.status(429).json({
-            error: 'Unusual activity detected. Account temporarily restricted.',
-            message: 'If this is an error, please contact support.',
-            retryAfter: 3600 // 1 hour
-        });
+        const fingerprintString = components.join('|');
+        return crypto.createHash('sha256').update(fingerprintString).digest('hex');
     }
-    next();
-};
 
-// Get user state with enhanced security
-router.get('/:deviceId', validateDeviceId, handleValidationErrors, async (req, res) => {
-    const startTime = Date.now();
-    try {
-        const { deviceId } = req.params;
-        const { fingerprint } = req.query; // Get fingerprint from query params
+    static calculateSimilarity(fp1, fp2) {
+        // Calculate similarity score between two fingerprints
+        let matches = 0;
+        const fields = ['device_model', 'device_brand', 'screen_resolution', 'timezone', 'language', 'total_ram', 'cpu_cores'];
         
-        console.log(`🔍 [${req.ip}] Getting user state for device: ${deviceId}`);
-        console.log(`🔍 Device fingerprint: ${fingerprint ? fingerprint.substring(0, 8) + '...' : 'not provided'}`);
-        req.monitoring?.recordRequest('GET_USER_STATE', { deviceId, ip: req.ip });
+        for (const field of fields) {
+            if (fp1[field] && fp2[field] && fp1[field] === fp2[field]) {
+                matches++;
+            }
+        }
+        
+        return matches / fields.length;
+    }
+}
 
-        // Step 1: Check by device_id (existing behavior)
-        let existingUser = await req.db.query(
-            'SELECT device_id, device_fingerprint FROM user_states WHERE device_id = $1',
-            [deviceId]
-        );
+// ==================== FRAUD DETECTION ====================
+class FraudDetector {
+    static async checkForFraud(db, userId, deviceData, action) {
+        const fraudIndicators = [];
+        
+        // Check reinstall frequency
+        const recentDevices = await db.query(`
+            SELECT COUNT(DISTINCT fingerprint_hash) as device_count,
+                   MAX(first_seen) as latest_device
+            FROM device_fingerprints
+            WHERE user_id = $1
+                AND first_seen > NOW() - INTERVAL '24 hours'
+        `, [userId]);
+        
+        if (recentDevices.rows[0].device_count > CONFIG.FRAUD_THRESHOLDS.maxDailyReinstalls) {
+            fraudIndicators.push({
+                type: 'EXCESSIVE_REINSTALLS',
+                severity: 'HIGH',
+                detail: `${recentDevices.rows[0].device_count} devices in 24h`
+            });
+        }
+        
+        // Check rapid credit consumption
+        const recentUsage = await db.query(`
+            SELECT SUM(credits_used) as total_credits,
+                   COUNT(*) as action_count
+            FROM usage_history
+            WHERE user_id = $1
+                AND timestamp > NOW() - INTERVAL '5 minutes'
+        `, [userId]);
+        
+        if (recentUsage.rows[0].action_count > 20) {
+            fraudIndicators.push({
+                type: 'RAPID_CONSUMPTION',
+                severity: 'MEDIUM',
+                detail: `${recentUsage.rows[0].action_count} actions in 5 minutes`
+            });
+        }
+        
+        // Check for device spoofing patterns
+        const similarDevices = await db.query(`
+            SELECT fingerprint_hash, android_id, google_ad_id, device_model
+            FROM device_fingerprints
+            WHERE user_id = $1
+                AND last_seen > NOW() - INTERVAL '7 days'
+        `, [userId]);
+        
+        if (similarDevices.rows.length > CONFIG.FRAUD_THRESHOLDS.maxDevicesPerUser) {
+            fraudIndicators.push({
+                type: 'MULTIPLE_DEVICES',
+                severity: 'MEDIUM',
+                detail: `${similarDevices.rows.length} different devices`
+            });
+        }
+        
+        // Log fraud events
+        for (const indicator of fraudIndicators) {
+            await db.query(`
+                INSERT INTO fraud_events (user_id, event_type, severity, details)
+                VALUES ($1, $2, $3, $4)
+            `, [userId, indicator.type, indicator.severity, JSON.stringify(indicator)]);
+        }
+        
+        return {
+            isSuspicious: fraudIndicators.length > 0,
+            indicators: fraudIndicators,
+            trustScore: Math.max(0, 1 - (fraudIndicators.length * 0.25))
+        };
+    }
+}
 
-        let userFound = false;
-        let userRecord = null;
-
-        if (existingUser.rows.length > 0) {
-            // Found by device_id
-            userRecord = existingUser.rows[0];
-            userFound = true;
-            console.log(`✅ User found by device_id: ${deviceId}`);
-        } else if (fingerprint && fingerprint.length >= 8) {
-            // Step 2: Check by device fingerprint (CRITICAL: prevents credit abuse on reinstall)
-            console.log(`🔍 Device_id not found, checking by fingerprint: ${fingerprint.substring(0, 8)}...`);
+// ==================== USER MANAGEMENT ====================
+class UserManager {
+    static async findOrCreateUser(db, deviceData) {
+        const fingerprint = DeviceFingerprinter.generateFingerprint(deviceData);
+        
+        // Try to find existing user by fingerprint
+        let userResult = await db.query(`
+            SELECT u.*, df.trust_score, df.is_suspicious
+            FROM device_fingerprints df
+            JOIN users u ON df.user_id = u.id
+            WHERE df.fingerprint_hash = $1
+            ORDER BY df.last_seen DESC
+            LIMIT 1
+        `, [fingerprint]);
+        
+        if (userResult.rows.length > 0) {
+            // Update last seen
+            await db.query(`
+                UPDATE device_fingerprints
+                SET last_seen = CURRENT_TIMESTAMP,
+                    app_version = $2
+                WHERE fingerprint_hash = $1
+            `, [fingerprint, deviceData.appVersion]);
             
-            const fingerprintUser = await req.db.query(
-                'SELECT device_id, device_fingerprint FROM user_states WHERE device_fingerprint = $1',
-                [fingerprint]
-            );
+            return userResult.rows[0];
+        }
+        
+        // Try to find by advertising ID (more persistent)
+        if (deviceData.googleAdId || deviceData.huaweiOaid) {
+            const adId = deviceData.googleAdId || deviceData.huaweiOaid;
+            userResult = await db.query(`
+                SELECT DISTINCT u.*, df.trust_score
+                FROM device_fingerprints df
+                JOIN users u ON df.user_id = u.id
+                WHERE df.google_ad_id = $1 OR df.huawei_oaid = $1
+                ORDER BY df.last_seen DESC
+                LIMIT 1
+            `, [adId]);
+            
+            if (userResult.rows.length > 0) {
+                // Add new fingerprint to existing user
+                await this.addDeviceFingerprint(db, userResult.rows[0].id, deviceData, fingerprint);
+                return userResult.rows[0];
+            }
+        }
+        
+        // Check for similar devices (fuzzy matching)
+        const similarDevice = await this.findSimilarDevice(db, deviceData);
+        if (similarDevice && similarDevice.similarity > 0.8) {
+            // High similarity - likely same user
+            await this.addDeviceFingerprint(db, similarDevice.user_id, deviceData, fingerprint);
+            return await db.query('SELECT * FROM users WHERE id = $1', [similarDevice.user_id]).then(r => r.rows[0]);
+        }
+        
+        // Create new user
+        const newUser = await db.query(`
+            INSERT INTO users DEFAULT VALUES
+            RETURNING *
+        `);
+        
+        await this.addDeviceFingerprint(db, newUser.rows[0].id, deviceData, fingerprint);
+        
+        // Initialize user state
+        await db.query(`
+            INSERT INTO user_states (user_id) VALUES ($1)
+        `, [newUser.rows[0].id]);
+        
+        return newUser.rows[0];
+    }
+    
+    static async addDeviceFingerprint(db, userId, deviceData, fingerprint) {
+        await db.query(`
+            INSERT INTO device_fingerprints (
+                user_id, fingerprint_hash, android_id, google_ad_id, huawei_oaid,
+                device_model, device_brand, android_version, app_version,
+                screen_resolution, timezone, language, country, carrier,
+                total_ram, cpu_cores
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+            ON CONFLICT (fingerprint_hash) DO UPDATE
+            SET last_seen = CURRENT_TIMESTAMP,
+                app_version = EXCLUDED.app_version
+        `, [
+            userId, fingerprint, deviceData.androidId, deviceData.googleAdId, deviceData.huaweiOaid,
+            deviceData.deviceModel, deviceData.deviceBrand, deviceData.androidVersion, deviceData.appVersion,
+            deviceData.screenResolution, deviceData.timezone, deviceData.language, deviceData.country,
+            deviceData.carrier, deviceData.totalRam, deviceData.cpuCores
+        ]);
+    }
+    
+    static async findSimilarDevice(db, deviceData) {
+        const candidates = await db.query(`
+            SELECT * FROM device_fingerprints
+            WHERE (device_model = $1 OR device_brand = $2)
+                AND last_seen > NOW() - INTERVAL '30 days'
+        `, [deviceData.deviceModel, deviceData.deviceBrand]);
+        
+        let bestMatch = null;
+        let maxSimilarity = 0;
+        
+        for (const candidate of candidates.rows) {
+            const similarity = DeviceFingerprinter.calculateSimilarity(candidate, deviceData);
+            if (similarity > maxSimilarity) {
+                maxSimilarity = similarity;
+                bestMatch = candidate;
+            }
+        }
+        
+        return bestMatch ? { ...bestMatch, similarity: maxSimilarity } : null;
+    }
+}
 
-            if (fingerprintUser.rows.length > 0) {
-                userRecord = fingerprintUser.rows[0];
-                userFound = true;
-                
-                console.log(`🔒 IMPORTANT: User found by fingerprint! This is a reinstall scenario.`);
-                console.log(`🔒 Previous device_id: ${userRecord.device_id} → New device_id: ${deviceId}`);
-                
-                // Update the device_id to the new one (user reinstalled app)
-                await req.db.query(
-                    'UPDATE user_states SET device_id = $1, updated_at = CURRENT_TIMESTAMP WHERE device_fingerprint = $2',
-                    [deviceId, fingerprint]
-                );
-                
-                console.log(`✅ Updated device_id from ${userRecord.device_id} to ${deviceId} for fingerprint ${fingerprint.substring(0, 8)}...`);
-                req.monitoring?.recordEvent('DEVICE_ID_UPDATED_ON_REINSTALL', { 
-                    oldDeviceId: userRecord.device_id, 
-                    newDeviceId: deviceId, 
-                    fingerprint: fingerprint.substring(0, 8) 
+// ==================== API ENDPOINTS ====================
+
+// Get user state
+router.post('/state', async (req, res) => {
+    try {
+        const deviceData = req.body;
+        
+        // Validate device data
+        if (!deviceData.deviceModel || !deviceData.deviceBrand) {
+            return res.status(400).json({ error: 'Incomplete device information' });
+        }
+        
+        // Find or create user
+        const user = await UserManager.findOrCreateUser(req.db, deviceData);
+        
+        // Check for fraud
+        const fraudCheck = await FraudDetector.checkForFraud(req.db, user.id, deviceData, 'STATE_CHECK');
+        
+        // Get current state
+        const stateResult = await req.db.query(`
+            SELECT * FROM user_states WHERE user_id = $1
+        `, [user.id]);
+        
+        let state = stateResult.rows[0];
+        
+        // Reset daily credits if needed
+        const today = new Date().toISOString().split('T')[0];
+        if (!state || state.daily_reset_date !== today) {
+            const limits = state?.subscription_type === 'weekly' ? CONFIG.DAILY_LIMITS.WEEKLY_SUB :
+                          state?.subscription_type === 'monthly' ? CONFIG.DAILY_LIMITS.MONTHLY_SUB :
+                          CONFIG.DAILY_LIMITS.FREE;
+            
+            await req.db.query(`
+                UPDATE user_states
+                SET credits_chat_daily = 0,
+                    credits_image_daily = 0,
+                    model_usage = '{}',
+                    daily_reset_date = $2,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = $1
+            `, [user.id, today]);
+            
+            state = await req.db.query('SELECT * FROM user_states WHERE user_id = $1', [user.id]).then(r => r.rows[0]);
+        }
+        
+        // Calculate available credits
+        const limits = state.subscription_type === 'weekly' ? CONFIG.DAILY_LIMITS.WEEKLY_SUB :
+                      state.subscription_type === 'monthly' ? CONFIG.DAILY_LIMITS.MONTHLY_SUB :
+                      CONFIG.DAILY_LIMITS.FREE;
+        
+        res.json({
+            userId: user.user_uuid,
+            credits: {
+                chat: {
+                    used: state.credits_chat_daily,
+                    limit: limits.chat,
+                    bonus: state.credits_chat_bonus,
+                    available: limits.chat - state.credits_chat_daily + state.credits_chat_bonus
+                },
+                image: {
+                    used: state.credits_image_daily,
+                    limit: limits.image,
+                    bonus: state.credits_image_bonus,
+                    available: limits.image - state.credits_image_daily + state.credits_image_bonus
+                }
+            },
+            modelUsage: state.model_usage || {},
+            modelLimits: limits.models,
+            subscription: {
+                active: !!state.subscription_type,
+                type: state.subscription_type,
+                endTime: state.subscription_end_time,
+                platform: state.subscription_platform
+            },
+            ads: {
+                watchedToday: state.weekly_ad_credits,
+                dailyLimit: CONFIG.AD_REWARDS.dailyLimit,
+                nextAvailable: state.last_ad_timestamp ? 
+                    state.last_ad_timestamp + (CONFIG.AD_REWARDS.cooldownMinutes * 60000) : 0
+            },
+            security: {
+                trustScore: fraudCheck.trustScore,
+                isRestricted: fraudCheck.isSuspicious
+            }
+        });
+        
+    } catch (error) {
+        console.error('State retrieval error:', error);
+        res.status(500).json({ error: 'Failed to get user state' });
+    }
+});
+
+// Consume credits
+router.post('/consume', async (req, res) => {
+    const client = await req.db.connect();
+    
+    try {
+        await client.query('BEGIN');
+        
+        const { deviceData, creditType, amount, model, sessionId } = req.body;
+        
+        // Find user
+        const user = await UserManager.findOrCreateUser(client, deviceData);
+        
+        // Check fraud
+        const fraudCheck = await FraudDetector.checkForFraud(client, user.id, deviceData, 'CONSUME');
+        if (fraudCheck.isSuspicious && fraudCheck.trustScore < 0.5) {
+            await client.query('ROLLBACK');
+            return res.status(403).json({ 
+                error: 'Suspicious activity detected',
+                trustScore: fraudCheck.trustScore 
+            });
+        }
+        
+        // Get current state
+        const state = await client.query('SELECT * FROM user_states WHERE user_id = $1 FOR UPDATE', [user.id])
+            .then(r => r.rows[0]);
+        
+        // Check limits
+        const limits = state.subscription_type === 'weekly' ? CONFIG.DAILY_LIMITS.WEEKLY_SUB :
+                      state.subscription_type === 'monthly' ? CONFIG.DAILY_LIMITS.MONTHLY_SUB :
+                      CONFIG.DAILY_LIMITS.FREE;
+        
+        const currentUsed = creditType === 'chat' ? state.credits_chat_daily : state.credits_image_daily;
+        const currentBonus = creditType === 'chat' ? state.credits_chat_bonus : state.credits_image_bonus;
+        const totalAvailable = limits[creditType] - currentUsed + currentBonus;
+        
+        if (amount > totalAvailable) {
+            await client.query('ROLLBACK');
+            return res.status(403).json({ 
+                error: 'Insufficient credits',
+                available: totalAvailable,
+                requested: amount
+            });
+        }
+        
+        // Check model-specific limits
+        if (model && limits.models[model]) {
+            const modelUsage = state.model_usage || {};
+            const modelUsed = modelUsage[model] || 0;
+            if (modelUsed + amount > limits.models[model]) {
+                await client.query('ROLLBACK');
+                return res.status(403).json({
+                    error: 'Model limit exceeded',
+                    model: model,
+                    limit: limits.models[model],
+                    used: modelUsed
                 });
             }
         }
-
-        if (!userFound) {
-            // Truly new user - return secure default state with CORRECT available credits
-            const today = new Date().toISOString().split('T')[0];
-            const defaultState = {
-                deviceId,
-                deviceFingerprint: fingerprint || "",
-                // Return AVAILABLE credits, not consumed credits
-                availableChatCredits: 15,      // Daily default for chat
-                availableImageCredits: 20,     // Daily default for images  
-                creditsConsumedTodayChat: 0,   // Keep for backwards compatibility
-                creditsConsumedTodayImage: 0,  // Keep for backwards compatibility
-                hasActiveSubscription: false,
-                subscriptionType: null,
-                subscriptionEndTime: 0,
-                lastActive: Date.now(),
-                appVersion: "18",
-                date: today,
-                userId: null,
-                serverVersion: "2.0.0"
-            };
-            
-            console.log(`👤 NEW USER detected: ${deviceId} - Available credits: chat=15, image=20 (fingerprint: ${fingerprint ? fingerprint.substring(0, 8) + '...' : 'none'})`);
-            req.monitoring?.recordEvent('NEW_USER_DETECTED', { deviceId, hasFingerprint: !!fingerprint });
-            
-            return res.json(defaultState);
+        
+        // Deduct credits (use bonus first)
+        let bonusUsed = 0;
+        let dailyUsed = amount;
+        
+        if (currentBonus > 0) {
+            bonusUsed = Math.min(amount, currentBonus);
+            dailyUsed = amount - bonusUsed;
         }
-
-        // Use the correct device_id for database queries (may have been updated above)
-        const currentDeviceId = deviceId;
-        const today = new Date().toISOString().split('T')[0];
-
-        // Get full user state for existing user (use current device_id)
-        const fullUserResult = await req.db.query(
-            'SELECT * FROM user_states WHERE device_id = $1',
-            [currentDeviceId]
-        );
         
-        const fullUserState = fullUserResult.rows[0];
-
-        // Reset daily credits if new day
-        let creditsReset = false;
+        // Update state
+        const modelUsage = state.model_usage || {};
+        modelUsage[model] = (modelUsage[model] || 0) + amount;
         
-        // Fix date comparison - convert database date to string for comparison
-        const dbDate = fullUserState.tracking_date instanceof Date 
-            ? fullUserState.tracking_date.toISOString().split('T')[0]
-            : fullUserState.tracking_date?.toString()?.split('T')[0] || '';
-        
-        console.log(`🔍 Date comparison: DB date="${dbDate}", Today="${today}"`);
-        
-        if (dbDate !== today) {
-            console.log(`🔄 Resetting daily credits for device: ${deviceId} (${dbDate} → ${today})`);
-            
-            await req.db.query(
-                `UPDATE user_states 
-                 SET credits_consumed_today_chat = 0, 
-                     credits_consumed_today_image = 0, 
-                     ad_credits_chat_today = 0,
-                     ad_credits_image_today = 0,
-                     tracking_date = $1,
-                     updated_at = CURRENT_TIMESTAMP
-                 WHERE device_id = $2`,
-                [today, deviceId]
-            );
-            
-            creditsReset = true;
-            fullUserState.credits_consumed_today_chat = 0;
-            fullUserState.credits_consumed_today_image = 0;
-            fullUserState.ad_credits_chat_today = 0;
-            fullUserState.ad_credits_image_today = 0;
-            fullUserState.tracking_date = today;
-            
-            req.monitoring?.recordEvent('DAILY_CREDITS_RESET', { deviceId });
-        } else {
-            console.log(`✅ Same day detected, preserving credits: chat=${fullUserState.credits_consumed_today_chat}, image=${fullUserState.credits_consumed_today_image}`);
-        }
-
-        // Calculate AVAILABLE credits (this is what the client needs!)
-        const DAILY_CHAT_CREDITS = 15;
-        const DAILY_IMAGE_CREDITS = 20;
-        const MAX_AD_CHAT_CREDITS = 10;   // From ads
-        const MAX_AD_IMAGE_CREDITS = 10;  // From ads
-        
-        // Get ad credits earned today (if implemented in DB)
-        const adChatCreditsEarned = fullUserState.ad_credits_chat_today || 0;
-        const adImageCreditsEarned = fullUserState.ad_credits_image_today || 0;
-        
-        // Total daily allowance = base + ad credits
-        const totalChatAllowance = DAILY_CHAT_CREDITS + adChatCreditsEarned;
-        const totalImageAllowance = DAILY_IMAGE_CREDITS + adImageCreditsEarned;
-        
-        // Available = Total allowance - consumed
-        const availableChatCredits = Math.max(0, totalChatAllowance - fullUserState.credits_consumed_today_chat);
-        const availableImageCredits = Math.max(0, totalImageAllowance - fullUserState.credits_consumed_today_image);
-
-        // Enhanced response with security metadata
-        const responseState = {
-            deviceId: fullUserState.device_id,
-            deviceFingerprint: fullUserState.device_fingerprint,
-            // Return AVAILABLE credits (what client expects)
-            availableChatCredits: availableChatCredits,
-            availableImageCredits: availableImageCredits,
-            // Keep consumed for debugging/backwards compatibility
-            creditsConsumedTodayChat: fullUserState.credits_consumed_today_chat,
-            creditsConsumedTodayImage: fullUserState.credits_consumed_today_image,
-            // Ad credit info
-            adCreditsEarnedChat: adChatCreditsEarned,
-            adCreditsEarnedImage: adImageCreditsEarned,
-            canEarnMoreAdCredits: adChatCreditsEarned < MAX_AD_CHAT_CREDITS || adImageCreditsEarned < MAX_AD_IMAGE_CREDITS,
-            hasActiveSubscription: fullUserState.has_active_subscription,
-            subscriptionType: fullUserState.subscription_type,
-            subscriptionEndTime: fullUserState.subscription_end_time || 0,
-            lastActive: Date.now(),
-            appVersion: fullUserState.app_version || "18",
-            date: fullUserState.tracking_date,
-            userId: fullUserState.id?.toString(),
-            serverVersion: "2.0.0",
-            securityFlags: {
-                creditsResetToday: creditsReset,
-                accountAge: Math.floor((Date.now() - new Date(fullUserState.created_at).getTime()) / (1000 * 60 * 60 * 24))
-            }
-        };
-
-        console.log(`✅ User state retrieved: AVAILABLE credits: chat=${responseState.availableChatCredits}, image=${responseState.availableImageCredits}, consumed: chat=${responseState.creditsConsumedTodayChat}, image=${responseState.creditsConsumedTodayImage}, subscribed=${responseState.hasActiveSubscription}`);
-        
-        req.monitoring?.recordPerformance('GET_USER_STATE', Date.now() - startTime);
-        res.json(responseState);
-
-    } catch (error) {
-        console.error('❌ Get user state error:', error);
-        req.monitoring?.recordError('GET_USER_STATE_ERROR', error, { deviceId: req.params.deviceId });
-        
-        res.status(500).json({
-            error: 'Failed to retrieve user state',
-            message: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
-        });
-    }
-});
-
-// Update user state with enhanced security validation
-router.put('/:deviceId', validateDeviceId, validateUserState, handleValidationErrors, suspiciousActivityCheck, async (req, res) => {
-    const startTime = Date.now();
-    try {
-        const { deviceId } = req.params;
-        const userState = req.body;
-
-        console.log(`💾 [${req.ip}] Updating user state for device: ${deviceId}`);
-        console.log(`   Credits CONSUMED: chat=${userState.creditsConsumedTodayChat}, image=${userState.creditsConsumedTodayImage}`);
-        console.log(`   Credits AVAILABLE after consumption: chat=${15 - userState.creditsConsumedTodayChat}, image=${20 - userState.creditsConsumedTodayImage}`);
-        console.log(`   Subscription: ${userState.hasActiveSubscription} (${userState.subscriptionType || 'none'})`);
-
-        // Enhanced security: Check for device fingerprint conflicts
-        const conflictCheck = await req.db.query(
-            'SELECT device_id FROM user_states WHERE device_fingerprint = $1 AND device_id != $2',
-            [userState.deviceFingerprint, deviceId]
-        );
-
-        if (conflictCheck.rows.length > 0) {
-            console.warn(`🚨 Device fingerprint conflict: ${userState.deviceFingerprint} already exists for different device`);
-            req.monitoring?.recordSecurityEvent('FINGERPRINT_CONFLICT', {
-                deviceId,
-                conflictingDevice: conflictCheck.rows[0].device_id,
-                ip: req.ip
-            });
-        }
-
-        // Enhanced upsert with conflict resolution
-        const result = await req.db.query(`
-            INSERT INTO user_states (
-                device_id, device_fingerprint, credits_consumed_today_chat, 
-                credits_consumed_today_image, has_active_subscription, subscription_type, 
-                subscription_end_time, tracking_date, app_version, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
-            ON CONFLICT (device_id) DO UPDATE SET
-                device_fingerprint = EXCLUDED.device_fingerprint,
-                credits_consumed_today_chat = GREATEST(user_states.credits_consumed_today_chat, EXCLUDED.credits_consumed_today_chat),
-                credits_consumed_today_image = GREATEST(user_states.credits_consumed_today_image, EXCLUDED.credits_consumed_today_image),
-                has_active_subscription = EXCLUDED.has_active_subscription,
-                subscription_type = EXCLUDED.subscription_type,
-                subscription_end_time = EXCLUDED.subscription_end_time,
-                tracking_date = EXCLUDED.tracking_date,
-                app_version = EXCLUDED.app_version,
+        await client.query(`
+            UPDATE user_states
+            SET credits_${creditType}_daily = credits_${creditType}_daily + $2,
+                credits_${creditType}_bonus = credits_${creditType}_bonus - $3,
+                model_usage = $4,
                 updated_at = CURRENT_TIMESTAMP
-            RETURNING id, created_at, updated_at
-        `, [
-            deviceId,
-            userState.deviceFingerprint,
-            userState.creditsConsumedTodayChat,
-            userState.creditsConsumedTodayImage,
-            userState.hasActiveSubscription,
-            userState.subscriptionType || null,
-            userState.subscriptionEndTime || 0,
-            userState.date,
-            userState.appVersion || "18"
-        ]);
-
-        const wasCreated = result.rows[0].created_at === result.rows[0].updated_at;
+            WHERE user_id = $1
+        `, [user.id, dailyUsed, bonusUsed, JSON.stringify(modelUsage)]);
         
-        console.log(`✅ User state ${wasCreated ? 'created' : 'updated'} successfully for device: ${deviceId}`);
+        // Log usage
+        const fingerprint = DeviceFingerprinter.generateFingerprint(deviceData);
+        const fpResult = await client.query(
+            'SELECT id FROM device_fingerprints WHERE fingerprint_hash = $1',
+            [fingerprint]
+        );
         
-        req.monitoring?.recordEvent(wasCreated ? 'USER_STATE_CREATED' : 'USER_STATE_UPDATED', {
-            deviceId,
-            wasCreated,
-            hasSubscription: userState.hasActiveSubscription
-        });
+        await client.query(`
+            INSERT INTO usage_history (user_id, action_type, credits_used, model_name, device_fingerprint_id, ip_address, session_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `, [user.id, creditType, amount, model, fpResult.rows[0]?.id, req.ip, sessionId]);
         
-        req.monitoring?.recordPerformance('UPDATE_USER_STATE', Date.now() - startTime);
-
+        await client.query('COMMIT');
+        
         res.json({
             success: true,
-            message: `User state ${wasCreated ? 'created' : 'updated'} successfully`,
-            data: {
-                userId: result.rows[0].id.toString(),
-                updated: true,
-                timestamp: Date.now(),
-                wasCreated,
-                serverVersion: "2.0.0"
-            }
-        });
-
-    } catch (error) {
-        console.error('❌ Update user state error:', error);
-        req.monitoring?.recordError('UPDATE_USER_STATE_ERROR', error, { 
-            deviceId: req.params.deviceId,
-            ip: req.ip 
+            creditsUsed: amount,
+            bonusUsed: bonusUsed,
+            regularUsed: dailyUsed,
+            remaining: totalAvailable - amount
         });
         
-        res.status(500).json({
-            error: 'Failed to update user state',
-            message: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
-        });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Consume credits error:', error);
+        res.status(500).json({ error: 'Failed to consume credits' });
+    } finally {
+        client.release();
     }
 });
 
-// Enhanced reset with audit logging
-router.post('/:deviceId/reset', validateDeviceId, handleValidationErrors, async (req, res) => {
+// Watch ad for credits
+router.post('/ad-reward', async (req, res) => {
+    const client = await req.db.connect();
+    
     try {
-        const { deviceId } = req.params;
-        const { adminKey, reason } = req.body;
-
-        // Basic admin protection (in production, use proper JWT)
-        if (!adminKey || adminKey !== process.env.ADMIN_RESET_KEY) {
-            console.warn(`🚨 Unauthorized reset attempt for device ${deviceId} from IP ${req.ip}`);
-            req.monitoring?.recordSecurityEvent('UNAUTHORIZED_RESET_ATTEMPT', {
-                deviceId,
-                ip: req.ip
+        await client.query('BEGIN');
+        
+        const { deviceData, adNetwork, adId } = req.body;
+        
+        // Find user
+        const user = await UserManager.findOrCreateUser(client, deviceData);
+        
+        // Check fraud
+        const fraudCheck = await FraudDetector.checkForFraud(client, user.id, deviceData, 'AD_WATCH');
+        if (fraudCheck.trustScore < 0.3) {
+            await client.query('ROLLBACK');
+            return res.status(403).json({ error: 'Cannot process ad reward' });
+        }
+        
+        // Get current state
+        const state = await client.query('SELECT * FROM user_states WHERE user_id = $1 FOR UPDATE', [user.id])
+            .then(r => r.rows[0]);
+        
+        // Check ad limits
+        const now = Date.now();
+        if (state.weekly_ad_credits >= CONFIG.AD_REWARDS.dailyLimit) {
+            await client.query('ROLLBACK');
+            return res.status(403).json({ 
+                error: 'Daily ad limit reached',
+                nextResetTime: new Date().setHours(24, 0, 0, 0)
             });
-            
+        }
+        
+        if (state.last_ad_timestamp && 
+            (now - state.last_ad_timestamp) < CONFIG.AD_REWARDS.cooldownMinutes * 60000) {
+            await client.query('ROLLBACK');
             return res.status(403).json({
-                error: 'Unauthorized reset operation'
+                error: 'Ad cooldown active',
+                nextAvailable: state.last_ad_timestamp + (CONFIG.AD_REWARDS.cooldownMinutes * 60000)
             });
         }
-
-        console.log(`🔄 [ADMIN] Resetting user state for device: ${deviceId}, reason: ${reason || 'No reason provided'}`);
-
-        const result = await req.db.query(`
-            UPDATE user_states 
-            SET credits_consumed_today_chat = 0,
-                credits_consumed_today_image = 0,
-                has_active_subscription = false,
-                subscription_type = null,
-                subscription_end_time = 0,
+        
+        // Grant rewards
+        await client.query(`
+            UPDATE user_states
+            SET credits_chat_bonus = credits_chat_bonus + $2,
+                credits_image_bonus = credits_image_bonus + $3,
+                weekly_ad_credits = weekly_ad_credits + 1,
+                total_ads_watched = total_ads_watched + 1,
+                last_ad_timestamp = $4,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE device_id = $1
-            RETURNING id, credits_consumed_today_chat, credits_consumed_today_image
-        `, [deviceId]);
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({
-                error: 'Device not found',
-                deviceId: deviceId
-            });
-        }
-
-        req.monitoring?.recordEvent('ADMIN_USER_RESET', {
-            deviceId,
-            adminIp: req.ip,
-            reason: reason || 'No reason provided'
-        });
-
-        console.log(`✅ [ADMIN] User state reset successfully for device: ${deviceId}`);
-
+            WHERE user_id = $1
+        `, [user.id, CONFIG.AD_REWARDS.chat, CONFIG.AD_REWARDS.image, now]);
+        
+        // Log ad watch
+        await client.query(`
+            INSERT INTO usage_history (user_id, action_type, credits_used, details)
+            VALUES ($1, 'AD_REWARD', 0, $2)
+        `, [user.id, JSON.stringify({ adNetwork, adId })]);
+        
+        await client.query('COMMIT');
+        
         res.json({
             success: true,
-            message: 'User state reset successfully',
-            data: {
-                deviceId: deviceId,
-                resetTimestamp: Date.now(),
-                userId: result.rows[0].id.toString(),
-                reason: reason || 'Admin reset'
-            }
-        });
-
-    } catch (error) {
-        console.error('❌ Reset user state error:', error);
-        req.monitoring?.recordError('RESET_USER_STATE_ERROR', error, { deviceId: req.params.deviceId });
-        
-        res.status(500).json({
-            error: 'Failed to reset user state',
-            message: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
-        });
-    }
-});
-
-// Enhanced statistics with privacy protection
-router.get('/:deviceId/stats', validateDeviceId, handleValidationErrors, async (req, res) => {
-    try {
-        const { deviceId } = req.params;
-
-        const result = await req.db.query(`
-            SELECT 
-                device_id,
-                credits_consumed_today_chat,
-                credits_consumed_today_image,
-                has_active_subscription,
-                subscription_type,
-                created_at,
-                updated_at,
-                tracking_date,
-                app_version
-            FROM user_states 
-            WHERE device_id = $1
-        `, [deviceId]);
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({
-                error: 'Device not found'
-            });
-        }
-
-        const user = result.rows[0];
-        const accountAge = Math.floor((Date.now() - new Date(user.created_at).getTime()) / (1000 * 60 * 60 * 24));
-        
-        res.json({
-            deviceId: user.device_id,
-            statistics: {
-                totalChatCreditsToday: user.credits_consumed_today_chat,
-                totalImageCreditsToday: user.credits_consumed_today_image,
-                isSubscriber: user.has_active_subscription,
-                subscriptionType: user.subscription_type,
-                accountAge: `${accountAge} days`,
-                lastUpdated: user.updated_at,
-                currentDate: user.tracking_date,
-                appVersion: user.app_version,
-                serverVersion: "2.0.0"
+            rewards: {
+                chat: CONFIG.AD_REWARDS.chat,
+                image: CONFIG.AD_REWARDS.image
             },
-            privacyNote: "Only basic usage statistics are provided. Device fingerprints and sensitive data are not exposed."
+            adsWatchedToday: state.weekly_ad_credits + 1,
+            dailyLimit: CONFIG.AD_REWARDS.dailyLimit
         });
-
-    } catch (error) {
-        console.error('❌ Get user stats error:', error);
-        req.monitoring?.recordError('GET_USER_STATS_ERROR', error, { deviceId: req.params.deviceId });
         
-        res.status(500).json({
-            error: 'Failed to get user statistics',
-            message: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
-        });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Ad reward error:', error);
+        res.status(500).json({ error: 'Failed to process ad reward' });
+    } finally {
+        client.release();
     }
 });
 
-// NEW: Dedicated credit consumption endpoint
-router.post('/:deviceId/consume-credits', validateDeviceId, handleValidationErrors, async (req, res) => {
+// Update subscription
+router.post('/subscription', async (req, res) => {
     try {
-        const { deviceId } = req.params;
-        const { creditType, amount, fingerprint } = req.body; // creditType: 'chat' or 'image'
+        const { deviceData, subscriptionType, platform, purchaseToken, endTime } = req.body;
         
-        console.log(`🔥 [${req.ip}] CONSUMING ${amount} ${creditType} credits for device: ${deviceId}`);
+        // Validate with Google Play / Huawei AppGallery
+        // TODO: Add actual validation with store APIs
         
-        // Validate input
-        if (!['chat', 'image'].includes(creditType) || !Number.isInteger(amount) || amount < 1 || amount > 10) {
-            return res.status(400).json({
-                error: 'Invalid credit consumption request',
-                message: 'creditType must be "chat" or "image", amount must be 1-10'
-            });
-        }
-
-        // Find user by device_id or fingerprint
-        let user = await req.db.query('SELECT * FROM user_states WHERE device_id = $1', [deviceId]);
+        const user = await UserManager.findOrCreateUser(req.db, deviceData);
         
-        if (user.rows.length === 0 && fingerprint) {
-            console.log(`🔍 Device not found, checking by fingerprint: ${fingerprint.substring(0, 8)}...`);
-            user = await req.db.query('SELECT * FROM user_states WHERE device_fingerprint = $1', [fingerprint]);
-            
-            if (user.rows.length > 0) {
-                console.log(`🔒 REINSTALL DETECTED: Found user by fingerprint, updating device_id from ${user.rows[0].device_id} to ${deviceId}`);
-                await req.db.query(
-                    'UPDATE user_states SET device_id = $1, updated_at = CURRENT_TIMESTAMP WHERE device_fingerprint = $2',
-                    [deviceId, fingerprint]
-                );
-                user.rows[0].device_id = deviceId; // Update local reference
-            }
-        }
-        
-        if (user.rows.length === 0) {
-            return res.status(404).json({
-                error: 'User not found',
-                message: 'User must be registered before consuming credits'
-            });
-        }
-
-        const currentUser = user.rows[0];
-        const today = new Date().toISOString().split('T')[0];
-        
-        // Check if daily reset needed
-        const dbDate = currentUser.tracking_date instanceof Date 
-            ? currentUser.tracking_date.toISOString().split('T')[0]
-            : currentUser.tracking_date?.toString()?.split('T')[0] || '';
-            
-        if (dbDate !== today) {
-            console.log(`🔄 Daily reset needed before consumption: ${dbDate} → ${today}`);
-            await req.db.query(
-                `UPDATE user_states SET credits_consumed_today_chat = 0, credits_consumed_today_image = 0, ad_credits_chat_today = 0, ad_credits_image_today = 0, tracking_date = $1 WHERE device_id = $2`,
-                [today, deviceId]
-            );
-            currentUser.credits_consumed_today_chat = 0;
-            currentUser.credits_consumed_today_image = 0;
-            currentUser.ad_credits_chat_today = 0;
-            currentUser.ad_credits_image_today = 0;
-        }
-        
-        // Calculate current consumption and check limits
-        const currentConsumed = creditType === 'chat' ? currentUser.credits_consumed_today_chat : currentUser.credits_consumed_today_image;
-        const dailyLimit = creditType === 'chat' ? 25 : 30; // 15+10 for chat, 20+10 for image
-        const newConsumed = currentConsumed + amount;
-        
-        if (newConsumed > dailyLimit) {
-            const remaining = Math.max(0, dailyLimit - currentConsumed);
-            return res.status(429).json({
-                error: 'Daily credit limit exceeded',
-                message: `Cannot consume ${amount} ${creditType} credits. Daily limit: ${dailyLimit}, already consumed: ${currentConsumed}, remaining: ${remaining}`
-            });
-        }
-        
-        // Update consumption
-        const updateField = creditType === 'chat' ? 'credits_consumed_today_chat' : 'credits_consumed_today_image';
-        await req.db.query(
-            `UPDATE user_states SET ${updateField} = $1, updated_at = CURRENT_TIMESTAMP WHERE device_id = $2`,
-            [newConsumed, deviceId]
-        );
-        
-        // Calculate remaining credits
-        const availableAfter = dailyLimit - newConsumed;
-        
-        console.log(`✅ CONSUMED ${amount} ${creditType} credits for ${deviceId}: ${currentConsumed} → ${newConsumed} (${availableAfter} remaining)`);
+        await req.db.query(`
+            UPDATE user_states
+            SET subscription_type = $2,
+                subscription_platform = $3,
+                subscription_end_time = $4,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = $1
+        `, [user.id, subscriptionType, platform, endTime]);
         
         res.json({
             success: true,
-            message: `Successfully consumed ${amount} ${creditType} credits`,
-            data: {
-                creditType,
-                amountConsumed: amount,
-                totalConsumedToday: newConsumed,
-                availableCredits: availableAfter,
-                dailyLimit: dailyLimit
+            subscription: {
+                type: subscriptionType,
+                platform: platform,
+                endTime: endTime
             }
         });
         
     } catch (error) {
-        console.error('❌ Consume credits error:', error);
-        res.status(500).json({
-            error: 'Failed to consume credits',
-            message: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
-        });
+        console.error('Subscription update error:', error);
+        res.status(500).json({ error: 'Failed to update subscription' });
     }
 });
 
-// NEW: Add ad credits endpoint
-router.post('/:deviceId/add-ad-credits', validateDeviceId, handleValidationErrors, async (req, res) => {
+// Get usage analytics
+router.post('/analytics', async (req, res) => {
     try {
-        const { deviceId } = req.params;
-        const { creditType, fingerprint } = req.body; // creditType: 'chat' or 'image'
+        const { deviceData } = req.body;
+        const user = await UserManager.findOrCreateUser(req.db, deviceData);
         
-        console.log(`📺 [${req.ip}] Adding AD credits (${creditType}) for device: ${deviceId}`);
-        
-        // Validate input
-        if (!['chat', 'image'].includes(creditType)) {
-            return res.status(400).json({
-                error: 'Invalid credit type',
-                message: 'creditType must be "chat" or "image"'
-            });
-        }
-
-        // Find user (with fingerprint fallback)
-        let user = await req.db.query('SELECT * FROM user_states WHERE device_id = $1', [deviceId]);
-        
-        if (user.rows.length === 0 && fingerprint) {
-            user = await req.db.query('SELECT * FROM user_states WHERE device_fingerprint = $1', [fingerprint]);
-            if (user.rows.length > 0) {
-                await req.db.query(
-                    'UPDATE user_states SET device_id = $1 WHERE device_fingerprint = $2',
-                    [deviceId, fingerprint]
-                );
-            }
-        }
-        
-        if (user.rows.length === 0) {
-            return res.status(404).json({
-                error: 'User not found',
-                message: 'User must be registered before adding ad credits'
-            });
-        }
-
-        const currentUser = user.rows[0];
-        const adField = creditType === 'chat' ? 'ad_credits_chat_today' : 'ad_credits_image_today';
-        const currentAdCredits = currentUser[adField] || 0;
-        const maxAdCredits = 10;
-        
-        if (currentAdCredits >= maxAdCredits) {
-            return res.status(429).json({
-                error: 'Daily ad credit limit reached',
-                message: `Maximum ${maxAdCredits} ad credits per day for ${creditType}`
-            });
-        }
-        
-        // Add ad credit to database
-        const newAdCredits = currentAdCredits + 1;
-        await req.db.query(
-            `UPDATE user_states SET ${adField} = $1, updated_at = CURRENT_TIMESTAMP WHERE device_id = $2`,
-            [newAdCredits, deviceId]
-        );
-        
-        console.log(`✅ Added 1 AD credit for ${creditType}: ${currentAdCredits} → ${newAdCredits}`);
+        const analytics = await req.db.query(`
+            SELECT 
+                DATE(timestamp) as date,
+                action_type,
+                SUM(credits_used) as total_credits,
+                COUNT(*) as action_count
+            FROM usage_history
+            WHERE user_id = $1
+                AND timestamp > NOW() - INTERVAL '30 days'
+            GROUP BY DATE(timestamp), action_type
+            ORDER BY date DESC
+        `, [user.id]);
         
         res.json({
-            success: true,
-            message: `Successfully added 1 ${creditType} credit from ad`,
-            data: {
-                creditType,
-                adCreditsToday: newAdCredits,
-                maxAdCredits: maxAdCredits,
-                canWatchMore: newAdCredits < maxAdCredits
-            }
+            userId: user.user_uuid,
+            usage: analytics.rows
         });
         
     } catch (error) {
-        console.error('❌ Add ad credits error:', error);
-        res.status(500).json({
-            error: 'Failed to add ad credits',
-            message: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
-        });
+        console.error('Analytics error:', error);
+        res.status(500).json({ error: 'Failed to get analytics' });
     }
 });
 
